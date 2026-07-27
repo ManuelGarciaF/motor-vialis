@@ -14,8 +14,8 @@ import (
 func TestSimulationRepositoryFindCellCandidates(t *testing.T) {
 	query := &fakeQuery{
 		rows: &fakeRows{values: [][]any{
-			{0, "A", "88c2e311b1fffff", 0.0, 1.0},
-			{1, "B", "88c2e311b5fffff", 400.0, 0.5},
+			{0, "A", "88c2e311b1fffff", 0.0},
+			{1, "B", "88c2e311b5fffff", 400.0},
 		}},
 	}
 	repository := newSimulationRepository(query.execute)
@@ -29,8 +29,8 @@ func TestSimulationRepositoryFindCellCandidates(t *testing.T) {
 		t.Fatalf("FindCellCandidates() error = %v", err)
 	}
 	want := []simulation.CellCandidate{
-		{StopOrder: 0, StopID: "A", CellID: "88c2e311b1fffff", DistanceMeters: 0, Accessibility: 1},
-		{StopOrder: 1, StopID: "B", CellID: "88c2e311b5fffff", DistanceMeters: 400, Accessibility: 0.5},
+		{StopOrder: 0, StopID: "A", CellID: "88c2e311b1fffff", DistanceMeters: 0},
+		{StopOrder: 1, StopID: "B", CellID: "88c2e311b5fffff", DistanceMeters: 400},
 	}
 	if !reflect.DeepEqual(actual, want) {
 		t.Fatalf("candidates = %#v, want %#v", actual, want)

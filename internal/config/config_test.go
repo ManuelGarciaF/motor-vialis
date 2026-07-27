@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
+)
 
 func TestFromEnvBuildsDefaultLocalDatabaseURL(t *testing.T) {
 	clearDatabaseEnv(t)
@@ -12,6 +16,37 @@ func TestFromEnvBuildsDefaultLocalDatabaseURL(t *testing.T) {
 	const want = "postgresql://postgres:postgres@localhost:5432/vialis"
 	if cfg.DatabaseURL != want {
 		t.Fatalf("DatabaseURL = %q, want %q", cfg.DatabaseURL, want)
+	}
+	if _, ok := cfg.SimulationAccessibilityCalculator.(simulation.LinearAccessibility); !ok {
+		t.Fatalf(
+			"SimulationAccessibility type = %T, want LinearAccessibility",
+			cfg.SimulationAccessibilityCalculator,
+		)
+	}
+}
+
+func TestFromEnvLoadsAccessibilityMethod(t *testing.T) {
+	clearDatabaseEnv(t)
+	t.Setenv("SIMULATION_ACCESSIBILITY_METHOD", "quadratic")
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if _, ok := cfg.SimulationAccessibilityCalculator.(simulation.QuadraticAccessibility); !ok {
+		t.Fatalf(
+			"SimulationAccessibility type = %T, want QuadraticAccessibility",
+			cfg.SimulationAccessibilityCalculator,
+		)
+	}
+}
+
+func TestFromEnvRejectsUnknownAccessibilityMethod(t *testing.T) {
+	clearDatabaseEnv(t)
+	t.Setenv("SIMULATION_ACCESSIBILITY_METHOD", "unknown")
+
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("FromEnv() error = nil, want invalid accessibility method error")
 	}
 }
 
@@ -66,6 +101,7 @@ func clearDatabaseEnv(t *testing.T) {
 		"DATABASE_NAME",
 		"DATABASE_USER",
 		"DATABASE_PASSWORD",
+		"SIMULATION_ACCESSIBILITY_METHOD",
 	} {
 		t.Setenv(name, "")
 	}

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
 )
 
 const (
@@ -16,6 +18,10 @@ const (
 	defaultDatabaseName     = "vialis"
 	defaultDatabaseUser     = "postgres"
 	defaultDatabasePassword = "postgres"
+
+	linearAccessibilityMethod    = "linear"
+	quadraticAccessibilityMethod = "quadratic"
+	defaultAccessibilityMethod   = linearAccessibilityMethod
 
 	defaultHTTPAddress       = ":8080"
 	defaultReadHeaderTimeout = 5 * time.Second
@@ -30,12 +36,13 @@ const (
 
 // Config contains the runtime settings for the HTTP service.
 type Config struct {
-	HTTPAddress       string
-	DatabaseURL       string
-	ReadHeaderTimeout time.Duration
-	ReadTimeout       time.Duration
-	WriteTimeout      time.Duration
-	IdleTimeout       time.Duration
+	HTTPAddress                       string
+	DatabaseURL                       string
+	SimulationAccessibilityCalculator simulation.AccessibilityCalculator
+	ReadHeaderTimeout                 time.Duration
+	ReadTimeout                       time.Duration
+	WriteTimeout                      time.Duration
+	IdleTimeout                       time.Duration
 }
 
 // FromEnv loads configuration from environment variables and applies safe defaults.
@@ -44,14 +51,19 @@ func FromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	accessibilityCalculator, err := accessibilityCalculatorFromEnv()
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
-		HTTPAddress:       valueOrDefault("HTTP_ADDRESS", defaultHTTPAddress),
-		DatabaseURL:       databaseURL,
-		ReadHeaderTimeout: defaultReadHeaderTimeout,
-		ReadTimeout:       defaultReadTimeout,
-		WriteTimeout:      defaultWriteTimeout,
-		IdleTimeout:       defaultIdleTimeout,
+		HTTPAddress:                       valueOrDefault("HTTP_ADDRESS", defaultHTTPAddress),
+		DatabaseURL:                       databaseURL,
+		SimulationAccessibilityCalculator: accessibilityCalculator,
+		ReadHeaderTimeout:                 defaultReadHeaderTimeout,
+		ReadTimeout:                       defaultReadTimeout,
+		WriteTimeout:                      defaultWriteTimeout,
+		IdleTimeout:                       defaultIdleTimeout,
 	}
 
 	durations := []struct {
@@ -78,6 +90,25 @@ func FromEnv() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func accessibilityCalculatorFromEnv() (simulation.AccessibilityCalculator, error) {
+	method := strings.ToLower(strings.TrimSpace(
+		valueOrDefault("SIMULATION_ACCESSIBILITY_METHOD", defaultAccessibilityMethod),
+	))
+	switch method {
+	case linearAccessibilityMethod:
+		return simulation.LinearAccessibility{}, nil
+	case quadraticAccessibilityMethod:
+		return simulation.QuadraticAccessibility{}, nil
+	default:
+		return nil, fmt.Errorf(
+			"SIMULATION_ACCESSIBILITY_METHOD must be %q or %q: %q",
+			linearAccessibilityMethod,
+			quadraticAccessibilityMethod,
+			method,
+		)
+	}
 }
 
 func databaseURLFromEnv() (string, error) {

@@ -95,8 +95,8 @@ func TestSimulationRepositoryIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindCellCandidates() error = %v", err)
 	}
-	assertCandidate(t, candidates, "A", cellIDs[0], 0, 1)
-	assertCandidate(t, candidates, "B", cellIDs[1], 400, 0.5)
+	assertCandidate(t, candidates, "A", cellIDs[0], 0)
+	assertCandidate(t, candidates, "B", cellIDs[1], 400)
 	for _, candidate := range candidates {
 		if candidate.StopID == "C" && string(candidate.CellID) == cellIDs[2] {
 			t.Fatal("cell at or beyond the access radius must be excluded")
@@ -144,16 +144,13 @@ func assertCandidate(
 	t *testing.T,
 	candidates []simulation.CellCandidate,
 	stopID, cellID string,
-	distance, accessibility float64,
+	distance float64,
 ) {
 	t.Helper()
 	for _, candidate := range candidates {
 		if candidate.StopID == stopID && string(candidate.CellID) == cellID {
 			if math.Abs(candidate.DistanceMeters-distance) > 0.01 {
 				t.Fatalf("candidate distance = %v, want %v", candidate.DistanceMeters, distance)
-			}
-			if math.Abs(candidate.Accessibility-accessibility) > 0.0001 {
-				t.Fatalf("candidate accessibility = %v, want %v", candidate.Accessibility, accessibility)
 			}
 			return
 		}

@@ -11,10 +11,10 @@ import (
 func TestServiceSimulateAssignsCellsAndBuildsTotals(t *testing.T) {
 	repository := &fakeRepository{
 		candidates: []CellCandidate{
-			{StopOrder: 2, StopID: "C", CellID: "cell-c", DistanceMeters: 10, Accessibility: 0.9},
-			{StopOrder: 1, StopID: "B", CellID: "shared", DistanceMeters: 50, Accessibility: 0.8},
-			{StopOrder: 0, StopID: "A", CellID: "cell-a", DistanceMeters: 20, Accessibility: 0.95},
-			{StopOrder: 0, StopID: "A", CellID: "shared", DistanceMeters: 100, Accessibility: 0.7},
+			{StopOrder: 2, StopID: "C", CellID: "cell-c", DistanceMeters: 80},
+			{StopOrder: 1, StopID: "B", CellID: "shared", DistanceMeters: 160},
+			{StopOrder: 0, StopID: "A", CellID: "cell-a", DistanceMeters: 40},
+			{StopOrder: 0, StopID: "A", CellID: "shared", DistanceMeters: 240},
 		},
 		pairDemand: []StopPairDemand{
 			{OriginStopOrder: 0, OriginStopID: "A", DestinationStopOrder: 1, DestinationStopID: "B", GrossDemand: 100, PotentialDemand: 70},
@@ -22,7 +22,7 @@ func TestServiceSimulateAssignsCellsAndBuildsTotals(t *testing.T) {
 			{OriginStopOrder: 1, OriginStopID: "B", DestinationStopOrder: 2, DestinationStopID: "C", GrossDemand: 25, PotentialDemand: 18},
 		},
 	}
-	service := NewService(repository, 800)
+	service := NewService(repository, 800, LinearAccessibility{})
 	route := routeWithStops("A", "B", "C")
 
 	result, err := service.Simulate(context.Background(), route)
@@ -53,24 +53,53 @@ func TestServiceSimulateAssignsCellsAndBuildsTotals(t *testing.T) {
 
 func TestAssignCellsUsesDeterministicPriority(t *testing.T) {
 	candidates := []CellCandidate{
-		{StopOrder: 1, StopID: "B", CellID: "tie-order", DistanceMeters: 100, Accessibility: 0.7},
-		{StopOrder: 0, StopID: "A", CellID: "tie-order", DistanceMeters: 100, Accessibility: 0.7},
-		{StopOrder: 1, StopID: "B", CellID: "nearest", DistanceMeters: 50, Accessibility: 0.8},
-		{StopOrder: 0, StopID: "A", CellID: "nearest", DistanceMeters: 90, Accessibility: 0.75},
-		{StopOrder: 2, StopID: "C", CellID: "only-c", DistanceMeters: 10, Accessibility: 0.95},
-		{StopOrder: 1, StopID: "Z", CellID: "tie-id", DistanceMeters: 20, Accessibility: 0.9},
-		{StopOrder: 1, StopID: "B", CellID: "tie-id", DistanceMeters: 20, Accessibility: 0.9},
+		{StopOrder: 1, StopID: "B", CellID: "tie-order", DistanceMeters: 400},
+		{StopOrder: 0, StopID: "A", CellID: "tie-order", DistanceMeters: 400},
+		{StopOrder: 1, StopID: "B", CellID: "nearest", DistanceMeters: 200},
+		{StopOrder: 0, StopID: "A", CellID: "nearest", DistanceMeters: 400},
+		{StopOrder: 2, StopID: "C", CellID: "only-c", DistanceMeters: 0},
+		{StopOrder: 1, StopID: "Z", CellID: "tie-id", DistanceMeters: 100},
+		{StopOrder: 1, StopID: "B", CellID: "tie-id", DistanceMeters: 100},
 	}
 
-	actual := assignCells(candidates)
+	actual := assignCells(candidates, 800, LinearAccessibility{})
 	want := []AssignedCell{
-		{StopOrder: 0, StopID: "A", CellID: "tie-order", Accessibility: 0.7},
-		{StopOrder: 1, StopID: "B", CellID: "nearest", Accessibility: 0.8},
-		{StopOrder: 1, StopID: "B", CellID: "tie-id", Accessibility: 0.9},
-		{StopOrder: 2, StopID: "C", CellID: "only-c", Accessibility: 0.95},
+		{StopOrder: 0, StopID: "A", CellID: "tie-order", Accessibility: 0.5},
+		{StopOrder: 1, StopID: "B", CellID: "nearest", Accessibility: 0.75},
+		{StopOrder: 1, StopID: "B", CellID: "tie-id", Accessibility: 0.875},
+		{StopOrder: 2, StopID: "C", CellID: "only-c", Accessibility: 1},
 	}
 	if !reflect.DeepEqual(actual, want) {
 		t.Fatalf("assignCells() = %#v, want %#v", actual, want)
+	}
+}
+
+func TestServiceUsesAccessibilityCalculator(t *testing.T) {
+	repository := &fakeRepository{
+		candidates: []CellCandidate{
+			{StopOrder: 0, StopID: "A", CellID: "cell-a", DistanceMeters: 400},
+			{StopOrder: 1, StopID: "B", CellID: "cell-b", DistanceMeters: 0},
+		},
+	}
+	service := NewService(repository, 800, QuadraticAccessibility{})
+
+	if _, err := service.Simulate(
+		context.Background(),
+		routeWithStops("A", "B"),
+	); err != nil {
+		t.Fatalf("Simulate() error = %v", err)
+	}
+
+	want := []AssignedCell{
+		{StopOrder: 0, StopID: "A", CellID: "cell-a", Accessibility: 0.25},
+		{StopOrder: 1, StopID: "B", CellID: "cell-b", Accessibility: 1},
+	}
+	if !reflect.DeepEqual(repository.receivedCells, want) {
+		t.Fatalf(
+			"assigned cells = %#v, want %#v",
+			repository.receivedCells,
+			want,
+		)
 	}
 }
 
@@ -104,7 +133,11 @@ func TestServiceSimulateRejectsInvalidRoute(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			repository := &fakeRepository{}
-			_, err := NewService(repository, 800).Simulate(context.Background(), test.route)
+			_, err := NewService(
+				repository,
+				800,
+				LinearAccessibility{},
+			).Simulate(context.Background(), test.route)
 			if err == nil {
 				t.Fatal("Simulate() error = nil, want validation error")
 			}
@@ -126,7 +159,11 @@ func TestServiceSimulateWrapsRepositoryErrors(t *testing.T) {
 	repositoryError := errors.New("database unavailable")
 	repository := &fakeRepository{candidatesError: repositoryError}
 
-	_, err := NewService(repository, 800).Simulate(context.Background(), routeWithStops("A", "B"))
+	_, err := NewService(
+		repository,
+		800,
+		LinearAccessibility{},
+	).Simulate(context.Background(), routeWithStops("A", "B"))
 	if !errors.Is(err, repositoryError) {
 		t.Fatalf("Simulate() error = %v, want wrapped repository error", err)
 	}

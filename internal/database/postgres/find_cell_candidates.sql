@@ -33,8 +33,7 @@ SELECT
     stop_order,
     stop_id,
     cell_id,
-    distance_meters,
-    1.0 - distance_meters / $4::DOUBLE PRECISION AS accessibility
+    distance_meters
 FROM candidate_distances
 WHERE distance_meters < $4::DOUBLE PRECISION
 ORDER BY stop_order, cell_id;

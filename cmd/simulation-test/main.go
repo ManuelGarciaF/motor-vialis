@@ -46,7 +46,11 @@ func main() {
 	defer database.Close()
 
 	repository := postgres.NewSimulationRepository(database)
-	service := simulation.NewService(repository, config.SimulationAccessRadiusMeters)
+	service := simulation.NewService(
+		repository,
+		config.SimulationAccessRadiusMeters,
+		cfg.SimulationAccessibilityCalculator,
+	)
 	result, err := service.Simulate(ctx, simulation.Route{Stops: stops})
 	if err != nil {
 		log.Fatalf("simulate route: %v", err)

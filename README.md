@@ -18,6 +18,12 @@ las variables individuales.
 Opcionalmente, `HTTP_ADDRESS` permite cambiar la dirección de escucha; su valor
 predeterminado es `:8080`.
 
+La estrategia de accesibilidad se selecciona con
+`SIMULATION_ACCESSIBILITY_METHOD`. Los valores disponibles son:
+
+- `linear` (predeterminado): `1 - distancia / radio`.
+- `quadratic`: `(1 - distancia / radio)²`, penaliza más las celdas alejadas.
+
 ## Ejecutar
 
 ```bash

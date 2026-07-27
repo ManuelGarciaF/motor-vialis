@@ -28,7 +28,6 @@ type CellCandidate struct {
 	StopID         string
 	CellID         CellID
 	DistanceMeters float64
-	Accessibility  float64
 }
 
 // AssignedCell is a demand cell assigned exclusively to one stop.

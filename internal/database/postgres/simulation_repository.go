@@ -82,7 +82,6 @@ func (repository *SimulationRepository) FindCellCandidates(
 			&candidate.StopID,
 			&candidate.CellID,
 			&candidate.DistanceMeters,
-			&candidate.Accessibility,
 		); err != nil {
 			return nil, fmt.Errorf("scan cell candidate: %w", err)
 		}
