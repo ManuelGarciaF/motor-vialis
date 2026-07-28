@@ -43,20 +43,22 @@ disponible. Si no puede conectarse, finaliza con error.
 
 ## Probar una simulación
 
-El ejecutable de prueba utiliza la configuración PostgreSQL del proyecto y
-simula las 17 paradas provistas para el recorrido de la línea 132:
+El ejecutable de prueba recibe un archivo JSON con las paradas ordenadas. Cada
+parada, salvo la última, contiene un `pathToNext` GeoJSON con el recorrido exacto
+hasta la siguiente:
 
 ```bash
-go run ./cmd/simulation-test
+go run ./cmd/simulation-test -route-file ./examples/simulation_route.json
 ```
 
-Para indicar otro recorrido, repetir `-stop` respetando el orden:
+GeoJSON expresa cada coordenada como `[longitud, latitud]`. El primer punto del
+`LineString` debe coincidir con la parada actual y el último con la siguiente,
+con una tolerancia de 20 metros. La última parada no lleva `pathToNext`.
 
-```bash
-go run ./cmd/simulation-test \
-  -stop "A,-34.6037,-58.3816" \
-  -stop "B,-34.6083,-58.3712" \
-  -stop "C,-34.6142,-58.3608"
-```
+El resultado separa `demand` de `metrics`. La distancia se mide sobre cada
+`LineString` con PostGIS. El tiempo devuelve escenarios `offPeak`, `typical` y
+`peak`, estimados con los percentiles 25, 50 y 75 de tramos GTFS cercanos y de
+dirección compatible. Si no hay referencias locales, se utiliza la mediana
+global y se informa confianza baja.
 
 La conexión también puede reemplazarse con `-database-url`.

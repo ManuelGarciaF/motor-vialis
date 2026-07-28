@@ -3,20 +3,23 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/config"
 	"github.com/ManuelGarciaF/vialis-motor/internal/database/postgres"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
 
-var defaultStops = line132Stops()
+const maximumEndpointAlignmentMeters = 250.0
 
 func main() {
 	cfg, err := config.FromEnv()
@@ -28,13 +31,25 @@ func main() {
 		cfg.DatabaseURL,
 		"PostgreSQL connection URL",
 	)
-	stops := defaultStops.clone()
-	flag.Var(
-		&stops,
-		"stop",
-		`ordered stop in the form "ID,latitude,longitude"; the first value replaces the defaults`,
+	routeFile := flag.String(
+		"route-file",
+		"",
+		"JSON file containing ordered stops and each pathToNext LineString",
 	)
 	flag.Parse()
+	if *routeFile == "" {
+		log.Fatal("-route-file is required")
+	}
+
+	inputFile, err := os.Open(*routeFile)
+	if err != nil {
+		log.Fatalf("open route file: %v", err)
+	}
+	defer inputFile.Close()
+	input, err := decodeRoute(inputFile)
+	if err != nil {
+		log.Fatalf("decode route file: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -45,13 +60,17 @@ func main() {
 	}
 	defer database.Close()
 
-	repository := postgres.NewSimulationRepository(database)
-	service := simulation.NewService(
-		repository,
+	demandEstimator := demand.NewService(
+		postgres.NewDemandRepository(database),
 		config.SimulationAccessRadiusMeters,
 		cfg.SimulationAccessibilityCalculator,
 	)
-	result, err := service.Simulate(ctx, simulation.Route{Stops: stops})
+	travelTimeEstimator := traveltime.NewService(
+		postgres.NewTravelTimeRepository(database),
+		traveltime.DefaultPolicy(),
+	)
+	service := simulation.NewService(demandEstimator, travelTimeEstimator)
+	result, err := service.Simulate(ctx, input)
 	if err != nil {
 		log.Fatalf("simulate route: %v", err)
 	}
@@ -63,65 +82,76 @@ func main() {
 	}
 }
 
-type stopList []simulation.Stop
+func decodeRoute(reader io.Reader) (simulation.Route, error) {
+	decoder := json.NewDecoder(reader)
+	decoder.DisallowUnknownFields()
 
-func (stops *stopList) Set(value string) error {
-	parts := strings.Split(value, ",")
-	if len(parts) != 3 {
-		return fmt.Errorf("stop must have the form ID,latitude,longitude: %q", value)
+	var input simulation.Route
+	if err := decoder.Decode(&input); err != nil {
+		return simulation.Route{}, err
 	}
-
-	stopID := strings.TrimSpace(parts[0])
-	if stopID == "" {
-		return fmt.Errorf("stop ID must not be empty")
-	}
-	latitude, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
-	if err != nil {
-		return fmt.Errorf("parse latitude for stop %q: %w", stopID, err)
-	}
-	longitude, err := strconv.ParseFloat(strings.TrimSpace(parts[2]), 64)
-	if err != nil {
-		return fmt.Errorf("parse longitude for stop %q: %w", stopID, err)
-	}
-
-	if reflectDefaults(*stops) {
-		*stops = nil
-	}
-	*stops = append(*stops, simulation.Stop{
-		ID: stopID,
-		Position: simulation.Position{
-			Latitude:  latitude,
-			Longitude: longitude,
-		},
-	})
-	return nil
-}
-
-func (stops *stopList) String() string {
-	values := make([]string, len(*stops))
-	for index, stop := range *stops {
-		values[index] = fmt.Sprintf(
-			"%s,%g,%g",
-			stop.ID,
-			stop.Position.Latitude,
-			stop.Position.Longitude,
-		)
-	}
-	return strings.Join(values, ";")
-}
-
-func (stops stopList) clone() stopList {
-	return append(stopList(nil), stops...)
-}
-
-func reflectDefaults(stops stopList) bool {
-	if len(stops) != len(defaultStops) {
-		return false
-	}
-	for index := range stops {
-		if stops[index] != defaultStops[index] {
-			return false
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return simulation.Route{}, fmt.Errorf("route file must contain one JSON value")
 		}
+		return simulation.Route{}, fmt.Errorf("decode trailing content: %w", err)
 	}
-	return true
+	if err := alignStoredPathEndpoints(&input); err != nil {
+		return simulation.Route{}, err
+	}
+	return input, nil
+}
+
+// alignStoredPathEndpoints adapts paths exported from stored GTFS routes.
+//
+// GTFS shape fractions can place a segment boundary close to, but not exactly
+// on, its physical stop. The simulation's domain model remains strict; this
+// test executable replaces only the first and last positions while preserving
+// every intermediate point of the stored path.
+func alignStoredPathEndpoints(input *simulation.Route) error {
+	for index := 0; index < len(input.Stops)-1; index++ {
+		path := input.Stops[index].PathToNext
+		if path == nil || len(path.Positions) < 2 {
+			continue
+		}
+
+		origin := input.Stops[index].Position
+		destination := input.Stops[index+1].Position
+		first := path.Positions[0]
+		last := path.Positions[len(path.Positions)-1]
+		startGap := route.DistanceMeters(first, origin)
+		endGap := route.DistanceMeters(last, destination)
+		forwardGap := startGap + endGap
+		reverseGap := route.DistanceMeters(first, destination) +
+			route.DistanceMeters(last, origin)
+
+		// Do not hide a reversed LineString. The regular route validation will
+		// report it with its domain-specific error.
+		if reverseGap < forwardGap {
+			continue
+		}
+		if startGap > maximumEndpointAlignmentMeters {
+			return fmt.Errorf(
+				"route.stops[%d].pathToNext first coordinate is %.1f meters "+
+					"from the current stop; maximum automatic alignment is %.0f meters",
+				index,
+				startGap,
+				maximumEndpointAlignmentMeters,
+			)
+		}
+		if endGap > maximumEndpointAlignmentMeters {
+			return fmt.Errorf(
+				"route.stops[%d].pathToNext last coordinate is %.1f meters "+
+					"from the next stop; maximum automatic alignment is %.0f meters",
+				index,
+				endGap,
+				maximumEndpointAlignmentMeters,
+			)
+		}
+
+		path.Positions[0] = origin
+		path.Positions[len(path.Positions)-1] = destination
+	}
+	return nil
 }

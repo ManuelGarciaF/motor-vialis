@@ -1,56 +1,184 @@
 package main
 
 import (
+	"os"
+	"strings"
 	"testing"
+
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 )
 
-func TestLine132Stops(t *testing.T) {
-	stops := line132Stops()
-	if len(stops) != 17 {
-		t.Fatalf("stop count = %d, want 17", len(stops))
+func TestDecodeRouteReadsGeoJSONPaths(t *testing.T) {
+	input := `{
+		"stops": [
+			{
+				"id": "A",
+				"position": {"latitude": -34.6, "longitude": -58.38},
+				"pathToNext": {
+					"type": "LineString",
+					"coordinates": [
+						[-58.38, -34.6],
+						[-58.39, -34.61]
+					]
+				}
+			},
+			{
+				"id": "B",
+				"position": {"latitude": -34.61, "longitude": -58.39}
+			}
+		]
+	}`
+
+	actual, err := decodeRoute(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("decodeRoute() error = %v", err)
 	}
-	if stops[0].ID != "1" || stops[0].Position.Latitude != -34.586005 || stops[0].Position.Longitude != -58.373625 {
-		t.Fatalf("first stop = %#v, want line 132 stop 1", stops[0])
+	if len(actual.Stops) != 2 ||
+		actual.Stops[0].PathToNext == nil ||
+		len(actual.Stops[0].PathToNext.Positions) != 2 {
+		t.Fatalf("route = %#v", actual)
 	}
-	last := stops[len(stops)-1]
-	if last.ID != "17" || last.Position.Latitude != -34.610177 || last.Position.Longitude != -58.406542 {
-		t.Fatalf("last stop = %#v, want line 132 stop 17", last)
+	if actual.Stops[0].PathToNext.Positions[0].Longitude != -58.38 {
+		t.Fatalf("first path position = %#v", actual.Stops[0].PathToNext.Positions[0])
 	}
 }
 
-func TestStopListFirstCustomStopReplacesDefaults(t *testing.T) {
-	stops := defaultStops.clone()
-	if err := stops.Set("X,-34.60,-58.40"); err != nil {
-		t.Fatalf("Set() error = %v", err)
+func TestDecodeRouteAlignsStoredGTFSPathEndpoints(t *testing.T) {
+	input := `{
+		"stops": [
+			{
+				"id": "2031665",
+				"position": {
+					"latitude": -34.586005,
+					"longitude": -58.373625
+				},
+				"pathToNext": {
+					"type": "LineString",
+					"coordinates": [
+						[-58.373625, -34.586005],
+						[-58.372723, -34.589460],
+						[-58.372870385, -34.589648151]
+					]
+				}
+			},
+			{
+				"id": "204232",
+				"position": {
+					"latitude": -34.589460,
+					"longitude": -58.372723
+				},
+				"pathToNext": {
+					"type": "LineString",
+					"coordinates": [
+						[-58.372870385, -34.589648151],
+						[-58.374470, -34.591970],
+						[-58.374740954, -34.592301286]
+					]
+				}
+			},
+			{
+				"id": "204208",
+				"position": {
+					"latitude": -34.591970,
+					"longitude": -58.374470
+				}
+			}
+		]
+	}`
+
+	actual, err := decodeRoute(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("decodeRoute() error = %v", err)
+	}
+	if err := route.Validate(actual); err != nil {
+		t.Fatalf("aligned route validation error = %v", err)
 	}
 
-	if len(stops) != 1 {
-		t.Fatalf("stop count = %d, want 1", len(stops))
+	firstPath := actual.Stops[0].PathToNext.Positions
+	if firstPath[0] != actual.Stops[0].Position {
+		t.Fatalf(
+			"first path origin = %#v, want %#v",
+			firstPath[0],
+			actual.Stops[0].Position,
+		)
 	}
-	if stops[0].ID != "X" || stops[0].Position.Latitude != -34.60 || stops[0].Position.Longitude != -58.40 {
-		t.Fatalf("stop = %#v, want parsed custom stop", stops[0])
+	if firstPath[len(firstPath)-1] != actual.Stops[1].Position {
+		t.Fatalf(
+			"first path destination = %#v, want %#v",
+			firstPath[len(firstPath)-1],
+			actual.Stops[1].Position,
+		)
+	}
+
+	secondPath := actual.Stops[1].PathToNext.Positions
+	if secondPath[0] != actual.Stops[1].Position {
+		t.Fatalf(
+			"second path origin = %#v, want %#v",
+			secondPath[0],
+			actual.Stops[1].Position,
+		)
+	}
+	if secondPath[len(secondPath)-1] != actual.Stops[2].Position {
+		t.Fatalf(
+			"second path destination = %#v, want %#v",
+			secondPath[len(secondPath)-1],
+			actual.Stops[2].Position,
+		)
 	}
 }
 
-func TestStopListKeepsCustomStopOrder(t *testing.T) {
-	var stops stopList
-	for _, value := range []string{"A,-34.60,-58.40", "B,-34.61,-58.41"} {
-		if err := stops.Set(value); err != nil {
-			t.Fatalf("Set(%q) error = %v", value, err)
-		}
-	}
+func TestDecodeRouteRejectsImplausibleEndpointAlignment(t *testing.T) {
+	input := `{
+		"stops": [
+			{
+				"id": "A",
+				"position": {"latitude": -34.6, "longitude": -58.38},
+				"pathToNext": {
+					"type": "LineString",
+					"coordinates": [
+						[-58.40, -34.62],
+						[-58.39, -34.61]
+					]
+				}
+			},
+			{
+				"id": "B",
+				"position": {"latitude": -34.61, "longitude": -58.39}
+			}
+		]
+	}`
 
-	if len(stops) != 2 || stops[0].ID != "A" || stops[1].ID != "B" {
-		t.Fatalf("stops = %#v, want A followed by B", stops)
+	if _, err := decodeRoute(strings.NewReader(input)); err == nil {
+		t.Fatal("decodeRoute() error = nil")
 	}
 }
 
-func TestStopListRejectsInvalidValue(t *testing.T) {
-	var stops stopList
-	if err := stops.Set("A,-34.60"); err == nil {
-		t.Fatal("Set() error = nil, want invalid-format error")
+func TestDecodeRouteRejectsUnknownFields(t *testing.T) {
+	_, err := decodeRoute(strings.NewReader(`{"stops":[],"unexpected":true}`))
+	if err == nil {
+		t.Fatal("decodeRoute() error = nil")
 	}
-	if err := stops.Set("A,latitude,-58.40"); err == nil {
-		t.Fatal("Set() error = nil, want invalid-latitude error")
+}
+
+func TestDecodeRouteRejectsMultipleValues(t *testing.T) {
+	_, err := decodeRoute(strings.NewReader(`{"stops":[]} {"stops":[]}`))
+	if err == nil {
+		t.Fatal("decodeRoute() error = nil")
+	}
+}
+
+func TestExampleRouteIsValid(t *testing.T) {
+	inputFile, err := os.Open("../../examples/simulation_route.json")
+	if err != nil {
+		t.Fatalf("open example route: %v", err)
+	}
+	defer inputFile.Close()
+
+	input, err := decodeRoute(inputFile)
+	if err != nil {
+		t.Fatalf("decode example route: %v", err)
+	}
+	if err := route.Validate(input); err != nil {
+		t.Fatalf("validate example route: %v", err)
 	}
 }

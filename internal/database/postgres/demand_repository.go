@@ -5,8 +5,8 @@ import (
 	_ "embed"
 	"fmt"
 
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
-	"github.com/jackc/pgx/v5"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -16,24 +16,15 @@ var findCellCandidatesSQL string
 //go:embed find_demand_by_stop_pair.sql
 var findDemandByStopPairSQL string
 
-type rowIterator interface {
-	Next() bool
-	Scan(destinations ...any) error
-	Err() error
-	Close()
-}
-
-type queryFunc func(ctx context.Context, sql string, arguments ...any) (rowIterator, error)
-
-// SimulationRepository calculates the spatial inputs and aggregated demand for
-// a route using PostgreSQL, PostGIS, and H3.
-type SimulationRepository struct {
+// DemandRepository calculates the spatial inputs and aggregated demand for a
+// route using PostgreSQL, PostGIS, and H3.
+type DemandRepository struct {
 	query queryFunc
 }
 
-// NewSimulationRepository creates a PostgreSQL simulation repository.
-func NewSimulationRepository(database *pgxpool.Pool) *SimulationRepository {
-	return newSimulationRepository(func(
+// NewDemandRepository creates a PostgreSQL demand repository.
+func NewDemandRepository(database *pgxpool.Pool) *DemandRepository {
+	return newDemandRepository(func(
 		ctx context.Context,
 		sql string,
 		arguments ...any,
@@ -42,20 +33,20 @@ func NewSimulationRepository(database *pgxpool.Pool) *SimulationRepository {
 	})
 }
 
-func newSimulationRepository(query queryFunc) *SimulationRepository {
-	return &SimulationRepository{query: query}
+func newDemandRepository(query queryFunc) *DemandRepository {
+	return &DemandRepository{query: query}
 }
 
 // FindCellCandidates returns the H3 cells that are close enough to each stop.
-func (repository *SimulationRepository) FindCellCandidates(
+func (repository *DemandRepository) FindCellCandidates(
 	ctx context.Context,
-	route simulation.Route,
+	input route.Route,
 	radiusMeters float64,
-) ([]simulation.CellCandidate, error) {
-	stopIDs := make([]string, len(route.Stops))
-	longitudes := make([]float64, len(route.Stops))
-	latitudes := make([]float64, len(route.Stops))
-	for index, stop := range route.Stops {
+) ([]demand.CellCandidate, error) {
+	stopIDs := make([]string, len(input.Stops))
+	longitudes := make([]float64, len(input.Stops))
+	latitudes := make([]float64, len(input.Stops))
+	for index, stop := range input.Stops {
 		stopIDs[index] = stop.ID
 		longitudes[index] = stop.Position.Longitude
 		latitudes[index] = stop.Position.Latitude
@@ -74,9 +65,9 @@ func (repository *SimulationRepository) FindCellCandidates(
 	}
 	defer rows.Close()
 
-	candidates := make([]simulation.CellCandidate, 0, len(route.Stops)*7)
+	candidates := make([]demand.CellCandidate, 0, len(input.Stops)*7)
 	for rows.Next() {
-		var candidate simulation.CellCandidate
+		var candidate demand.CellCandidate
 		if err := rows.Scan(
 			&candidate.StopOrder,
 			&candidate.StopID,
@@ -94,12 +85,12 @@ func (repository *SimulationRepository) FindCellCandidates(
 }
 
 // FindDemandByStopPair aggregates the OD matrix for all downstream stop pairs.
-func (repository *SimulationRepository) FindDemandByStopPair(
+func (repository *DemandRepository) FindDemandByStopPair(
 	ctx context.Context,
-	cells []simulation.AssignedCell,
-) ([]simulation.StopPairDemand, error) {
+	cells []demand.AssignedCell,
+) ([]demand.StopPairDemand, error) {
 	if len(cells) == 0 {
-		return []simulation.StopPairDemand{}, nil
+		return []demand.StopPairDemand{}, nil
 	}
 
 	stopOrders := make([]int32, len(cells))
@@ -126,9 +117,9 @@ func (repository *SimulationRepository) FindDemandByStopPair(
 	}
 	defer rows.Close()
 
-	demand := make([]simulation.StopPairDemand, 0)
+	result := make([]demand.StopPairDemand, 0)
 	for rows.Next() {
-		var pair simulation.StopPairDemand
+		var pair demand.StopPairDemand
 		if err := rows.Scan(
 			&pair.OriginStopOrder,
 			&pair.OriginStopID,
@@ -139,13 +130,12 @@ func (repository *SimulationRepository) FindDemandByStopPair(
 		); err != nil {
 			return nil, fmt.Errorf("scan demand by stop pair: %w", err)
 		}
-		demand = append(demand, pair)
+		result = append(result, pair)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate demand by stop pair: %w", err)
 	}
-	return demand, nil
+	return result, nil
 }
 
-var _ rowIterator = pgx.Rows(nil)
-var _ simulation.Repository = (*SimulationRepository)(nil)
+var _ demand.Repository = (*DemandRepository)(nil)

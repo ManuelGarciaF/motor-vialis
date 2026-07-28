@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/config"
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func TestSimulationRepositoryIntegration(t *testing.T) {
+func TestDemandRepositoryIntegration(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("TEST_DATABASE_URL is not set")
@@ -32,7 +33,7 @@ func TestSimulationRepositoryIntegration(t *testing.T) {
 	}
 	defer func() { _ = transaction.Rollback(context.Background()) }()
 
-	repository := newSimulationRepository(func(
+	repository := newDemandRepository(func(
 		ctx context.Context,
 		sql string,
 		arguments ...any,
@@ -40,10 +41,10 @@ func TestSimulationRepositoryIntegration(t *testing.T) {
 		return transaction.Query(ctx, sql, arguments...)
 	})
 
-	stops := []simulation.Stop{
-		{ID: "A", Position: simulation.Position{Latitude: -40, Longitude: -50}},
-		{ID: "B", Position: simulation.Position{Latitude: -40, Longitude: -40}},
-		{ID: "C", Position: simulation.Position{Latitude: -40, Longitude: -30}},
+	stops := []route.Stop{
+		{ID: "A", Position: route.Position{Latitude: -40, Longitude: -50}},
+		{ID: "B", Position: route.Position{Latitude: -40, Longitude: -40}},
+		{ID: "C", Position: route.Position{Latitude: -40, Longitude: -30}},
 	}
 	cellIDs := make([]string, len(stops))
 	for index, stop := range stops {
@@ -89,7 +90,7 @@ func TestSimulationRepositoryIntegration(t *testing.T) {
 
 	candidates, err := repository.FindCellCandidates(
 		ctx,
-		simulation.Route{Stops: stops},
+		route.Route{Stops: stops},
 		config.SimulationAccessRadiusMeters,
 	)
 	if err != nil {
@@ -124,10 +125,10 @@ func TestSimulationRepositoryIntegration(t *testing.T) {
 	insertMatrixDemand(1, 2, 25)
 	insertMatrixDemand(2, 0, 999)
 
-	pairDemand, err := repository.FindDemandByStopPair(ctx, []simulation.AssignedCell{
-		{StopOrder: 0, StopID: "A", CellID: simulation.CellID(cellIDs[0]), Accessibility: 1},
-		{StopOrder: 1, StopID: "B", CellID: simulation.CellID(cellIDs[1]), Accessibility: 0.5},
-		{StopOrder: 2, StopID: "C", CellID: simulation.CellID(cellIDs[2]), Accessibility: 0.25},
+	pairDemand, err := repository.FindDemandByStopPair(ctx, []demand.AssignedCell{
+		{StopOrder: 0, StopID: "A", CellID: demand.CellID(cellIDs[0]), Accessibility: 1},
+		{StopOrder: 1, StopID: "B", CellID: demand.CellID(cellIDs[1]), Accessibility: 0.5},
+		{StopOrder: 2, StopID: "C", CellID: demand.CellID(cellIDs[2]), Accessibility: 0.25},
 	})
 	if err != nil {
 		t.Fatalf("FindDemandByStopPair() error = %v", err)
@@ -142,7 +143,7 @@ func TestSimulationRepositoryIntegration(t *testing.T) {
 
 func assertCandidate(
 	t *testing.T,
-	candidates []simulation.CellCandidate,
+	candidates []demand.CellCandidate,
 	stopID, cellID string,
 	distance float64,
 ) {
@@ -160,12 +161,12 @@ func assertCandidate(
 
 func assertPairDemand(
 	t *testing.T,
-	demand []simulation.StopPairDemand,
+	pairs []demand.StopPairDemand,
 	origin, destination string,
 	gross, potential float64,
 ) {
 	t.Helper()
-	for _, pair := range demand {
+	for _, pair := range pairs {
 		if pair.OriginStopID == origin && pair.DestinationStopID == destination {
 			if math.Abs(pair.GrossDemand-gross) > 1e-9 {
 				t.Fatalf("%s->%s gross demand = %v, want %v", origin, destination, pair.GrossDemand, gross)

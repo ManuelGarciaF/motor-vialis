@@ -172,9 +172,28 @@ parada física sin duplicar su nombre ni sus coordenadas.
 | `nro_parada`                       | Orden procedente de `stop_sequence`         |
 | `tramo_hasta_siguiente`            | Porción del `shape` hasta la próxima parada |
 | `distancia_hasta_siguiente_metros` | Longitud geográfica de ese tramo            |
+| `tiempo_valle_hasta_siguiente_segundos` | Percentil 25 del tiempo comercial programado |
+| `tiempo_tipico_hasta_siguiente_segundos` | Mediana del tiempo comercial programado |
+| `tiempo_pico_hasta_siguiente_segundos` | Percentil 75 del tiempo comercial programado |
+| `cantidad_muestras_tiempo`         | Viajes GTFS utilizados para los percentiles |
 
-La última parada de cada recorrido tiene el tramo y la distancia en `NULL`, ya
-que no existe una parada siguiente.
+La última parada de cada recorrido tiene el tramo, la distancia y los tiempos
+en `NULL`, ya que no existe una parada siguiente.
+
+### Tiempo comercial por tramo
+
+Los percentiles se calculan solamente con viajes cuya secuencia completa de
+paradas coincide con la del viaje canónico. Esto evita mezclar servicios
+parciales o variantes con posiciones incompatibles.
+
+Para un tramo intermedio se mide desde la salida de la parada actual hasta la
+salida de la siguiente, incorporando la detención programada en esa parada. En
+el último tramo se termina en la llegada final para no sumar una detención
+posterior al recorrido. Las muestras no positivas se descartan.
+
+Los escenarios representan variabilidad de horarios GTFS programados. No son
+mediciones de tránsito en tiempo real ni garantizan que un viaje haya ocurrido
+con esa duración.
 
 ## Flujo de transformación
 
@@ -200,6 +219,9 @@ Los scripts se ejecutan en este orden:
 El importador ejecuta automáticamente el primer paso. La transformación se
 ejecuta por separado para permitir inspeccionar las tablas raw antes de reemplazar
 el modelo final.
+
+En una base creada antes de incorporar los tiempos por tramo, ejecutar primero
+`migrar_tiempos_tramos.sql` y luego volver a ejecutar `transformar_gtfs.sql`.
 
 ## Datos que no provienen de GTFS
 

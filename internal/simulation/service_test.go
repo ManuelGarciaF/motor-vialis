@@ -3,213 +3,149 @@ package simulation
 import (
 	"context"
 	"errors"
-	"math"
 	"reflect"
 	"testing"
+
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
 
-func TestServiceSimulateAssignsCellsAndBuildsTotals(t *testing.T) {
-	repository := &fakeRepository{
-		candidates: []CellCandidate{
-			{StopOrder: 2, StopID: "C", CellID: "cell-c", DistanceMeters: 80},
-			{StopOrder: 1, StopID: "B", CellID: "shared", DistanceMeters: 160},
-			{StopOrder: 0, StopID: "A", CellID: "cell-a", DistanceMeters: 40},
-			{StopOrder: 0, StopID: "A", CellID: "shared", DistanceMeters: 240},
-		},
-		pairDemand: []StopPairDemand{
-			{OriginStopOrder: 0, OriginStopID: "A", DestinationStopOrder: 1, DestinationStopID: "B", GrossDemand: 100, PotentialDemand: 70},
-			{OriginStopOrder: 0, OriginStopID: "A", DestinationStopOrder: 2, DestinationStopID: "C", GrossDemand: 50, PotentialDemand: 30},
-			{OriginStopOrder: 1, OriginStopID: "B", DestinationStopOrder: 2, DestinationStopID: "C", GrossDemand: 25, PotentialDemand: 18},
+func TestServiceSimulateBuildsNestedResult(t *testing.T) {
+	input := validRoute()
+	demandResult := demand.Result{
+		GrossDemand:     100,
+		PotentialDemand: 75,
+		ByStopPair: []demand.StopPairDemand{
+			{OriginStopID: "A", DestinationStopID: "B", PotentialDemand: 75},
 		},
 	}
-	service := NewService(repository, 800, LinearAccessibility{})
-	route := routeWithStops("A", "B", "C")
+	timeResult := traveltime.Result{
+		TotalDistanceMeters: 1200,
+		OffPeakSeconds:      200,
+		TypicalSeconds:      240,
+		PeakSeconds:         300,
+		Confidence:          traveltime.ConfidenceHigh,
+	}
+	demandEstimator := &fakeDemandEstimator{result: demandResult}
+	timeEstimator := &fakeTravelTimeEstimator{result: timeResult}
 
-	result, err := service.Simulate(context.Background(), route)
+	result, err := NewService(demandEstimator, timeEstimator).Simulate(
+		context.Background(),
+		input,
+	)
 	if err != nil {
 		t.Fatalf("Simulate() error = %v", err)
 	}
-
-	if repository.receivedRadius != 800 {
-		t.Fatalf("radius = %v, want 800", repository.receivedRadius)
+	if !reflect.DeepEqual(result.Demand, demandResult) {
+		t.Fatalf("demand = %#v, want %#v", result.Demand, demandResult)
 	}
-	if !reflect.DeepEqual(repository.receivedRoute, route) {
-		t.Fatalf("route = %#v, want %#v", repository.receivedRoute, route)
+	if result.Metrics.TotalDistanceMeters != 1200 {
+		t.Fatalf("distance = %v, want 1200", result.Metrics.TotalDistanceMeters)
 	}
-	wantCells := []AssignedCell{
-		{StopOrder: 0, StopID: "A", CellID: "cell-a", Accessibility: 0.95},
-		{StopOrder: 1, StopID: "B", CellID: "shared", Accessibility: 0.8},
-		{StopOrder: 2, StopID: "C", CellID: "cell-c", Accessibility: 0.9},
+	if !reflect.DeepEqual(result.Metrics.TravelTime, timeResult) {
+		t.Fatalf("travel time = %#v, want %#v", result.Metrics.TravelTime, timeResult)
 	}
-	if !reflect.DeepEqual(repository.receivedCells, wantCells) {
-		t.Fatalf("assigned cells = %#v, want %#v", repository.receivedCells, wantCells)
-	}
-	assertFloat(t, "GrossDemand", result.GrossDemand, 175)
-	assertFloat(t, "PotentialDemand", result.PotentialDemand, 118)
-	if !reflect.DeepEqual(result.ByStopPair, repository.pairDemand) {
-		t.Fatalf("ByStopPair = %#v, want %#v", result.ByStopPair, repository.pairDemand)
+	if !reflect.DeepEqual(demandEstimator.received, input) ||
+		!reflect.DeepEqual(timeEstimator.received, input) {
+		t.Fatal("estimators did not receive the validated route")
 	}
 }
 
-func TestAssignCellsUsesDeterministicPriority(t *testing.T) {
-	candidates := []CellCandidate{
-		{StopOrder: 1, StopID: "B", CellID: "tie-order", DistanceMeters: 400},
-		{StopOrder: 0, StopID: "A", CellID: "tie-order", DistanceMeters: 400},
-		{StopOrder: 1, StopID: "B", CellID: "nearest", DistanceMeters: 200},
-		{StopOrder: 0, StopID: "A", CellID: "nearest", DistanceMeters: 400},
-		{StopOrder: 2, StopID: "C", CellID: "only-c", DistanceMeters: 0},
-		{StopOrder: 1, StopID: "Z", CellID: "tie-id", DistanceMeters: 100},
-		{StopOrder: 1, StopID: "B", CellID: "tie-id", DistanceMeters: 100},
-	}
+func TestServiceRejectsInvalidRouteBeforeEstimators(t *testing.T) {
+	input := validRoute()
+	input.Stops[0].PathToNext = nil
+	demandEstimator := &fakeDemandEstimator{}
+	timeEstimator := &fakeTravelTimeEstimator{}
 
-	actual := assignCells(candidates, 800, LinearAccessibility{})
-	want := []AssignedCell{
-		{StopOrder: 0, StopID: "A", CellID: "tie-order", Accessibility: 0.5},
-		{StopOrder: 1, StopID: "B", CellID: "nearest", Accessibility: 0.75},
-		{StopOrder: 1, StopID: "B", CellID: "tie-id", Accessibility: 0.875},
-		{StopOrder: 2, StopID: "C", CellID: "only-c", Accessibility: 1},
-	}
-	if !reflect.DeepEqual(actual, want) {
-		t.Fatalf("assignCells() = %#v, want %#v", actual, want)
-	}
-}
-
-func TestServiceUsesAccessibilityCalculator(t *testing.T) {
-	repository := &fakeRepository{
-		candidates: []CellCandidate{
-			{StopOrder: 0, StopID: "A", CellID: "cell-a", DistanceMeters: 400},
-			{StopOrder: 1, StopID: "B", CellID: "cell-b", DistanceMeters: 0},
-		},
-	}
-	service := NewService(repository, 800, QuadraticAccessibility{})
-
-	if _, err := service.Simulate(
+	_, err := NewService(demandEstimator, timeEstimator).Simulate(
 		context.Background(),
-		routeWithStops("A", "B"),
-	); err != nil {
-		t.Fatalf("Simulate() error = %v", err)
+		input,
+	)
+	if err == nil {
+		t.Fatal("Simulate() error = nil")
 	}
-
-	want := []AssignedCell{
-		{StopOrder: 0, StopID: "A", CellID: "cell-a", Accessibility: 0.25},
-		{StopOrder: 1, StopID: "B", CellID: "cell-b", Accessibility: 1},
+	var validationError *ValidationError
+	if !errors.As(err, &validationError) {
+		t.Fatalf("error type = %T, want *ValidationError", err)
 	}
-	if !reflect.DeepEqual(repository.receivedCells, want) {
-		t.Fatalf(
-			"assigned cells = %#v, want %#v",
-			repository.receivedCells,
-			want,
-		)
+	if demandEstimator.calls != 0 || timeEstimator.calls != 0 {
+		t.Fatal("an estimator was called for invalid input")
 	}
 }
 
-func TestServiceSimulateRejectsInvalidRoute(t *testing.T) {
-	tests := []struct {
-		name  string
-		route Route
-		field string
-	}{
-		{name: "not enough stops", route: routeWithStops("A"), field: "route.stops"},
-		{name: "empty ID", route: routeWithStops("A", " "), field: "route.stops[1].id"},
-		{name: "duplicate ID", route: routeWithStops("A", "A"), field: "route.stops[1].id"},
-		{
-			name: "invalid latitude",
-			route: Route{Stops: []Stop{
-				{ID: "A", Position: Position{Latitude: 91}},
-				{ID: "B"},
-			}},
-			field: "route.stops[0].position.latitude",
-		},
-		{
-			name: "invalid longitude",
-			route: Route{Stops: []Stop{
-				{ID: "A", Position: Position{Longitude: -181}},
-				{ID: "B"},
-			}},
-			field: "route.stops[0].position.longitude",
-		},
-	}
+func TestServiceStopsWhenDemandFails(t *testing.T) {
+	want := errors.New("demand unavailable")
+	demandEstimator := &fakeDemandEstimator{err: want}
+	timeEstimator := &fakeTravelTimeEstimator{}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			repository := &fakeRepository{}
-			_, err := NewService(
-				repository,
-				800,
-				LinearAccessibility{},
-			).Simulate(context.Background(), test.route)
-			if err == nil {
-				t.Fatal("Simulate() error = nil, want validation error")
-			}
-			var validationError *ValidationError
-			if !errors.As(err, &validationError) {
-				t.Fatalf("error type = %T, want *ValidationError", err)
-			}
-			if validationError.Field != test.field {
-				t.Fatalf("field = %q, want %q", validationError.Field, test.field)
-			}
-			if repository.findCandidatesCalls != 0 {
-				t.Fatal("repository was called for an invalid route")
-			}
-		})
+	_, err := NewService(demandEstimator, timeEstimator).Simulate(
+		context.Background(),
+		validRoute(),
+	)
+	if !errors.Is(err, want) {
+		t.Fatalf("Simulate() error = %v, want wrapped error", err)
+	}
+	if timeEstimator.calls != 0 {
+		t.Fatal("travel-time estimator was called after demand failed")
 	}
 }
 
-func TestServiceSimulateWrapsRepositoryErrors(t *testing.T) {
-	repositoryError := errors.New("database unavailable")
-	repository := &fakeRepository{candidatesError: repositoryError}
-
+func TestServiceWrapsTravelTimeErrors(t *testing.T) {
+	want := errors.New("travel-time unavailable")
 	_, err := NewService(
-		repository,
-		800,
-		LinearAccessibility{},
-	).Simulate(context.Background(), routeWithStops("A", "B"))
-	if !errors.Is(err, repositoryError) {
-		t.Fatalf("Simulate() error = %v, want wrapped repository error", err)
+		&fakeDemandEstimator{},
+		&fakeTravelTimeEstimator{err: want},
+	).Simulate(context.Background(), validRoute())
+	if !errors.Is(err, want) {
+		t.Fatalf("Simulate() error = %v, want wrapped error", err)
 	}
 }
 
-type fakeRepository struct {
-	candidates          []CellCandidate
-	pairDemand          []StopPairDemand
-	candidatesError     error
-	pairDemandError     error
-	receivedRoute       Route
-	receivedRadius      float64
-	receivedCells       []AssignedCell
-	findCandidatesCalls int
+type fakeDemandEstimator struct {
+	result   demand.Result
+	err      error
+	received route.Route
+	calls    int
 }
 
-func (repository *fakeRepository) FindCellCandidates(
+func (estimator *fakeDemandEstimator) Estimate(
 	_ context.Context,
-	route Route,
-	radiusMeters float64,
-) ([]CellCandidate, error) {
-	repository.findCandidatesCalls++
-	repository.receivedRoute = route
-	repository.receivedRadius = radiusMeters
-	return repository.candidates, repository.candidatesError
+	input route.Route,
+) (demand.Result, error) {
+	estimator.calls++
+	estimator.received = input
+	return estimator.result, estimator.err
 }
 
-func (repository *fakeRepository) FindDemandByStopPair(
+type fakeTravelTimeEstimator struct {
+	result   traveltime.Result
+	err      error
+	received route.Route
+	calls    int
+}
+
+func (estimator *fakeTravelTimeEstimator) Estimate(
 	_ context.Context,
-	cells []AssignedCell,
-) ([]StopPairDemand, error) {
-	repository.receivedCells = append([]AssignedCell(nil), cells...)
-	return repository.pairDemand, repository.pairDemandError
+	input route.Route,
+) (traveltime.Result, error) {
+	estimator.calls++
+	estimator.received = input
+	return estimator.result, estimator.err
 }
 
-func routeWithStops(ids ...string) Route {
-	stops := make([]Stop, len(ids))
-	for index, id := range ids {
-		stops[index] = Stop{ID: id}
-	}
-	return Route{Stops: stops}
-}
-
-func assertFloat(t *testing.T, name string, actual, expected float64) {
-	t.Helper()
-	if math.Abs(actual-expected) > 1e-9 {
-		t.Fatalf("%s = %v, want %v", name, actual, expected)
-	}
+func validRoute() route.Route {
+	origin := route.Position{Latitude: -34.6000, Longitude: -58.3800}
+	destination := route.Position{Latitude: -34.6010, Longitude: -58.3810}
+	return route.Route{Stops: []route.Stop{
+		{
+			ID:       "A",
+			Position: origin,
+			PathToNext: &route.LineString{Positions: []route.Position{
+				origin,
+				destination,
+			}},
+		},
+		{ID: "B", Position: destination},
+	}}
 }

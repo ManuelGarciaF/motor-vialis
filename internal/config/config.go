@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
 )
 
 const (
@@ -38,7 +38,7 @@ const (
 type Config struct {
 	HTTPAddress                       string
 	DatabaseURL                       string
-	SimulationAccessibilityCalculator simulation.AccessibilityCalculator
+	SimulationAccessibilityCalculator demand.AccessibilityCalculator
 	ReadHeaderTimeout                 time.Duration
 	ReadTimeout                       time.Duration
 	WriteTimeout                      time.Duration
@@ -92,15 +92,15 @@ func FromEnv() (Config, error) {
 	return cfg, nil
 }
 
-func accessibilityCalculatorFromEnv() (simulation.AccessibilityCalculator, error) {
+func accessibilityCalculatorFromEnv() (demand.AccessibilityCalculator, error) {
 	method := strings.ToLower(strings.TrimSpace(
 		valueOrDefault("SIMULATION_ACCESSIBILITY_METHOD", defaultAccessibilityMethod),
 	))
 	switch method {
 	case linearAccessibilityMethod:
-		return simulation.LinearAccessibility{}, nil
+		return demand.LinearAccessibility{}, nil
 	case quadraticAccessibilityMethod:
-		return simulation.QuadraticAccessibility{}, nil
+		return demand.QuadraticAccessibility{}, nil
 	default:
 		return nil, fmt.Errorf(
 			"SIMULATION_ACCESSIBILITY_METHOD must be %q or %q: %q",

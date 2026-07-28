@@ -2,33 +2,35 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 )
 
-func TestSimulationRepositoryFindCellCandidates(t *testing.T) {
+func TestDemandRepositoryFindCellCandidates(t *testing.T) {
 	query := &fakeQuery{
 		rows: &fakeRows{values: [][]any{
 			{0, "A", "88c2e311b1fffff", 0.0},
 			{1, "B", "88c2e311b5fffff", 400.0},
 		}},
 	}
-	repository := newSimulationRepository(query.execute)
-	route := simulation.Route{Stops: []simulation.Stop{
-		{ID: "A", Position: simulation.Position{Latitude: -34.60, Longitude: -58.38}},
-		{ID: "B", Position: simulation.Position{Latitude: -34.61, Longitude: -58.39}},
+	repository := newDemandRepository(query.execute)
+	input := route.Route{Stops: []route.Stop{
+		{ID: "A", Position: route.Position{Latitude: -34.60, Longitude: -58.38}},
+		{ID: "B", Position: route.Position{Latitude: -34.61, Longitude: -58.39}},
 	}}
 
-	actual, err := repository.FindCellCandidates(context.Background(), route, 800)
+	actual, err := repository.FindCellCandidates(context.Background(), input, 800)
 	if err != nil {
 		t.Fatalf("FindCellCandidates() error = %v", err)
 	}
-	want := []simulation.CellCandidate{
+	want := []demand.CellCandidate{
 		{StopOrder: 0, StopID: "A", CellID: "88c2e311b1fffff", DistanceMeters: 0},
 		{StopOrder: 1, StopID: "B", CellID: "88c2e311b5fffff", DistanceMeters: 400},
 	}
@@ -52,7 +54,7 @@ func TestSimulationRepositoryFindCellCandidates(t *testing.T) {
 	}
 }
 
-func TestSimulationRepositoryFindDemandByStopPair(t *testing.T) {
+func TestDemandRepositoryFindDemandByStopPair(t *testing.T) {
 	query := &fakeQuery{
 		rows: &fakeRows{values: [][]any{
 			{0, "A", 1, "B", 100.0, 70.0},
@@ -60,8 +62,8 @@ func TestSimulationRepositoryFindDemandByStopPair(t *testing.T) {
 			{1, "B", 2, "C", 25.0, 18.0},
 		}},
 	}
-	repository := newSimulationRepository(query.execute)
-	cells := []simulation.AssignedCell{
+	repository := newDemandRepository(query.execute)
+	cells := []demand.AssignedCell{
 		{StopOrder: 0, StopID: "A", CellID: "cell-a", Accessibility: 0.9},
 		{StopOrder: 1, StopID: "B", CellID: "cell-b", Accessibility: 0.8},
 		{StopOrder: 2, StopID: "C", CellID: "cell-c", Accessibility: 0.7},
@@ -71,7 +73,7 @@ func TestSimulationRepositoryFindDemandByStopPair(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindDemandByStopPair() error = %v", err)
 	}
-	want := []simulation.StopPairDemand{
+	want := []demand.StopPairDemand{
 		{OriginStopOrder: 0, OriginStopID: "A", DestinationStopOrder: 1, DestinationStopID: "B", GrossDemand: 100, PotentialDemand: 70},
 		{OriginStopOrder: 0, OriginStopID: "A", DestinationStopOrder: 2, DestinationStopID: "C", GrossDemand: 50, PotentialDemand: 30},
 		{OriginStopOrder: 1, OriginStopID: "B", DestinationStopOrder: 2, DestinationStopID: "C", GrossDemand: 25, PotentialDemand: 18},
@@ -96,9 +98,9 @@ func TestSimulationRepositoryFindDemandByStopPair(t *testing.T) {
 	}
 }
 
-func TestSimulationRepositorySkipsDemandQueryWithoutAssignedCells(t *testing.T) {
+func TestDemandRepositorySkipsDemandQueryWithoutAssignedCells(t *testing.T) {
 	query := &fakeQuery{}
-	repository := newSimulationRepository(query.execute)
+	repository := newDemandRepository(query.execute)
 
 	actual, err := repository.FindDemandByStopPair(context.Background(), nil)
 	if err != nil {
@@ -112,11 +114,11 @@ func TestSimulationRepositorySkipsDemandQueryWithoutAssignedCells(t *testing.T) 
 	}
 }
 
-func TestSimulationRepositoryPropagatesQueryError(t *testing.T) {
+func TestDemandRepositoryPropagatesQueryError(t *testing.T) {
 	wantError := errors.New("query failed")
-	repository := newSimulationRepository((&fakeQuery{err: wantError}).execute)
+	repository := newDemandRepository((&fakeQuery{err: wantError}).execute)
 
-	_, err := repository.FindCellCandidates(context.Background(), simulation.Route{}, 800)
+	_, err := repository.FindCellCandidates(context.Background(), route.Route{}, 800)
 	if !errors.Is(err, wantError) {
 		t.Fatalf("FindCellCandidates() error = %v, want wrapped query error", err)
 	}
@@ -179,12 +181,26 @@ func assign(destination, value any) error {
 	switch target := destination.(type) {
 	case *int:
 		*target = value.(int)
+	case *int64:
+		*target = value.(int64)
 	case *string:
 		*target = value.(string)
 	case *float64:
 		*target = value.(float64)
-	case *simulation.CellID:
-		*target = simulation.CellID(value.(string))
+	case *demand.CellID:
+		*target = demand.CellID(value.(string))
+	case *sql.NullInt64:
+		if value == nil {
+			*target = sql.NullInt64{}
+		} else {
+			*target = sql.NullInt64{Int64: value.(int64), Valid: true}
+		}
+	case *sql.NullFloat64:
+		if value == nil {
+			*target = sql.NullFloat64{}
+		} else {
+			*target = sql.NullFloat64{Float64: value.(float64), Valid: true}
+		}
 	default:
 		return fmt.Errorf("unsupported destination %T", destination)
 	}

@@ -1,4 +1,4 @@
-package simulation
+package demand
 
 // AccessibilityCalculator converts the distance to a cell into a coefficient
 // between zero and one.

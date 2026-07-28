@@ -90,8 +90,42 @@ CREATE TABLE vialis.recorridos_paradas (
     tramo_hasta_siguiente              GEOMETRY(LineString, 4326),
     distancia_hasta_siguiente_metros   INTEGER
         CHECK (distancia_hasta_siguiente_metros >= 0),
+    tiempo_valle_hasta_siguiente_segundos INTEGER
+        CONSTRAINT recorridos_paradas_tiempo_valle_positivo
+        CHECK (tiempo_valle_hasta_siguiente_segundos > 0),
+    tiempo_tipico_hasta_siguiente_segundos INTEGER
+        CONSTRAINT recorridos_paradas_tiempo_tipico_positivo
+        CHECK (tiempo_tipico_hasta_siguiente_segundos > 0),
+    tiempo_pico_hasta_siguiente_segundos INTEGER
+        CONSTRAINT recorridos_paradas_tiempo_pico_positivo
+        CHECK (tiempo_pico_hasta_siguiente_segundos > 0),
+    cantidad_muestras_tiempo           INTEGER NOT NULL DEFAULT 0
+        CHECK (cantidad_muestras_tiempo >= 0),
+    CONSTRAINT recorridos_paradas_muestras_tiempo_validas CHECK (
+        (
+            tiempo_valle_hasta_siguiente_segundos IS NULL
+            AND tiempo_tipico_hasta_siguiente_segundos IS NULL
+            AND tiempo_pico_hasta_siguiente_segundos IS NULL
+            AND cantidad_muestras_tiempo = 0
+        )
+        OR (
+            tiempo_valle_hasta_siguiente_segundos IS NOT NULL
+            AND tiempo_tipico_hasta_siguiente_segundos IS NOT NULL
+            AND tiempo_pico_hasta_siguiente_segundos IS NOT NULL
+            AND tiempo_valle_hasta_siguiente_segundos
+                <= tiempo_tipico_hasta_siguiente_segundos
+            AND tiempo_tipico_hasta_siguiente_segundos
+                <= tiempo_pico_hasta_siguiente_segundos
+            AND cantidad_muestras_tiempo > 0
+        )
+    ),
     PRIMARY KEY (id_recorrido, nro_parada)
 );
 
 CREATE INDEX idx_recorridos_paradas_id_parada
 ON vialis.recorridos_paradas (id_parada);
+
+CREATE INDEX idx_recorridos_paradas_tramo_geography
+ON vialis.recorridos_paradas
+USING GIST ((tramo_hasta_siguiente::geography))
+WHERE tramo_hasta_siguiente IS NOT NULL;

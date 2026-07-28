@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
 )
 
 func TestFromEnvBuildsDefaultLocalDatabaseURL(t *testing.T) {
@@ -17,7 +17,7 @@ func TestFromEnvBuildsDefaultLocalDatabaseURL(t *testing.T) {
 	if cfg.DatabaseURL != want {
 		t.Fatalf("DatabaseURL = %q, want %q", cfg.DatabaseURL, want)
 	}
-	if _, ok := cfg.SimulationAccessibilityCalculator.(simulation.LinearAccessibility); !ok {
+	if _, ok := cfg.SimulationAccessibilityCalculator.(demand.LinearAccessibility); !ok {
 		t.Fatalf(
 			"SimulationAccessibility type = %T, want LinearAccessibility",
 			cfg.SimulationAccessibilityCalculator,
@@ -33,7 +33,7 @@ func TestFromEnvLoadsAccessibilityMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromEnv() error = %v", err)
 	}
-	if _, ok := cfg.SimulationAccessibilityCalculator.(simulation.QuadraticAccessibility); !ok {
+	if _, ok := cfg.SimulationAccessibilityCalculator.(demand.QuadraticAccessibility); !ok {
 		t.Fatalf(
 			"SimulationAccessibility type = %T, want QuadraticAccessibility",
 			cfg.SimulationAccessibilityCalculator,

@@ -57,7 +57,25 @@ END
 $$;
 
 -- Las horas GTFS se conservan como texto en raw porque pueden superar 24:00:00.
--- Aquí se transforman a segundos únicamente para calcular duraciones.
+-- Aquí se transforman a segundos para calcular duraciones totales y por tramo.
+CREATE TEMP TABLE gtfs_stop_times_seconds ON COMMIT DROP AS
+SELECT
+    trip_id,
+    stop_id,
+    stop_sequence,
+    split_part(arrival_time, ':', 1)::INTEGER * 3600
+        + split_part(arrival_time, ':', 2)::INTEGER * 60
+        + split_part(arrival_time, ':', 3)::INTEGER
+        AS arrival_seconds,
+    split_part(departure_time, ':', 1)::INTEGER * 3600
+        + split_part(departure_time, ':', 2)::INTEGER * 60
+        + split_part(departure_time, ':', 3)::INTEGER
+        AS departure_seconds
+FROM vialis.gtfs_stop_times_raw;
+
+CREATE INDEX idx_gtfs_stop_times_seconds_trip_sequence
+ON gtfs_stop_times_seconds (trip_id, stop_sequence);
+
 CREATE TEMP TABLE gtfs_trip_stats ON COMMIT DROP AS
 SELECT
     t.route_id,
@@ -66,21 +84,13 @@ SELECT
     t.trip_id,
     t.trip_headsign,
     COUNT(*)::INTEGER AS cantidad_paradas,
+    ARRAY_AGG(st.stop_id ORDER BY st.stop_sequence) AS stop_ids,
     GREATEST(
-        MAX(
-            split_part(st.arrival_time, ':', 1)::INTEGER * 3600
-            + split_part(st.arrival_time, ':', 2)::INTEGER * 60
-            + split_part(st.arrival_time, ':', 3)::INTEGER
-        )
-        - MIN(
-            split_part(st.departure_time, ':', 1)::INTEGER * 3600
-            + split_part(st.departure_time, ':', 2)::INTEGER * 60
-            + split_part(st.departure_time, ':', 3)::INTEGER
-        ),
+        MAX(st.arrival_seconds) - MIN(st.departure_seconds),
         0
     )::INTEGER AS duracion_segundos
 FROM vialis.gtfs_trips_raw t
-JOIN vialis.gtfs_stop_times_raw st
+JOIN gtfs_stop_times_seconds st
     ON st.trip_id = t.trip_id
 GROUP BY
     t.route_id,
@@ -100,7 +110,8 @@ SELECT
     direction_id,
     shape_id,
     trip_id,
-    trip_headsign
+    trip_headsign,
+    stop_ids
 FROM (
     SELECT
         ts.*,
@@ -128,6 +139,73 @@ SELECT
     )::SMALLINT AS tiempo_total_minutos
 FROM gtfs_trip_stats
 GROUP BY route_id, direction_id;
+
+-- Para los tiempos por tramo solo se usan viajes con exactamente la misma
+-- secuencia ordenada de paradas que el viaje canónico. El intervalo termina en
+-- la salida de la próxima parada para incluir detenciones intermedias; en el
+-- último tramo termina en la llegada final.
+CREATE TEMP TABLE gtfs_route_segment_times ON COMMIT DROP AS
+WITH eligible_trip_stops AS (
+    SELECT
+        stats.route_id,
+        stats.direction_id,
+        stats.trip_id,
+        ROW_NUMBER() OVER (
+            PARTITION BY stats.trip_id
+            ORDER BY stop_time.stop_sequence
+        )::INTEGER AS stop_ordinal,
+        COUNT(*) OVER (
+            PARTITION BY stats.trip_id
+        )::INTEGER AS stop_count,
+        stop_time.departure_seconds,
+        LEAD(stop_time.arrival_seconds) OVER (
+            PARTITION BY stats.trip_id
+            ORDER BY stop_time.stop_sequence
+        ) AS next_arrival_seconds,
+        LEAD(stop_time.departure_seconds) OVER (
+            PARTITION BY stats.trip_id
+            ORDER BY stop_time.stop_sequence
+        ) AS next_departure_seconds
+    FROM gtfs_trip_stats stats
+    JOIN gtfs_canonical_trips canonical
+        ON canonical.route_id = stats.route_id
+        AND canonical.direction_id = stats.direction_id
+        AND canonical.stop_ids = stats.stop_ids
+    JOIN gtfs_stop_times_seconds stop_time
+        ON stop_time.trip_id = stats.trip_id
+), segment_samples AS (
+    SELECT
+        route_id,
+        direction_id,
+        stop_ordinal,
+        CASE
+            WHEN stop_ordinal = stop_count - 1
+            THEN next_arrival_seconds
+            ELSE next_departure_seconds
+        END - departure_seconds AS duration_seconds
+    FROM eligible_trip_stops
+    WHERE next_arrival_seconds IS NOT NULL
+)
+SELECT
+    route_id,
+    direction_id,
+    stop_ordinal,
+    ROUND(
+        percentile_cont(0.25) WITHIN GROUP (ORDER BY duration_seconds)
+    )::INTEGER AS tiempo_valle_segundos,
+    ROUND(
+        percentile_cont(0.50) WITHIN GROUP (ORDER BY duration_seconds)
+    )::INTEGER AS tiempo_tipico_segundos,
+    ROUND(
+        percentile_cont(0.75) WITHIN GROUP (ORDER BY duration_seconds)
+    )::INTEGER AS tiempo_pico_segundos,
+    COUNT(*)::INTEGER AS cantidad_muestras
+FROM segment_samples
+WHERE duration_seconds > 0
+GROUP BY route_id, direction_id, stop_ordinal;
+
+CREATE UNIQUE INDEX idx_gtfs_route_segment_times_route_direction_stop
+ON gtfs_route_segment_times (route_id, direction_id, stop_ordinal);
 
 CREATE TEMP TABLE gtfs_shape_geometries ON COMMIT DROP AS
 SELECT
@@ -224,8 +302,14 @@ JOIN vialis.gtfs_stops_raw s
 WITH stop_fractions AS (
     SELECT
         recorrido.id_recorrido,
+        ct.route_id,
+        ct.direction_id,
         parada.id_parada,
         st.stop_sequence AS nro_parada,
+        ROW_NUMBER() OVER (
+            PARTITION BY recorrido.id_recorrido
+            ORDER BY st.stop_sequence
+        )::INTEGER AS stop_ordinal,
         recorrido.geom,
         CASE
             WHEN sg.max_shape_dist_traveled > 0
@@ -252,8 +336,11 @@ WITH stop_fractions AS (
 ), ordered_stops AS (
     SELECT
         id_recorrido,
+        route_id,
+        direction_id,
         id_parada,
         nro_parada,
+        stop_ordinal,
         geom,
         fraccion,
         LEAD(fraccion) OVER (
@@ -264,8 +351,11 @@ WITH stop_fractions AS (
 ), stop_segments AS (
     SELECT
         id_recorrido,
+        route_id,
+        direction_id,
         id_parada,
         nro_parada,
+        stop_ordinal,
         CASE
             WHEN fraccion_siguiente > fraccion
             THEN ST_LineSubstring(geom, fraccion, fraccion_siguiente)
@@ -278,18 +368,32 @@ INSERT INTO vialis.recorridos_paradas (
     id_parada,
     nro_parada,
     tramo_hasta_siguiente,
-    distancia_hasta_siguiente_metros
+    distancia_hasta_siguiente_metros,
+    tiempo_valle_hasta_siguiente_segundos,
+    tiempo_tipico_hasta_siguiente_segundos,
+    tiempo_pico_hasta_siguiente_segundos,
+    cantidad_muestras_tiempo
 )
 SELECT
-    id_recorrido,
-    id_parada,
-    nro_parada,
-    tramo_hasta_siguiente,
+    segment.id_recorrido,
+    segment.id_parada,
+    segment.nro_parada,
+    segment.tramo_hasta_siguiente,
     CASE
-        WHEN tramo_hasta_siguiente IS NOT NULL
-        THEN ROUND(ST_Length(tramo_hasta_siguiente::geography))::INTEGER
-    END
-FROM stop_segments;
+        WHEN segment.tramo_hasta_siguiente IS NOT NULL
+        THEN ROUND(
+            ST_Length(segment.tramo_hasta_siguiente::geography)
+        )::INTEGER
+    END,
+    times.tiempo_valle_segundos,
+    times.tiempo_tipico_segundos,
+    times.tiempo_pico_segundos,
+    COALESCE(times.cantidad_muestras, 0)
+FROM stop_segments segment
+LEFT JOIN gtfs_route_segment_times times
+    ON times.route_id = segment.route_id
+    AND times.direction_id = segment.direction_id
+    AND times.stop_ordinal = segment.stop_ordinal;
 
 COMMIT;
 
