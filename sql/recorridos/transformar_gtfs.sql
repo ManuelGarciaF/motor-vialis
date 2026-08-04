@@ -211,16 +211,14 @@ CREATE TEMP TABLE gtfs_shape_geometries ON COMMIT DROP AS
 SELECT
     shape_id,
     geom::GEOMETRY(LineString, 4326) AS geom,
-    ROUND(ST_Length(geom::geography))::INTEGER AS distancia_metros,
-    max_shape_dist_traveled
+    ROUND(ST_Length(geom::geography))::INTEGER AS distancia_metros
 FROM (
     SELECT
         shape_id,
         ST_MakeLine(
             ST_SetSRID(ST_MakePoint(shape_pt_lon, shape_pt_lat), 4326)
             ORDER BY shape_pt_sequence
-        ) AS geom,
-        MAX(shape_dist_traveled) AS max_shape_dist_traveled
+        ) AS geom
     FROM vialis.gtfs_shapes_raw
     GROUP BY shape_id
 ) shapes;
@@ -311,18 +309,7 @@ WITH stop_fractions AS (
             ORDER BY st.stop_sequence
         )::INTEGER AS stop_ordinal,
         recorrido.geom,
-        CASE
-            WHEN sg.max_shape_dist_traveled > 0
-                AND st.shape_dist_traveled IS NOT NULL
-            THEN LEAST(
-                1.0,
-                GREATEST(
-                    0.0,
-                    st.shape_dist_traveled / sg.max_shape_dist_traveled
-                )
-            )
-            ELSE ST_LineLocatePoint(recorrido.geom, parada.posicion)
-        END AS fraccion
+        ST_LineLocatePoint(recorrido.geom, parada.posicion) AS fraccion
     FROM gtfs_canonical_trips ct
     JOIN vialis.recorridos recorrido
         ON recorrido.gtfs_route_id = ct.route_id
