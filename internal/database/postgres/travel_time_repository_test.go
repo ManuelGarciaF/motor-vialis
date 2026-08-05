@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/config"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
@@ -31,7 +32,7 @@ func TestTravelTimeRepositoryFindSegmentReferences(t *testing.T) {
 		{Latitude: -34.60, Longitude: -58.38},
 		{Latitude: -34.61, Longitude: -58.39},
 	}}
-	policy := traveltime.DefaultPolicy()
+	policy := config.DefaultTravelTimePolicy()
 
 	actual, err := repository.FindSegmentReferences(
 		context.Background(),
@@ -97,7 +98,7 @@ func TestTravelTimeRepositoryKeepsSegmentWithoutReferences(t *testing.T) {
 				{Latitude: 0.01},
 			}},
 		}},
-		traveltime.DefaultPolicy(),
+		config.DefaultTravelTimePolicy(),
 	)
 	if err != nil {
 		t.Fatalf("FindSegmentReferences() error = %v", err)
@@ -113,7 +114,7 @@ func TestTravelTimeRepositoryFindGlobalPaces(t *testing.T) {
 	}}}
 	actual, err := newTravelTimeRepository(query.execute).FindGlobalPaces(
 		context.Background(),
-		traveltime.DefaultPolicy(),
+		config.DefaultTravelTimePolicy(),
 	)
 	if err != nil {
 		t.Fatalf("FindGlobalPaces() error = %v", err)
@@ -139,7 +140,7 @@ func TestTravelTimeRepositoryReturnsEmptyGlobalPaces(t *testing.T) {
 	}}}
 	actual, err := newTravelTimeRepository(query.execute).FindGlobalPaces(
 		context.Background(),
-		traveltime.DefaultPolicy(),
+		config.DefaultTravelTimePolicy(),
 	)
 	if err != nil {
 		t.Fatalf("FindGlobalPaces() error = %v", err)
@@ -155,7 +156,7 @@ func TestTravelTimeRepositoryWrapsQueryErrors(t *testing.T) {
 	_, err := repository.FindSegmentReferences(
 		context.Background(),
 		nil,
-		traveltime.DefaultPolicy(),
+		config.DefaultTravelTimePolicy(),
 	)
 	if !errors.Is(err, want) {
 		t.Fatalf("FindSegmentReferences() error = %v, want wrapped error", err)

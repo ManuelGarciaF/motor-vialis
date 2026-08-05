@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
@@ -23,6 +24,19 @@ func TestFromEnvBuildsDefaultLocalDatabaseURL(t *testing.T) {
 			cfg.SimulationAccessibilityCalculator,
 		)
 	}
+	if !reflect.DeepEqual(
+		cfg.SimulationTravelTimePolicy,
+		DefaultTravelTimePolicy(),
+	) {
+		t.Fatalf(
+			"SimulationTravelTimePolicy = %#v, want default %#v",
+			cfg.SimulationTravelTimePolicy,
+			DefaultTravelTimePolicy(),
+		)
+	}
+	if cfg.SimulationRevenueCaptureFactor != 1 || cfg.SimulationRegisteredCardShare != 1 {
+		t.Fatalf("revenue defaults = %v, %v; want 1, 1", cfg.SimulationRevenueCaptureFactor, cfg.SimulationRegisteredCardShare)
+	}
 }
 
 func TestFromEnvLoadsAccessibilityMethod(t *testing.T) {
@@ -38,6 +52,32 @@ func TestFromEnvLoadsAccessibilityMethod(t *testing.T) {
 			"SimulationAccessibility type = %T, want QuadraticAccessibility",
 			cfg.SimulationAccessibilityCalculator,
 		)
+	}
+}
+
+func TestFromEnvLoadsRevenueAssumptions(t *testing.T) {
+	clearDatabaseEnv(t)
+	t.Setenv("SIMULATION_REVENUE_CAPTURE_FACTOR", "0.65")
+	t.Setenv("SIMULATION_REGISTERED_CARD_SHARE", "0.8")
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if cfg.SimulationRevenueCaptureFactor != 0.65 || cfg.SimulationRegisteredCardShare != 0.8 {
+		t.Fatalf("revenue assumptions = %#v", cfg)
+	}
+}
+
+func TestFromEnvRejectsInvalidRevenueAssumptions(t *testing.T) {
+	clearDatabaseEnv(t)
+	t.Setenv("SIMULATION_REVENUE_CAPTURE_FACTOR", "1.1")
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("FromEnv() error = nil")
+	}
+	clearDatabaseEnv(t)
+	t.Setenv("SIMULATION_REGISTERED_CARD_SHARE", "invalid")
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("FromEnv() error = nil")
 	}
 }
 
@@ -102,6 +142,8 @@ func clearDatabaseEnv(t *testing.T) {
 		"DATABASE_USER",
 		"DATABASE_PASSWORD",
 		"SIMULATION_ACCESSIBILITY_METHOD",
+		"SIMULATION_REVENUE_CAPTURE_FACTOR",
+		"SIMULATION_REGISTERED_CARD_SHARE",
 	} {
 		t.Setenv(name, "")
 	}

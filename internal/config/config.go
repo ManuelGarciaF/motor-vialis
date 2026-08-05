@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
 
 const (
@@ -29,6 +30,9 @@ const (
 	defaultWriteTimeout      = 30 * time.Second
 	defaultIdleTimeout       = 60 * time.Second
 
+	defaultSimulationRevenueCaptureFactor = 1.0
+	defaultSimulationRegisteredCardShare  = 1.0
+
 	// SimulationAccessRadiusMeters is the maximum walking distance between a
 	// stop and a cell's point of maximum concurrence.
 	SimulationAccessRadiusMeters = 800.0
@@ -39,6 +43,9 @@ type Config struct {
 	HTTPAddress                       string
 	DatabaseURL                       string
 	SimulationAccessibilityCalculator demand.AccessibilityCalculator
+	SimulationTravelTimePolicy        traveltime.Policy
+	SimulationRevenueCaptureFactor    float64
+	SimulationRegisteredCardShare     float64
 	ReadHeaderTimeout                 time.Duration
 	ReadTimeout                       time.Duration
 	WriteTimeout                      time.Duration
@@ -55,11 +62,28 @@ func FromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	captureFactor, err := proportionFromEnv(
+		"SIMULATION_REVENUE_CAPTURE_FACTOR",
+		defaultSimulationRevenueCaptureFactor,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	registeredCardShare, err := proportionFromEnv(
+		"SIMULATION_REGISTERED_CARD_SHARE",
+		defaultSimulationRegisteredCardShare,
+	)
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		HTTPAddress:                       valueOrDefault("HTTP_ADDRESS", defaultHTTPAddress),
 		DatabaseURL:                       databaseURL,
 		SimulationAccessibilityCalculator: accessibilityCalculator,
+		SimulationTravelTimePolicy:        DefaultTravelTimePolicy(),
+		SimulationRevenueCaptureFactor:    captureFactor,
+		SimulationRegisteredCardShare:     registeredCardShare,
 		ReadHeaderTimeout:                 defaultReadHeaderTimeout,
 		ReadTimeout:                       defaultReadTimeout,
 		WriteTimeout:                      defaultWriteTimeout,
@@ -109,6 +133,18 @@ func accessibilityCalculatorFromEnv() (demand.AccessibilityCalculator, error) {
 			method,
 		)
 	}
+}
+
+func proportionFromEnv(name string, defaultValue float64) (float64, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return defaultValue, nil
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil || parsed < 0 || parsed > 1 {
+		return 0, fmt.Errorf("%s must be a number between 0 and 1: %q", name, value)
+	}
+	return parsed, nil
 }
 
 func databaseURLFromEnv() (string, error) {

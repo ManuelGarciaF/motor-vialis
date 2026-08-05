@@ -15,6 +15,7 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/database/postgres"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/revenue"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
@@ -67,13 +68,22 @@ func main() {
 	)
 	travelTimeEstimator := traveltime.NewService(
 		postgres.NewTravelTimeRepository(database),
-		traveltime.DefaultPolicy(),
+		cfg.SimulationTravelTimePolicy,
 	)
-	service := simulation.NewService(demandEstimator, travelTimeEstimator)
+	revenueEstimator := revenue.NewService(
+		postgres.NewRevenueRepository(database),
+		revenue.Policy{
+			CaptureFactor:       cfg.SimulationRevenueCaptureFactor,
+			RegisteredCardShare: cfg.SimulationRegisteredCardShare,
+		},
+	)
+	service := simulation.NewService(demandEstimator, travelTimeEstimator, revenueEstimator)
 	result, err := service.Simulate(ctx, input)
 	if err != nil {
 		log.Fatalf("simulate route: %v", err)
 	}
+	result.Demand.ByStopPair = nil
+	result.Metrics.TravelTime.BySegment = nil
 
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")

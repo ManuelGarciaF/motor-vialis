@@ -24,6 +24,11 @@ La estrategia de accesibilidad se selecciona con
 - `linear` (predeterminado): `1 - distancia / radio`.
 - `quadratic`: `(1 - distancia / radio)²`, penaliza más las celdas alejadas.
 
+La recaudación potencial usa estas dos proporciones, ambas entre `0` y `1`:
+
+- `SIMULATION_REVENUE_CAPTURE_FACTOR` (predeterminado `1`): proporción de la demanda potencial que se capta.
+- `SIMULATION_REGISTERED_CARD_SHARE` (predeterminado `1`): proporción de viajes con tarjeta registrada.
+
 ## Ejecutar
 
 ```bash
@@ -48,14 +53,21 @@ parada, salvo la última, contiene un `pathToNext` GeoJSON con el recorrido exac
 hasta la siguiente:
 
 ```bash
-go run ./cmd/simulation-test -route-file ./examples/simulation_route.json
+go run ./cmd/simulation-test -route-file ./examples/linea-132.json
 ```
+
+La entrada también debe incluir `jurisdiction` con uno de `caba`, `province` o
+`national`; selecciona el cuadro tarifario almacenado en
+`vialis.tarifas_colectivo`. El archivo
+`sql/tarifas/insertar_tarifas_vigentes.sql` carga el cuadro inicial.
 
 GeoJSON expresa cada coordenada como `[longitud, latitud]`. El primer punto del
 `LineString` debe coincidir con la parada actual y el último con la siguiente,
 con una tolerancia de 20 metros. La última parada no lleva `pathToNext`.
 
-El resultado separa `demand` de `metrics`. La distancia se mide sobre cada
+El resultado separa `demand`, `revenue` y `metrics`. La recaudación se calcula
+por cada par de paradas a partir de su distancia acumulada, la banda tarifaria,
+el factor de captación y la mezcla de tarjetas. La distancia se mide sobre cada
 `LineString` con PostGIS. El tiempo devuelve escenarios `offPeak`, `typical` y
 `peak`, estimados con los percentiles 25, 50 y 75 de tramos GTFS cercanos y de
 dirección compatible. Si no hay referencias locales, se utiliza la mediana
