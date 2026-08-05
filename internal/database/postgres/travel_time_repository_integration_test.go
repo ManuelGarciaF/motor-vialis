@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/config"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 	"github.com/jackc/pgx/v5"
@@ -78,7 +79,7 @@ func TestTravelTimeRepositoryIntegration(t *testing.T) {
 			DestinationStopID: "B",
 			Path:              inputPath,
 		}},
-		traveltime.DefaultPolicy(),
+		config.DefaultTravelTimePolicy(),
 	)
 	if err != nil {
 		t.Fatalf("FindSegmentReferences() error = %v", err)
@@ -108,7 +109,7 @@ func TestTravelTimeRepositoryIntegration(t *testing.T) {
 		}
 	}
 
-	global, err := repository.FindGlobalPaces(ctx, traveltime.DefaultPolicy())
+	global, err := repository.FindGlobalPaces(ctx, config.DefaultTravelTimePolicy())
 	if err != nil {
 		t.Fatalf("FindGlobalPaces() error = %v", err)
 	}

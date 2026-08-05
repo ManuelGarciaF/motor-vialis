@@ -23,6 +23,14 @@ func (err *ValidationError) Error() string {
 
 // Validate checks the complete route contract used by every estimator.
 func Validate(input Route) error {
+	if input.Jurisdiction != JurisdictionCABA &&
+		input.Jurisdiction != JurisdictionProvince &&
+		input.Jurisdiction != JurisdictionNational {
+		return &ValidationError{
+			Field:   "route.jurisdiction",
+			Message: "must be caba, province, or national",
+		}
+	}
 	if len(input.Stops) < 2 {
 		return &ValidationError{
 			Field:   "route.stops",

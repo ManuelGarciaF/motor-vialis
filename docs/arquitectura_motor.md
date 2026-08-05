@@ -2,7 +2,7 @@
 
 **Alcance:** visión funcional y conceptual del motor completo  
 **Estado documentado:** funcionamiento implementado actualmente  
-**Última actualización:** 27 de julio de 2026
+**Última actualización:** 5 de agosto de 2026
 
 ## Contenido
 
@@ -15,28 +15,32 @@
 7. [Cálculo de distancia](#7-cálculo-de-distancia)
 8. [Estimación del tiempo de viaje](#8-estimación-del-tiempo-de-viaje)
 9. [Fuentes y confianza](#9-fuentes-y-confianza)
-10. [Resultado de la simulación](#10-resultado-de-la-simulación)
-11. [Ejemplo conceptual](#11-ejemplo-conceptual)
-12. [Preparación y actualización de datos](#12-preparación-y-actualización-de-datos)
-13. [Decisiones funcionales](#13-decisiones-funcionales)
-14. [Alcance actual y limitaciones](#14-alcance-actual-y-limitaciones)
-15. [Evolución prevista](#15-evolución-prevista)
-16. [Glosario](#16-glosario)
-17. [Conclusión](#17-conclusión)
+10. [Cálculo de recaudación potencial](#10-cálculo-de-recaudación-potencial)
+11. [Resultado de la simulación](#11-resultado-de-la-simulación)
+12. [Ejemplo conceptual](#12-ejemplo-conceptual)
+13. [Preparación y actualización de datos](#13-preparación-y-actualización-de-datos)
+14. [Decisiones funcionales](#14-decisiones-funcionales)
+15. [Alcance actual y limitaciones](#15-alcance-actual-y-limitaciones)
+16. [Evolución prevista](#16-evolución-prevista)
+17. [Glosario](#17-glosario)
+18. [Conclusión](#18-conclusión)
 
 ## 1. Objetivo del motor
 
 Vialis Motor permite evaluar una línea de transporte propuesta antes de su
 implementación.
 
-La entrada es una ruta ordenada, formada por paradas y por el recorrido exacto
-entre ellas. A partir de esa información, el motor estima:
+La entrada es una ruta ordenada, formada por paradas, el recorrido exacto
+entre ellas y la jurisdicción tarifaria aplicable. A partir de esa
+información, el motor estima:
 
 - Cuántos viajes existentes podrían ser atendidos por la nueva línea.
 - Qué proporción de esa demanda resulta realmente accesible desde sus paradas.
 - Cuántos kilómetros recorre la línea.
 - Cuánto podría demorar el viaje.
 - Qué tan confiable es la estimación del tiempo en cada zona.
+- Qué recaudación potencial podría generar esa demanda, según el cuadro
+  tarifario de la jurisdicción y los supuestos de captación configurados.
 
 El motor no genera automáticamente el recorrido ni decide dónde deben ubicarse
 las paradas. Evalúa una propuesta ya definida.
@@ -47,6 +51,7 @@ estimaciones comparativas construidas con:
 - Movilidad observada y expandida estadísticamente.
 - Oferta programada de transporte público existente.
 - Geometría de la ruta propuesta.
+- Cuadro tarifario vigente de la jurisdicción declarada.
 
 La finalidad principal es apoyar análisis de viabilidad y comparación de
 escenarios.
@@ -62,13 +67,15 @@ Para una ruta propuesta, el motor puede responder:
 5. ¿Cuánto demoraría el recorrido en un escenario rápido, típico o lento?
 6. ¿Qué tramos tienen referencias locales sólidas?
 7. ¿En qué tramos fue necesario recurrir a un promedio general?
+8. ¿Qué recaudación potencial generaría, según la jurisdicción y los
+   supuestos de captación y mezcla de pago configurados?
 
 ### 1.2. Qué todavía no responde
 
 En el estado actual no calcula:
 
-- Recaudación diaria.
-- Tarifa en función de la distancia.
+- Captación real (cuántos de los pasajeros accesibles elegirían efectivamente
+  la línea, más allá del supuesto fijo de captación).
 - Costos operativos.
 - Cantidad necesaria de vehículos.
 - Frecuencia óptima.
@@ -79,14 +86,15 @@ Estas capacidades pueden incorporarse sobre las métricas existentes.
 
 ## 2. Qué información utiliza
 
-El motor combina tres grupos de información.
+El motor combina cuatro grupos de información.
 
 ```mermaid
 flowchart LR
     MOV["Movilidad existente<br/>viajes y expansión"] --> MOTOR["Vialis Motor"]
     GTFS["Transporte existente<br/>recorridos y horarios GTFS"] --> MOTOR
-    ROUTE["Propuesta nueva<br/>paradas y recorrido exacto"] --> MOTOR
-    MOTOR --> RESULT["Demanda, distancia,<br/>tiempo y confianza"]
+    TARIFAS["Cuadro tarifario<br/>por jurisdicción"] --> MOTOR
+    ROUTE["Propuesta nueva<br/>paradas, jurisdicción<br/>y recorrido exacto"] --> MOTOR
+    MOTOR --> RESULT["Demanda, distancia,<br/>tiempo, recaudación<br/>y confianza"]
 ```
 
 ### 2.1. Viajes de transporte público
@@ -163,6 +171,7 @@ tráfico real.
 
 La propuesta contiene:
 
+- Jurisdicción tarifaria.
 - Paradas ordenadas.
 - Identificador de cada parada.
 - Posición de cada parada.
@@ -171,23 +180,37 @@ La propuesta contiene:
 La ruta representa un solo sentido de circulación. Una eventual vuelta debe
 simularse como otra ruta ordenada.
 
+### 2.6. Cuadro tarifario
+
+El cuadro tarifario define, para cada jurisdicción, bandas de distancia con
+una tarifa para tarjeta registrada y una tarifa sin registrar
+(`vialis.tarifas_colectivo`). Es la referencia que el motor usa para traducir
+demanda potencial en recaudación potencial (sección 10).
+
+Igual que GTFS y la movilidad, es información preparada de antemano: la
+simulación no define tarifas, las consulta.
+
 ## 3. Flujo general de una simulación
 
 ```mermaid
 flowchart TD
-    INPUT["1. Recibir ruta propuesta"] --> VALIDATE["2. Validar paradas<br/>y geometrías"]
+    INPUT["1. Recibir ruta propuesta"] --> VALIDATE["2. Validar paradas,<br/>geometrías y jurisdicción"]
     VALIDATE --> DEMAND["3. Estimar demanda"]
     VALIDATE --> DISTANCE["4. Medir distancia"]
     DISTANCE --> TIME["5. Estimar tiempo<br/>por tramo"]
-    DEMAND --> MERGE["6. Integrar resultados"]
+    DEMAND --> REVENUE["6. Estimar recaudación<br/>potencial"]
+    TIME --> REVENUE
+    DEMAND --> MERGE["7. Integrar resultados"]
     TIME --> MERGE
-    MERGE --> OUTPUT["7. Entregar totales<br/>y detalle"]
+    REVENUE --> MERGE
+    MERGE --> OUTPUT["8. Entregar totales<br/>y detalle"]
 ```
 
 ### 3.1. Recepción
 
 El motor recibe la ruta completa. No alcanza con una lista de coordenadas de
-paradas: también debe conocer el camino real entre cada par consecutivo.
+paradas: también debe conocer el camino real entre cada par consecutivo y la
+jurisdicción tarifaria aplicable.
 
 ### 3.2. Validación
 
@@ -213,14 +236,33 @@ Cada tramo busca recorridos de transporte existentes que:
 
 Esas referencias se usan para estimar tres escenarios.
 
-### 3.6. Integración
+### 3.6. Recaudación
 
-El resultado agrupa demanda y métricas operativas. Si la ruta es inválida o se
-produce un error de datos, no se entrega un resultado parcial.
+Para cada par de paradas con demanda potencial se busca la banda tarifaria de
+la jurisdicción declarada según la distancia acumulada de ese par, y se
+aplican los supuestos de captación y mezcla de pago configurados.
+
+### 3.7. Integración
+
+El resultado agrupa demanda, recaudación y métricas operativas. Si la ruta es
+inválida o se produce un error de datos, no se entrega un resultado parcial.
 
 ## 4. Definición de la ruta a simular
 
-### 4.1. Paradas ordenadas
+### 4.1. Jurisdicción
+
+Cada ruta declara una jurisdicción tarifaria junto con las paradas: `caba`,
+`province` o `national`. Determina qué cuadro tarifario se usa para calcular
+la recaudación potencial (sección 10). No se infiere de las coordenadas.
+
+```json
+{
+  "jurisdiction": "caba",
+  "stops": []
+}
+```
+
+### 4.2. Paradas ordenadas
 
 El orden de las paradas tiene significado operativo.
 
@@ -243,7 +285,7 @@ C → D
 
 No considera automáticamente viajes en sentido contrario.
 
-### 4.2. Recorrido hacia la siguiente parada
+### 4.3. Recorrido hacia la siguiente parada
 
 Cada parada, salvo la última, contiene un recorrido `PathToNext`.
 
@@ -265,7 +307,7 @@ Esta representación permite:
 - Identificar origen y destino del tramo.
 - Sumar resultados sin volver a dividir la geometría.
 
-### 4.3. Coordenadas
+### 4.4. Coordenadas
 
 Las posiciones de parada se expresan con campos nombrados:
 
@@ -295,7 +337,7 @@ Ejemplo:
 }
 ```
 
-### 4.4. Paradas repetidas
+### 4.5. Paradas repetidas
 
 Una misma ubicación física puede aparecer más de una vez en un recorrido, por
 ejemplo en una línea circular.
@@ -313,12 +355,14 @@ necesariamente una parada física diferente.
 
 ## 5. Validación de la ruta
 
-La validación protege los resultados antes de consultar demanda o tiempos.
+La validación protege los resultados antes de consultar demanda, tiempos o
+tarifas.
 
 ### 5.1. Reglas
 
 | Elemento | Regla |
 |---|---|
+| Jurisdicción | Debe ser `caba`, `province` o `national`. |
 | Ruta | Debe contener al menos dos paradas. |
 | Identificadores | Deben ser no vacíos y únicos. |
 | Latitud | Debe ser finita y estar entre -90 y 90. |
@@ -353,8 +397,8 @@ en la construcción de la ruta.
 
 ### 5.4. Resultado de una validación fallida
 
-El error indica qué parada o coordenada incumple la regla. Ningún cálculo de
-demanda o tiempo se inicia con una entrada inválida.
+El error indica qué parada, coordenada o campo incumple la regla. Ningún
+cálculo de demanda, tiempo o recaudación se inicia con una entrada inválida.
 
 ## 6. Estimación de demanda
 
@@ -513,10 +557,13 @@ No incluye todavía:
 - Preferencia modal.
 - Frecuencia del servicio.
 - Transbordos.
-- Tarifa.
 - Competencia con otras líneas.
 - Capacidad del vehículo.
 - Elasticidad ante el tiempo de viaje.
+
+El cálculo de recaudación (sección 10) aplica un factor de captación
+configurable sobre esta demanda, pero ese factor es un supuesto de política,
+no un modelo de elección de transporte.
 
 Es una medida de demanda territorial accesible, útil para comparar rutas bajo
 la misma metodología.
@@ -554,7 +601,7 @@ El detalle por tramo permite:
 
 - Detectar tramos desproporcionados.
 - Calcular tiempos locales.
-- Incorporar tarifas por distancia en el futuro.
+- Determinar la banda tarifaria de cada par de paradas (sección 10.3).
 - Explicar el total.
 
 ### 7.3. Unidad
@@ -850,19 +897,114 @@ No es:
 - Una garantía de puntualidad.
 - Una medición de calidad del servicio.
 
-## 10. Resultado de la simulación
+## 10. Cálculo de recaudación potencial
+
+La recaudación potencial estima qué ingresos por tarifa podría generar la
+demanda potencial de la ruta, aplicando el cuadro tarifario de la jurisdicción
+declarada y dos supuestos explícitos de comportamiento de pago.
+
+### 10.1. Flujo
+
+```mermaid
+flowchart LR
+    PAIRS["Demanda potencial<br/>por par de paradas"] --> DIST["Distancia acumulada<br/>del par"]
+    DIST --> BAND["Banda tarifaria<br/>de la jurisdicción"]
+    PAIRS --> CAPTURE["Demanda captada"]
+    BAND --> FARE["Tarifa ponderada<br/>por mezcla de pago"]
+    CAPTURE --> REVENUE["Recaudación<br/>potencial del par"]
+    FARE --> REVENUE
+    REVENUE --> TOTAL["Recaudación<br/>potencial total"]
+```
+
+### 10.2. Jurisdicción y cuadro tarifario
+
+La jurisdicción declarada en la ruta (sección 4.1) selecciona qué cuadro
+tarifario aplica.
+
+El cuadro tarifario (`vialis.tarifas_colectivo`) define, para cada
+jurisdicción, bandas de distancia con:
+
+- Distancia mínima, inclusive.
+- Distancia máxima, exclusiva. La última banda de cada jurisdicción no tiene
+  máximo y cubre cualquier distancia mayor.
+- Tarifa con tarjeta registrada.
+- Tarifa sin registrar.
+
+Los importes se almacenan en centavos para evitar errores de redondeo. El
+cuadro cargado actualmente corresponde a las tarifas AMBA publicadas para
+agosto de 2026 (`sql/tarifas/insertar_tarifas_vigentes.sql`). Actualizarlo es
+un proceso administrado, igual que el resto de los datos de referencia
+(sección 13).
+
+### 10.3. Distancia del par
+
+La distancia de un par de paradas es la suma de las distancias de los tramos
+`PathToNext` entre la parada de origen y la de destino, ya calculadas para la
+estimación de tiempo (sección 7). No se vuelve a medir la geometría.
+
+### 10.4. Selección de banda
+
+Se busca la banda cuya distancia mínima sea menor o igual a la distancia del
+par y cuya distancia máxima sea mayor que esa distancia, o no exista. Si
+ninguna banda cubre la distancia calculada, la simulación falla
+explícitamente en lugar de aplicar una tarifa aproximada.
+
+### 10.5. Demanda captada
+
+```text
+demanda captada = demanda potencial del par × factor de captación
+```
+
+El factor de captación (`SIMULATION_REVENUE_CAPTURE_FACTOR`, entre 0 y 1,
+predeterminado 1) representa qué proporción de la demanda territorialmente
+accesible se asume que efectivamente paga un viaje en la línea. Es un
+supuesto de política configurable, no una estimación derivada de datos de
+elección modal.
+
+### 10.6. Mezcla de pago
+
+```text
+tarifa ponderada =
+    tarifa registrada × proporción con tarjeta registrada
+  + tarifa sin registrar × (1 − proporción con tarjeta registrada)
+```
+
+La proporción con tarjeta registrada (`SIMULATION_REGISTERED_CARD_SHARE`,
+entre 0 y 1, predeterminado 1) refleja que buena parte de los boletos de
+colectivo se paga con tarjeta registrada, a un valor distinto del de la
+tarifa sin registrar.
+
+### 10.7. Recaudación por par y total
+
+```text
+recaudación potencial del par = demanda captada × tarifa ponderada
+
+recaudación potencial total =
+    suma de la recaudación potencial de todos los pares
+```
+
+### 10.8. Interpretación
+
+La recaudación potencial hereda las limitaciones de la demanda potencial
+(sección 6.8): no incorpora evasión, elasticidad frente a la tarifa, ni
+competencia con otras líneas más allá de lo que ya asume el factor de
+captación. Es una cifra comparativa entre escenarios de simulación bajo los
+mismos supuestos, no una proyección financiera.
+
+## 11. Resultado de la simulación
 
 El resultado separa:
 
 ```text
 Resultado
 ├── Demanda
+├── Recaudación
 └── Métricas
     ├── Distancia total
     └── Tiempo de viaje
 ```
 
-### 10.1. Demanda
+### 11.1. Demanda
 
 Incluye:
 
@@ -877,13 +1019,13 @@ Cada par informa:
 - Demanda bruta.
 - Demanda potencial.
 
-### 10.2. Distancia
+### 11.2. Distancia
 
 `totalDistanceMeters` representa la suma de todas las geometrías.
 
 Cada tramo también informa su propia distancia.
 
-### 10.3. Tiempo
+### 11.3. Tiempo
 
 Incluye:
 
@@ -893,7 +1035,7 @@ Incluye:
 - `confidence`.
 - `bySegment`.
 
-### 10.4. Detalle por tramo
+### 11.4. Detalle por tramo
 
 Cada tramo informa:
 
@@ -905,7 +1047,21 @@ Cada tramo informa:
 - Cantidad de líneas de referencia.
 - Fuente.
 
-### 10.5. Ejemplo de estructura
+### 11.5. Recaudación
+
+Incluye:
+
+- `jurisdiction`: jurisdicción aplicada.
+- `captureFactor` y `registeredCardShare`: supuestos de política vigentes al
+  momento de la simulación.
+- `potentialRevenueCents`: recaudación potencial total, en centavos.
+- `byStopPair`: detalle por par de paradas.
+
+Cada par informa distancia, demanda potencial, demanda captada, tarifa
+registrada, tarifa sin registrar, tarifa ponderada y recaudación potencial de
+ese par.
+
+### 11.6. Ejemplo de estructura
 
 ```json
 {
@@ -920,6 +1076,25 @@ Cada tramo informa:
         "destinationStopId": "B",
         "grossDemand": 100,
         "potentialDemand": 70
+      }
+    ]
+  },
+  "revenue": {
+    "jurisdiction": "caba",
+    "captureFactor": 1,
+    "registeredCardShare": 1,
+    "potentialRevenueCents": 70000,
+    "byStopPair": [
+      {
+        "originStopId": "A",
+        "destinationStopId": "B",
+        "distanceMeters": 1000,
+        "potentialDemand": 70,
+        "capturedDemand": 70,
+        "registeredFareCents": 1000,
+        "unregisteredFareCents": 1600,
+        "weightedFareCents": 1000,
+        "potentialRevenueCents": 70000
       }
     ]
   },
@@ -950,7 +1125,7 @@ Cada tramo informa:
 
 Los números son ilustrativos.
 
-### 10.6. Cómo leer el resultado
+### 11.7. Cómo leer el resultado
 
 Una evaluación debería observar al menos:
 
@@ -962,11 +1137,12 @@ Una evaluación debería observar al menos:
 6. Tramos lentos.
 7. Tramos con confianza baja.
 8. Uso de respaldo global.
+9. Recaudación potencial total y su distribución entre pares.
 
-El total por sí solo puede ocultar dónde se concentra la demanda o dónde la
-estimación es débil.
+El total por sí solo puede ocultar dónde se concentra la demanda o la
+recaudación, o dónde la estimación es débil.
 
-## 11. Ejemplo conceptual
+## 12. Ejemplo conceptual
 
 Supongamos una ruta:
 
@@ -977,7 +1153,7 @@ A → B → C
 El tramo `A → B` recorre una avenida rápida. El tramo `B → C` atraviesa una
 zona céntrica.
 
-### 11.1. Demanda
+### 12.1. Demanda
 
 | Par | Demanda bruta | Accesibilidad combinada | Demanda potencial |
 |---|---:|---:|---:|
@@ -986,7 +1162,7 @@ zona céntrica.
 | B → C | 25 | 0,72 | 18 |
 | **Total** | **175** | — | **118** |
 
-### 11.2. Tiempo
+### 12.2. Tiempo
 
 | Tramo | Distancia | Ritmo típico | Tiempo típico | Fuente |
 |---|---:|---:|---:|---|
@@ -996,26 +1172,39 @@ zona céntrica.
 
 Una velocidad única habría ocultado que el segundo tramo es más lento.
 
-### 11.3. Interpretación
+### 12.3. Recaudación
+
+Para simplificar, se asume una única banda tarifaria de 1.000 centavos, con
+captación total y pago 100 % con tarjeta registrada (valores predeterminados):
+
+| Par | Distancia | Demanda potencial | Tarifa ponderada | Recaudación potencial |
+|---|---:|---:|---:|---:|
+| A → B | 1.000 m | 70 | 1.000 centavos | 70.000 centavos |
+| A → C | 1.500 m | 30 | 1.000 centavos | 30.000 centavos |
+| B → C | 500 m | 18 | 1.000 centavos | 18.000 centavos |
+| **Total** | — | **118** | — | **118.000 centavos** |
+
+### 12.4. Interpretación
 
 El escenario sugiere:
 
 - Una demanda potencial de 118 viajes representativos.
 - Un recorrido de 1,5 km.
 - Un tiempo típico de 7 minutos y 30 segundos.
+- Una recaudación potencial de 118.000 centavos, bajo captación total y pago
+  íntegramente con tarjeta registrada.
 - Mejor respaldo en el primer tramo que en el segundo.
 
 No permite concluir todavía:
 
 - Cuántos pasajeros elegirían efectivamente la línea.
-- Cuánta recaudación produciría.
 - Cuántos vehículos serían necesarios.
 
-## 12. Preparación y actualización de datos
+## 13. Preparación y actualización de datos
 
 El motor necesita datos preparados antes de simular.
 
-### 12.1. Flujo de movilidad
+### 13.1. Flujo de movilidad
 
 ```mermaid
 flowchart LR
@@ -1034,7 +1223,7 @@ La actualización de viajes modifica:
 - Cantidades de la matriz.
 - Demanda estimada de futuras simulaciones.
 
-### 12.2. Flujo GTFS
+### 13.2. Flujo GTFS
 
 ```mermaid
 flowchart LR
@@ -1056,7 +1245,23 @@ Una actualización GTFS puede modificar:
 - Cantidad de líneas disponibles en cada corredor.
 - Confianza de una misma ruta simulada.
 
-### 12.3. Naturaleza de las actualizaciones
+### 13.3. Flujo de tarifas
+
+```mermaid
+flowchart LR
+    PUBLICADA["Cuadro tarifario<br/>publicado"] --> CARGA["Carga administrada<br/>por jurisdicción"]
+    CARGA --> TARIFAS["vialis.tarifas_colectivo"]
+    TARIFAS --> SIM["Simulación"]
+```
+
+Una actualización tarifaria modifica directamente la recaudación potencial de
+simulaciones futuras, sin afectar demanda ni tiempo de viaje. No existe un
+proceso automatizado de sincronización con la fuente oficial: la carga se
+realiza mediante un script SQL versionado
+(`sql/tarifas/insertar_tarifas_vigentes.sql`) que debe actualizarse
+manualmente cuando cambia el cuadro publicado.
+
+### 13.4. Naturaleza de las actualizaciones
 
 La preparación no ocurre dentro de cada simulación. Es un proceso previo
 administrado.
@@ -1064,10 +1269,10 @@ administrado.
 Esto permite respuestas más rápidas, pero requiere:
 
 - Registrar qué versión de los datos está activa.
-- Actualizar viajes y GTFS con una frecuencia definida.
+- Actualizar viajes, GTFS y tarifas con una frecuencia definida.
 - Validar las cargas antes de reemplazar datos productivos.
 
-### 12.4. Reconstrucción GTFS
+### 13.5. Reconstrucción GTFS
 
 La transformación GTFS actual reconstruye las tablas finales de recorridos y
 paradas.
@@ -1078,9 +1283,10 @@ Antes de ejecutarla se debe:
 - Respaldar datos manuales asociados a recorridos.
 - Considerar que los identificadores internos pueden cambiar.
 
-Los datos de viajes y matriz OD no se modifican durante esa reconstrucción.
+Los datos de viajes, matriz OD y tarifas no se modifican durante esa
+reconstrucción.
 
-### 12.5. Estado operativo actual
+### 13.6. Estado operativo actual
 
 El repositorio incluye los procesos de transformación, pero algunos pasos de
 carga de archivos se realizan externamente.
@@ -1089,24 +1295,26 @@ Además:
 
 - La importación de etapas individuales no está implementada.
 - Algunos procesos de viajes requieren limpieza antes de repetirse.
+- El cuadro tarifario no se versiona automáticamente; reemplazarlo requiere
+  actualizar el script de carga.
 - Las simulaciones no se persisten.
 - No existe todavía un historial de versiones de datos y resultados.
 
-## 13. Decisiones funcionales
+## 14. Decisiones funcionales
 
-### 13.1. Evaluar una ruta, no diseñarla
+### 14.1. Evaluar una ruta, no diseñarla
 
 El motor no propone automáticamente paradas o calles. Esto mantiene separadas:
 
 - Generación de alternativas.
 - Evaluación de alternativas.
 
-### 13.2. Un sentido por simulación
+### 14.2. Un sentido por simulación
 
 La demanda y el recorrido son direccionales. Ida y vuelta deben evaluarse por
 separado si sus paradas o geometrías difieren.
 
-### 13.3. Demanda territorial
+### 14.3. Demanda territorial
 
 La demanda se vincula con áreas cercanas a paradas y no exclusivamente con
 puntos exactos.
@@ -1114,52 +1322,69 @@ puntos exactos.
 Esto es apropiado para analizar cobertura, aunque no reemplaza un modelo de
 elección de transporte.
 
-### 13.4. Asignación exclusiva de zonas
+### 14.4. Asignación exclusiva de zonas
 
 Evita doble contabilización, pero hace que la distribución por parada dependa
 de la configuración completa de paradas.
 
-### 13.5. Recorrido exacto
+### 14.5. Recorrido exacto
 
 Permite medir distancia y condiciones locales sin depender de un servicio
 externo de mapas.
 
-### 13.6. Tiempo local antes que promedio global
+### 14.6. Tiempo local antes que promedio global
 
 Se priorizan referencias cercanas. El promedio global se utiliza únicamente
 como respaldo.
 
-### 13.7. Variabilidad explícita
+### 14.7. Variabilidad explícita
 
 El motor devuelve tres escenarios en lugar de un único tiempo. Esto comunica
 que la operación no tiene una duración constante.
 
-### 13.8. Procedencia visible
+### 14.8. Procedencia visible
 
 Fuente y confianza forman parte del resultado para que una cifra estimada no se
 presente sin contexto.
 
-### 13.9. Fallar ante geometrías inválidas
+### 14.9. Fallar ante geometrías inválidas
 
 Una corrección automática podría evaluar una ruta distinta. Por eso la entrada
 se rechaza y debe corregirse en origen.
 
-## 14. Alcance actual y limitaciones
+### 14.10. Jurisdicción como entrada explícita
 
-### 14.1. Demanda no equivale a captación
+La jurisdicción tarifaria se declara en la ruta y no se infiere de las
+coordenadas. Inferirla automáticamente podría aplicar una tarifa incorrecta en
+zonas limítrofes sin que quede en evidencia.
+
+### 14.11. Captación y mezcla de pago como supuestos de política
+
+El factor de captación y la proporción de tarjeta registrada son parámetros de
+configuración, no resultados calibrados con datos observados de la línea. Se
+tratan igual que la política de accesibilidad (sección 6.4): valores
+explícitos, documentados y versionables, no un modelo de elección de
+transporte.
+
+## 15. Alcance actual y limitaciones
+
+### 15.1. Demanda y recaudación potencial no equivalen a captación real
 
 La demanda potencial indica movimientos accesibles, no pasajeros asegurados.
+La recaudación potencial (sección 10) aplica un factor de captación
+configurable sobre esa demanda, pero ese factor es un supuesto de política,
+no una estimación calibrada con datos de elección modal.
 
 Faltan variables como:
 
-- Frecuencia.
-- Tarifa.
+- Frecuencia del servicio.
 - Tiempo de espera.
 - Transbordos.
 - Competidores.
-- Preferencias.
+- Preferencias de los usuarios.
+- Evasión y elasticidad frente a la tarifa.
 
-### 14.2. Día típico
+### 15.2. Día típico
 
 Los datos de movilidad representan un día hábil típico. No describen:
 
@@ -1168,12 +1393,12 @@ Los datos de movilidad representan un día hábil típico. No describen:
 - Estacionalidad.
 - Cambios recientes no incluidos en la carga.
 
-### 14.3. Cobertura geográfica
+### 15.3. Cobertura geográfica
 
 La fuente de viajes tiene alcance AMBA. El alcance efectivo depende del archivo
 cargado y no de un recorte automático del motor.
 
-### 14.4. Accesibilidad simplificada
+### 15.4. Accesibilidad simplificada
 
 La distancia es geográfica y no peatonal. El modelo no conoce:
 
@@ -1182,13 +1407,13 @@ La distancia es geográfica y no peatonal. El modelo no conoce:
 - Calidad urbana.
 - Seguridad.
 
-### 14.5. Búsqueda H3 acotada
+### 15.5. Búsqueda H3 acotada
 
 La búsqueda de demanda parte de la vecindad H3 inmediata de la parada y después
 aplica el radio de 800 metros. Esta estrategia es eficiente, pero debería
 revisarse si se cambia la resolución H3 o el radio.
 
-### 14.6. Horarios programados
+### 15.6. Horarios programados
 
 Los tiempos GTFS no observan:
 
@@ -1198,19 +1423,25 @@ Los tiempos GTFS no observan:
 - Incumplimientos.
 - Variabilidad diaria no programada.
 
-### 14.7. Dirección aproximada
+### 15.7. Dirección aproximada
 
 La compatibilidad usa la orientación general entre extremos del tramo. En
 geometrías muy curvas, la dirección local puede estar representada de forma
 simplificada.
 
-### 14.8. Cantidad de muestras
+### 15.8. Cantidad de muestras
 
 Se conserva cuántos viajes GTFS contribuyeron a cada percentil, pero esa
 cantidad no aumenta automáticamente el peso de una línea durante la
 simulación.
 
-### 14.9. Resultado no persistido
+### 15.9. Cuadro tarifario sin versionado histórico
+
+La simulación usa siempre el cuadro tarifario vigente en la base de datos al
+momento de ejecutarse. No conserva tarifas históricas ni permite simular con
+la tarifa de una fecha pasada.
+
+### 15.10. Resultado no persistido
 
 Actualmente no se guarda:
 
@@ -1223,7 +1454,7 @@ Actualmente no se guarda:
 Dos ejecuciones en momentos distintos podrían cambiar después de actualizar la
 base, sin que el motor conserve por sí mismo la comparación histórica.
 
-### 14.10. Exposición actual
+### 15.11. Exposición actual
 
 El servicio HTTP publica una comprobación de salud, pero todavía no expone la
 simulación.
@@ -1231,21 +1462,23 @@ simulación.
 La ejecución completa se realiza mediante una herramienta de prueba que recibe
 un archivo JSON.
 
-## 15. Evolución prevista
+## 16. Evolución prevista
 
-### 15.1. Recaudación potencial
+### 16.1. Modelo de captación calibrado
 
-La distancia y demanda por par permiten calcular:
+El factor de captación y la mezcla de pago son actualmente parámetros fijos de
+configuración (secciones 10.5 y 10.6). Pueden complementarse con un modelo que
+estime captación a partir de:
 
-```text
-recaudación potencial =
-    demanda potencial por par
-    × tarifa para la distancia recorrida
-```
+- Frecuencia propuesta.
+- Tiempo de espera.
+- Tiempo frente a alternativas.
+- Cantidad de transbordos.
 
-La política tarifaria debe estar definida y versionada.
+Esto permitiría reemplazar el supuesto fijo por una proporción específica de
+cada ruta y jurisdicción.
 
-### 15.2. Comparación con líneas similares
+### 16.2. Comparación con líneas similares
 
 Una línea existente puede considerarse similar según:
 
@@ -1259,20 +1492,7 @@ Una línea existente puede considerarse similar según:
 
 La comparación debería explicar qué criterios originaron la similitud.
 
-### 15.3. Modelo de captación
-
-La demanda territorial puede complementarse con:
-
-- Frecuencia propuesta.
-- Tiempo de espera.
-- Tiempo frente a alternativas.
-- Cantidad de transbordos.
-- Tarifa.
-
-Esto permitiría estimar qué proporción de la demanda potencial elegiría la
-línea.
-
-### 15.4. Datos observados
+### 16.3. Datos observados
 
 Tiempos GPS o AVL podrían incorporarse con una jerarquía de fuentes:
 
@@ -1284,7 +1504,7 @@ observación local
 
 La salida debería mantener la procedencia.
 
-### 15.5. Persistencia y escenarios
+### 16.4. Persistencia y escenarios
 
 Guardar las simulaciones permitiría:
 
@@ -1293,7 +1513,13 @@ Guardar las simulaciones permitiría:
 - Auditar cambios.
 - Asociar cada cálculo con una versión de datos.
 
-### 15.6. Publicación mediante API
+### 16.5. Versionado histórico de tarifas
+
+Guardar cada cuadro tarifario con su fecha de vigencia permitiría simular con
+la tarifa vigente en una fecha pasada y auditar variaciones de recaudación
+potencial causadas exclusivamente por actualizaciones tarifarias.
+
+### 16.6. Publicación mediante API
 
 El mismo contrato puede exponerse a una aplicación web sin cambiar el
 funcionamiento conceptual.
@@ -1304,39 +1530,49 @@ También conviene separar:
 - Disponibilidad de la base.
 - Vigencia de los datos.
 
-## 16. Glosario
+## 17. Glosario
 
 | Término | Significado |
 |---|---|
 | Accesibilidad | Coeficiente que reduce el aporte de una zona según su distancia a la parada. |
+| Banda tarifaria | Rango de distancia con una tarifa registrada y una tarifa sin registrar definidas para una jurisdicción. |
 | Demanda bruta | Viajes de la matriz entre zonas cubiertas, antes de ponderar accesibilidad. |
+| Demanda captada | Demanda potencial de un par de paradas multiplicada por el factor de captación. |
 | Demanda potencial | Demanda bruta ponderada por accesibilidad en origen y destino. |
+| Factor de captación | Proporción configurable de la demanda potencial que se asume paga un viaje en la línea. |
 | Factor de expansión | Peso estadístico que convierte una fila de muestra en viajes representados. |
 | GTFS | Formato estándar de oferta, recorridos, paradas y horarios de transporte. |
 | H3 | Sistema de indexación geográfica mediante celdas hexagonales. |
+| Jurisdicción | Autoridad tarifaria aplicable a la ruta simulada (`caba`, `province` o `national`). |
 | LineString | Geometría ordenada que representa un recorrido. |
 | Matriz OD | Cantidad de viajes entre zonas de origen y destino. |
 | Percentil 25 | Valor por debajo del cual queda el 25 % de los tiempos. |
 | Percentil 50 | Mediana de los tiempos. |
 | Percentil 75 | Valor por debajo del cual queda el 75 % de los tiempos. |
+| Recaudación potencial | Ingreso estimado por tarifa a partir de la demanda captada y la tarifa ponderada de cada par de paradas. |
 | Ritmo comercial | Segundos necesarios por metro recorrido, incluyendo detenciones según el criterio GTFS. |
+| Tarifa ponderada | Combinación de la tarifa registrada y la tarifa sin registrar según la proporción de tarjeta registrada asumida. |
 | Tramo | Recorrido desde una parada hasta la siguiente. |
 | Viaje canónico | Viaje GTFS elegido para representar la secuencia principal de una línea y sentido. |
 
-## 17. Conclusión
+## 18. Conclusión
 
 Vialis Motor evalúa una ruta nueva combinando movilidad existente, oferta de
-transporte programada y geometría detallada.
+transporte programada, geometría detallada y el cuadro tarifario de la
+jurisdicción declarada.
 
-Su funcionamiento se apoya en dos cálculos complementarios:
+Su funcionamiento se apoya en tres cálculos complementarios:
 
 - La demanda determina qué movimientos territoriales podrían ser atendidos.
 - La distancia y el tiempo describen el comportamiento operativo esperado.
+- La recaudación potencial traduce esa demanda en un ingreso estimado, bajo
+  supuestos explícitos de captación y mezcla de pago.
 
 El resultado conserva detalle por par de paradas y por tramo. Esto permite
-identificar no solo cuánto demanda o tiempo tiene una propuesta, sino dónde se
-originan esos valores y qué tan sólidas son las referencias utilizadas.
+identificar no solo cuánta demanda, tiempo o recaudación tiene una propuesta,
+sino dónde se originan esos valores y qué tan sólidas son las referencias
+utilizadas.
 
 Las métricas actuales constituyen una base para completar la evaluación de
-viabilidad con recaudación, comparación, costos y modelos de captación, sin
+viabilidad con comparación, costos y un modelo de captación calibrado, sin
 perder la trazabilidad del cálculo.

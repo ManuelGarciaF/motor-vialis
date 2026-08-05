@@ -6,6 +6,17 @@ import (
 	"fmt"
 )
 
+// Jurisdiction identifies the tariff authority selected for a simulation.
+// It is explicit input because regulatory jurisdiction cannot be inferred
+// reliably from a proposed route geometry alone.
+type Jurisdiction string
+
+const (
+	JurisdictionCABA     Jurisdiction = "caba"
+	JurisdictionProvince Jurisdiction = "province"
+	JurisdictionNational Jurisdiction = "national"
+)
+
 // Position is a geographic coordinate in WGS 84.
 type Position struct {
 	Latitude  float64 `json:"latitude"`
@@ -81,5 +92,6 @@ type Stop struct {
 
 // Route is one independently simulated, ordered route.
 type Route struct {
-	Stops []Stop `json:"stops"`
+	Jurisdiction Jurisdiction `json:"jurisdiction"`
+	Stops        []Stop       `json:"stops"`
 }

@@ -12,6 +12,19 @@ func TestValidateAcceptsCompleteRoute(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsMissingJurisdiction(t *testing.T) {
+	input := validRoute()
+	input.Jurisdiction = ""
+	err := Validate(input)
+	if err == nil {
+		t.Fatal("Validate() error = nil")
+	}
+	validationError, ok := err.(*ValidationError)
+	if !ok || validationError.Field != "route.jurisdiction" {
+		t.Fatalf("error = %#v", err)
+	}
+}
+
 func TestValidateRejectsInvalidRoute(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -132,7 +145,7 @@ func TestValidateRejectsInvalidRoute(t *testing.T) {
 func validRoute() Route {
 	origin := Position{Latitude: -34.6000, Longitude: -58.3800}
 	destination := Position{Latitude: -34.6010, Longitude: -58.3810}
-	return Route{Stops: []Stop{
+	return Route{Jurisdiction: JurisdictionCABA, Stops: []Stop{
 		{
 			ID:       "A",
 			Position: origin,

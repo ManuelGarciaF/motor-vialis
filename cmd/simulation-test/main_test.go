@@ -10,6 +10,7 @@ import (
 
 func TestDecodeRouteReadsGeoJSONPaths(t *testing.T) {
 	input := `{
+		"jurisdiction": "caba",
 		"stops": [
 			{
 				"id": "A",
@@ -45,6 +46,7 @@ func TestDecodeRouteReadsGeoJSONPaths(t *testing.T) {
 
 func TestDecodeRouteAlignsStoredGTFSPathEndpoints(t *testing.T) {
 	input := `{
+		"jurisdiction": "caba",
 		"stops": [
 			{
 				"id": "2031665",
@@ -129,6 +131,7 @@ func TestDecodeRouteAlignsStoredGTFSPathEndpoints(t *testing.T) {
 
 func TestDecodeRouteRejectsImplausibleEndpointAlignment(t *testing.T) {
 	input := `{
+		"jurisdiction": "caba",
 		"stops": [
 			{
 				"id": "A",
@@ -168,7 +171,7 @@ func TestDecodeRouteRejectsMultipleValues(t *testing.T) {
 }
 
 func TestExampleRouteIsValid(t *testing.T) {
-	inputFile, err := os.Open("../../examples/simulation_route.json")
+	inputFile, err := os.Open("../../examples/linea-132.json")
 	if err != nil {
 		t.Fatalf("open example route: %v", err)
 	}

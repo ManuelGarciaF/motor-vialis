@@ -3,6 +3,7 @@ package simulation
 
 import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/revenue"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
@@ -25,6 +26,7 @@ type Metrics struct {
 
 // Result groups independent simulation calculations.
 type Result struct {
-	Demand  demand.Result `json:"demand"`
-	Metrics Metrics       `json:"metrics"`
+	Demand  demand.Result  `json:"demand"`
+	Revenue revenue.Result `json:"revenue"`
+	Metrics Metrics        `json:"metrics"`
 }

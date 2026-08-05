@@ -23,7 +23,7 @@ func TestServiceUsesDifferentLocalPacesByZone(t *testing.T) {
 		}),
 	}}
 
-	result, err := NewService(repository, DefaultPolicy()).Estimate(
+	result, err := NewService(repository, testPolicy()).Estimate(
 		context.Background(),
 		routeWithSegmentCount(2),
 	)
@@ -71,7 +71,7 @@ func TestServiceExpandsRadiusUntilItHasEnoughRoutes(t *testing.T) {
 		},
 	}
 
-	result, err := NewService(repository, DefaultPolicy()).Estimate(
+	result, err := NewService(repository, testPolicy()).Estimate(
 		context.Background(),
 		routeWithSegmentCount(1),
 	)
@@ -100,7 +100,7 @@ func TestServiceConsolidatesMultipleSegmentsFromOneRoute(t *testing.T) {
 		)},
 	}
 
-	result, err := NewService(repository, DefaultPolicy()).Estimate(
+	result, err := NewService(repository, testPolicy()).Estimate(
 		context.Background(),
 		routeWithSegmentCount(1),
 	)
@@ -130,7 +130,7 @@ func TestServiceUsesGlobalFallback(t *testing.T) {
 		},
 	}
 
-	result, err := NewService(repository, DefaultPolicy()).Estimate(
+	result, err := NewService(repository, testPolicy()).Estimate(
 		context.Background(),
 		routeWithSegmentCount(1),
 	)
@@ -159,7 +159,7 @@ func TestServiceLoadsGlobalFallbackOnce(t *testing.T) {
 			RouteCount: 10,
 		},
 	}
-	if _, err := NewService(repository, DefaultPolicy()).Estimate(
+	if _, err := NewService(repository, testPolicy()).Estimate(
 		context.Background(),
 		routeWithSegmentCount(2),
 	); err != nil {
@@ -176,7 +176,7 @@ func TestServiceRejectsInvalidRepositoryMeasurements(t *testing.T) {
 			measuredSegment(1, "A", "B", 100, nil),
 		},
 	}
-	_, err := NewService(repository, DefaultPolicy()).Estimate(
+	_, err := NewService(repository, testPolicy()).Estimate(
 		context.Background(),
 		routeWithSegmentCount(1),
 	)
@@ -188,7 +188,7 @@ func TestServiceRejectsInvalidRepositoryMeasurements(t *testing.T) {
 func TestServiceWrapsRepositoryErrors(t *testing.T) {
 	want := errors.New("database unavailable")
 	repository := &fakeRepository{referencesError: want}
-	_, err := NewService(repository, DefaultPolicy()).Estimate(
+	_, err := NewService(repository, testPolicy()).Estimate(
 		context.Background(),
 		routeWithSegmentCount(1),
 	)
@@ -208,6 +208,16 @@ func TestWeightedMedianUsesWeightsAndStableRouteOrder(t *testing.T) {
 	})
 	if math.Abs(actual-0.1) > 1e-9 {
 		t.Fatalf("weightedMedian() = %v, want 0.1", actual)
+	}
+}
+
+func testPolicy() Policy {
+	return Policy{
+		ReferenceRadiiMeters:      []float64{100, 300, 800},
+		MinimumReferenceRoutes:    3,
+		DirectionToleranceDegrees: 60,
+		MinimumCommercialSpeedKPH: 2,
+		MaximumCommercialSpeedKPH: 80,
 	}
 }
 
