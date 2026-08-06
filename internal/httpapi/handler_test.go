@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -9,10 +10,11 @@ import (
 	"testing"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/httpapi"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
 )
 
 func TestHealth(t *testing.T) {
-	router := newTestRouter()
+	router := newTestRouter(&fakeSimulator{})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health", nil))
 
@@ -27,7 +29,21 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-func newTestRouter() http.Handler {
+type fakeSimulator struct {
+	result   simulation.Result
+	err      error
+	received simulation.Route
+}
+
+func (simulator *fakeSimulator) Simulate(
+	_ context.Context,
+	input simulation.Route,
+) (simulation.Result, error) {
+	simulator.received = input
+	return simulator.result, simulator.err
+}
+
+func newTestRouter(simulator httpapi.Simulator) http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return httpapi.NewHandler(logger).Routes()
+	return httpapi.NewHandler(logger, simulator).Routes()
 }
