@@ -1,0 +1,338 @@
+openapi: 3.0.3
+info:
+  title: Vialis Motor
+  description: >
+    Simula una línea de transporte propuesta: demanda potencial, distancia,
+    tiempo de viaje y recaudación potencial. Ver `docs/arquitectura_motor.md`
+    para la semántica de cada cálculo.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8080
+    description: Local
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Estado del proceso
+      tags: [health]
+      responses:
+        "200":
+          description: El servicio está corriendo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /simulations:
+    post:
+      operationId: createSimulation
+      summary: Simula una ruta propuesta
+      description: >
+        Valida la ruta y ejecuta, en el mismo request, la estimación de
+        demanda, tiempo de viaje y recaudación potencial.
+      tags: [simulations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Route"
+            example:
+              jurisdiction: caba
+              stops:
+                - id: "2031665"
+                  position:
+                    latitude: -34.586005
+                    longitude: -58.373625
+                  pathToNext:
+                    type: LineString
+                    coordinates:
+                      - [-58.373625, -34.586005]
+                      - [-58.373065, -34.586333]
+                      - [-58.372657, -34.586333]
+                - id: "2031666"
+                  position:
+                    latitude: -34.58967
+                    longitude: -58.36981
+      responses:
+        "200":
+          description: Resultado de la simulación.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationResult"
+        "400":
+          description: Ruta inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: validation_error
+                  field: route.jurisdiction
+                  message: "must be caba, province, or national"
+        "500":
+          description: Error de infraestructura (base de datos, falta de referencias GTFS o de banda tarifaria).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: internal_error
+                  message: "estimate travel time: ..."
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [validation_error, internal_error]
+            field:
+              type: string
+              description: Presente sólo en errores de validación.
+            message:
+              type: string
+
+    Jurisdiction:
+      type: string
+      description: Autoridad tarifaria aplicable a la ruta.
+      enum: [caba, province, national]
+
+    Position:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+
+    LineString:
+      type: object
+      description: >
+        GeoJSON LineString. Las coordenadas van [longitud, latitud]. El
+        primer punto debe coincidir con la parada actual y el último con la
+        siguiente (tolerancia 20 m); el sentido debe ir de la actual a la
+        siguiente.
+      required: [type, coordinates]
+      properties:
+        type:
+          type: string
+          enum: [LineString]
+        coordinates:
+          type: array
+          minItems: 2
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items:
+              type: number
+              format: double
+
+    Stop:
+      type: object
+      required: [id, position]
+      properties:
+        id:
+          type: string
+          description: Único dentro de la ruta. No necesariamente una parada física distinta (ver rutas circulares).
+          minLength: 1
+        position:
+          $ref: "#/components/schemas/Position"
+        pathToNext:
+          allOf:
+            - $ref: "#/components/schemas/LineString"
+          description: Obligatorio en todas las paradas salvo la última, que no debe tenerlo.
+
+    Route:
+      type: object
+      required: [jurisdiction, stops]
+      properties:
+        jurisdiction:
+          $ref: "#/components/schemas/Jurisdiction"
+        stops:
+          type: array
+          minItems: 2
+          items:
+            $ref: "#/components/schemas/Stop"
+
+    StopPairDemand:
+      type: object
+      properties:
+        originStopOrder:
+          type: integer
+        originStopId:
+          type: string
+        destinationStopOrder:
+          type: integer
+        destinationStopId:
+          type: string
+        grossDemand:
+          type: number
+          format: double
+        potentialDemand:
+          type: number
+          format: double
+
+    DemandResult:
+      type: object
+      properties:
+        grossDemand:
+          type: number
+          format: double
+        potentialDemand:
+          type: number
+          format: double
+        byStopPair:
+          type: array
+          items:
+            $ref: "#/components/schemas/StopPairDemand"
+
+    Confidence:
+      type: string
+      enum: [high, medium, low]
+
+    ReferenceSource:
+      type: string
+      enum: [local_100m, local_300m, local_800m, global]
+
+    SegmentResult:
+      type: object
+      properties:
+        originStopId:
+          type: string
+        destinationStopId:
+          type: string
+        distanceMeters:
+          type: number
+          format: double
+        offPeakSeconds:
+          type: integer
+          format: int64
+        typicalSeconds:
+          type: integer
+          format: int64
+        peakSeconds:
+          type: integer
+          format: int64
+        confidence:
+          $ref: "#/components/schemas/Confidence"
+        referenceRouteCount:
+          type: integer
+        source:
+          $ref: "#/components/schemas/ReferenceSource"
+
+    TravelTimeResult:
+      type: object
+      properties:
+        offPeakSeconds:
+          type: integer
+          format: int64
+        typicalSeconds:
+          type: integer
+          format: int64
+        peakSeconds:
+          type: integer
+          format: int64
+        confidence:
+          $ref: "#/components/schemas/Confidence"
+        bySegment:
+          type: array
+          items:
+            $ref: "#/components/schemas/SegmentResult"
+
+    RevenueStopPairResult:
+      type: object
+      properties:
+        originStopId:
+          type: string
+        destinationStopId:
+          type: string
+        distanceMeters:
+          type: number
+          format: double
+        potentialDemand:
+          type: number
+          format: double
+        capturedDemand:
+          type: number
+          format: double
+        registeredFareCents:
+          type: integer
+          format: int64
+        unregisteredFareCents:
+          type: integer
+          format: int64
+        weightedFareCents:
+          type: number
+          format: double
+        potentialRevenueCents:
+          type: number
+          format: double
+
+    RevenueResult:
+      type: object
+      properties:
+        jurisdiction:
+          $ref: "#/components/schemas/Jurisdiction"
+        captureFactor:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        registeredCardShare:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+        potentialRevenueCents:
+          type: number
+          format: double
+        byStopPair:
+          type: array
+          items:
+            $ref: "#/components/schemas/RevenueStopPairResult"
+
+    Metrics:
+      type: object
+      properties:
+        totalDistanceMeters:
+          type: number
+          format: double
+        travelTime:
+          $ref: "#/components/schemas/TravelTimeResult"
+
+    SimulationResult:
+      type: object
+      properties:
+        demand:
+          $ref: "#/components/schemas/DemandResult"
+        revenue:
+          $ref: "#/components/schemas/RevenueResult"
+        metrics:
+          $ref: "#/components/schemas/Metrics"

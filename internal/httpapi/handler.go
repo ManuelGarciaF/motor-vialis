@@ -1,24 +1,36 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
 )
 
-// Handler exposes the service's infrastructure endpoints over HTTP.
-type Handler struct {
-	logger *slog.Logger
+// Simulator runs a full simulation for one route. It is the same interface a
+// future message-queue worker would call: neither the HTTP handler nor the
+// worker owns simulation logic, they only adapt a transport to this call.
+type Simulator interface {
+	Simulate(ctx context.Context, input simulation.Route) (simulation.Result, error)
 }
 
-func NewHandler(logger *slog.Logger) *Handler {
-	return &Handler{logger: logger}
+// Handler exposes the service's endpoints over HTTP.
+type Handler struct {
+	logger    *slog.Logger
+	simulator Simulator
+}
+
+func NewHandler(logger *slog.Logger, simulator Simulator) *Handler {
+	return &Handler{logger: logger, simulator: simulator}
 }
 
 func (handler *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handler.health)
+	mux.HandleFunc("POST /simulations", handler.createSimulation)
 	return handler.recoverPanic(handler.logRequest(mux))
 }
 

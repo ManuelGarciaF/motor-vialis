@@ -13,6 +13,10 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/config"
 	"github.com/ManuelGarciaF/vialis-motor/internal/database/postgres"
 	"github.com/ManuelGarciaF/vialis-motor/internal/httpapi"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/revenue"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
 
 func main() {
@@ -32,7 +36,25 @@ func main() {
 	}
 	defer database.Close()
 
-	handler := httpapi.NewHandler(logger)
+	demandEstimator := demand.NewService(
+		postgres.NewDemandRepository(database),
+		config.SimulationAccessRadiusMeters,
+		cfg.SimulationAccessibilityCalculator,
+	)
+	travelTimeEstimator := traveltime.NewService(
+		postgres.NewTravelTimeRepository(database),
+		cfg.SimulationTravelTimePolicy,
+	)
+	revenueEstimator := revenue.NewService(
+		postgres.NewRevenueRepository(database),
+		revenue.Policy{
+			CaptureFactor:       cfg.SimulationRevenueCaptureFactor,
+			RegisteredCardShare: cfg.SimulationRegisteredCardShare,
+		},
+	)
+	service := simulation.NewService(demandEstimator, travelTimeEstimator, revenueEstimator)
+
+	handler := httpapi.NewHandler(logger, service)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddress,
