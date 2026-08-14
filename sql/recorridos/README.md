@@ -211,14 +211,18 @@ flowchart LR
 Los scripts se ejecutan en este orden:
 
 1. `crear_gtfs_raw.sql`: recrea las tablas staging.
-2. `importar_gtfs_raw.ps1`: ejecuta el DDL raw e importa los siete CSV mediante
-   `psql \copy`.
+2. La carga de los siete archivos en esas tablas, con `COPY`.
 3. `transformar_gtfs.sql`: crea índices, valida el feed y reemplaza los datos de
    las tablas finales.
 
-El importador ejecuta automáticamente el primer paso. La transformación se
-ejecuta por separado para permitir inspeccionar las tablas raw antes de reemplazar
-el modelo final.
+El pipeline de NiFi encadena los tres pasos y espera a que los siete archivos
+hayan cargado antes de transformar; ver
+[`docs/pipeline_nifi.md`](../../docs/pipeline_nifi.md). El paso 2 también puede
+hacerse a mano con `\copy`, o con `deploy/nifi/scripts/cargar_csv.sh` si se
+quiere el emparejamiento de columnas por nombre.
+
+La transformación está separada de la carga para poder inspeccionar las tablas
+raw antes de reemplazar el modelo final.
 
 En una base creada antes de incorporar los tiempos por tramo, ejecutar primero
 `migrar_tiempos_tramos.sql` y luego volver a ejecutar `transformar_gtfs.sql`.

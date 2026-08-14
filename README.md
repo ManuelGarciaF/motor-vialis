@@ -2,6 +2,23 @@
 
 Servicio REST en Go para el motor de simulación de Vialis.
 
+## Base de datos e ingesta
+
+La creación de la base y la carga de datos las hace un pipeline de Apache NiFi
+que está en `deploy/`:
+
+```bash
+cd deploy
+docker compose up -d --build
+./nifi/importar_flow.sh
+```
+
+Eso levanta PostgreSQL con PostGIS y h3, y un NiFi en
+<http://localhost:8080/nifi> con tres grupos: preparar la base y las tarifas,
+ingerir un feed GTFS e ingerir el CSV de viajes. El detalle está en
+[`deploy/README.md`](deploy/README.md) y el diseño en
+[`docs/pipeline_nifi.md`](docs/pipeline_nifi.md).
+
 ## Configuración
 
 La conexión local predeterminada es:

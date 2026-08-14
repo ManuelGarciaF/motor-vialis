@@ -21,4 +21,10 @@ INSERT INTO vialis.tarifas_colectivo (
     ('national',  3000,  6000,  86166, 172332),
     ('national',  6000, 12000, 100280, 200560),
     ('national', 12000, 27000, 115136, 230272),
-    ('national', 27000,  NULL, 133706, 267412);
+    ('national', 27000,  NULL, 133706, 267412)
+-- El pipeline vuelve a ejecutar este script en cada ingesta, así que la carga
+-- actualiza las bandas ya existentes en lugar de fallar contra la clave única.
+ON CONFLICT (jurisdiccion, distancia_min_metros) DO UPDATE
+SET distancia_max_metros          = EXCLUDED.distancia_max_metros,
+    tarifa_registrada_centavos    = EXCLUDED.tarifa_registrada_centavos,
+    tarifa_sin_registrar_centavos = EXCLUDED.tarifa_sin_registrar_centavos;

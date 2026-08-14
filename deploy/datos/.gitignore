@@ -1,0 +1,8 @@
+# Los archivos fuente no se versionan: son grandes y cambian con cada feed.
+*
+!.gitignore
+!entrada/
+entrada/**
+!entrada/gtfs/
+!entrada/viajes/
+!entrada/*/.gitkeep

@@ -16,7 +16,10 @@ travel-time, or revenue logic — it is the authoritative functional spec
 rules, and the rationale behind design decisions like "one direction per
 simulation" and "reject invalid geometry instead of auto-correcting it".
 `sql/recorridos/README.md` and `sql/viajes/README.md` document the GTFS and
-mobility-data ETL pipelines in the same depth.
+mobility-data ETL pipelines in the same depth, and `docs/pipeline_nifi.md`
+covers the Apache NiFi pipeline in `deploy/` that creates the database and runs
+those scripts — read it before touching anything under `deploy/` or the load
+order of `sql/`.
 
 ## Commands
 
@@ -38,6 +41,10 @@ go run ./cmd/api
 
 # Run a single simulation from a JSON route file (see examples/linea-132.json)
 go run ./cmd/simulation-test -route-file ./examples/linea-132.json
+
+# Bring up PostgreSQL (PostGIS + h3) and NiFi, then load the ingestion flow.
+# The `vialis` database does not exist until the pipeline creates it.
+cd deploy && docker compose up -d --build && ./nifi/importar_flow.sh
 ```
 
 Default local DB: `postgresql://postgres:postgres@localhost:5432/vialis`.
@@ -60,6 +67,7 @@ internal/database/postgres          repositories: DB-backed implementations of
                                      each estimator's Repository interface
 internal/config                     env parsing, defaults, policy construction
 sql/                                DDL and ETL scripts (GTFS import, trip data, tariffs)
+deploy/                             docker-compose + NiFi flow that runs those scripts
 ```
 
 `internal/simulation.Service` is the only orchestrator. It calls, in order:
@@ -118,15 +126,22 @@ so results are reproducible. Preserve these when touching that code.
 a README:
 - `sql/viajes/` — mobility survey data → PostGIS points → H3 cells →
   origin-destination matrix (`vialis.viajes`, `vialis.hexagonos_viajes`,
-  `vialis.matriz_origen_destino`).
+  `vialis.matriz_origen_destino`). `crear_viajes_raw.sql` builds the staging
+  table and `transformar_viajes.sql` replaces the final one.
 - `sql/recorridos/` — GTFS feed → raw staging tables (`gtfs_*_raw`) →
   canonical trip selection → `vialis.recorridos` / `vialis.paradas` /
   `vialis.recorridos_paradas`, including per-segment p25/p50/p75 commercial
   time.
 - `sql/tarifas/` — tariff bands by jurisdiction and distance
   (`vialis.tarifas_colectivo`).
-- `sql/ddl.sql` — final table definitions; `sql/init_db.sql` bootstraps a new
-  database.
+- `sql/ddl.sql` — final table definitions; `sql/crear_base.sql` creates the
+  database itself and `sql/init_db.sql` its schema and extensions.
+- `sql/pipeline/volcar_staging.sql` — moves a CSV staging table into a raw
+  table matching columns by name, so a feed that adds or reorders columns
+  cannot silently corrupt a load.
+
+Every script is re-runnable: the pipeline executes them on every ingest, so a
+change that makes one fail on a second run breaks the pipeline.
 
 Data preparation is an external, administered process — it does not run
 inside a simulation request. When changing repository queries, keep in mind

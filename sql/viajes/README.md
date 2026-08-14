@@ -191,11 +191,17 @@ flowchart LR
 Los scripts se utilizan en este orden:
 
 1. `ddl.sql` crea las tablas finales.
-2. `importar_viajes.sql` crea `viajes_raw`, transforma las coordenadas en puntos,
-   crea los índices espaciales y asigna las celdas H3.
-3. `hexagonos_viajes.sql` calcula el punto de mayor peso de cada celda.
-4. `matriz_origen_destino.sql` agrega los factores por par de celdas de origen y
-   destino.
+2. `crear_viajes_raw.sql` recrea la tabla de staging del CSV.
+3. La carga del CSV en `viajes_raw`, con `COPY`.
+4. `transformar_viajes.sql` reemplaza `vialis.viajes`, convirtiendo las
+   coordenadas en puntos, asignando las celdas H3 y creando los índices
+   espaciales.
+5. `hexagonos_viajes.sql` calcula el punto de mayor peso de cada celda.
+6. `matriz_origen_destino.sql` reemplaza la matriz con los factores agregados
+   por par de celdas de origen y destino.
 
-La importación efectiva del CSV en `viajes_raw` es un paso externo indicado,
-pero no implementado, dentro de `importar_viajes.sql`.
+El pipeline de NiFi encadena los cinco últimos pasos; ver
+[`docs/pipeline_nifi.md`](../../docs/pipeline_nifi.md).
+
+`transformar_viajes.sql` vacía `vialis.viajes` antes de insertar: la carga
+representa un día hábil típico, no una serie que se acumule entre corridas.

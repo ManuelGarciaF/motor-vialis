@@ -1,0 +1,2800 @@
+{
+  "flowContents": {
+    "identifier": "99598ab6-5993-5208-90c8-2bcf3c44f3a0",
+    "groupIdentifier": null,
+    "name": "Vialis - Ingesta",
+    "comments": "Pipeline de ingesta de Vialis. Ver docs/pipeline_nifi.md.",
+    "position": {
+      "x": 0.0,
+      "y": 0.0
+    },
+    "processGroups": [
+      {
+        "identifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+        "groupIdentifier": "99598ab6-5993-5208-90c8-2bcf3c44f3a0",
+        "name": "10 - Preparar base y tarifas",
+        "comments": "Crea la base, el esquema, las extensiones, las tablas y el cuadro tarifario. Es idempotente: se puede correr cuantas veces haga falta. Arrancar con 'Ejecutar una vez' sobre el disparador.",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "processGroups": [],
+        "remoteProcessGroups": [],
+        "processors": [
+          {
+            "identifier": "5eeb8113-aff5-5268-98c8-04ffc42f8dbc",
+            "name": "Disparador manual",
+            "comments": "Usar 'Ejecutar una vez' desde el menú del procesador.",
+            "position": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "type": "org.apache.nifi.processors.standard.GenerateFlowFile",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "File Size": "0B",
+              "Batch Size": "1",
+              "Data Format": "Text",
+              "Unique FlowFiles": "false"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "24 h",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0"
+          },
+          {
+            "identifier": "96790c82-baa4-55b4-a8bf-c928cd793f95",
+            "name": "Crear base, esquema y tablas",
+            "comments": "",
+            "position": {
+              "x": 0.0,
+              "y": 200.0
+            },
+            "type": "org.apache.nifi.processors.standard.ExecuteStreamCommand",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Command Path": "#{dir.scripts}/preparar_base.sh",
+              "Argument Delimiter": ";",
+              "Ignore STDIN": "true",
+              "argumentsStrategy": "Command Arguments Property"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0"
+          },
+          {
+            "identifier": "bcc951b3-422f-5327-a190-0ca33b939340",
+            "name": "Cargar cuadro tarifario",
+            "comments": "",
+            "position": {
+              "x": 0.0,
+              "y": 400.0
+            },
+            "type": "org.apache.nifi.processors.standard.ExecuteStreamCommand",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Command Path": "#{dir.scripts}/ejecutar_sql.sh",
+              "Argument Delimiter": ";",
+              "Ignore STDIN": "true",
+              "argumentsStrategy": "Command Arguments Property",
+              "Command Arguments": "#{dir.sql}/tarifas/insertar_tarifas_vigentes.sql"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0"
+          },
+          {
+            "identifier": "cb87b1fb-fb9b-5347-a1ed-3d5047764dfa",
+            "name": "Base lista",
+            "comments": "",
+            "position": {
+              "x": 0.0,
+              "y": 600.0
+            },
+            "type": "org.apache.nifi.processors.standard.LogAttribute",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Log Level": "info",
+              "Log Payload": "true",
+              "Log prefix": "ingesta vialis"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "success"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0"
+          },
+          {
+            "identifier": "75567c6f-1c4b-5cf2-9531-9be33ecdaa05",
+            "name": "Errores al preparar la base",
+            "comments": "",
+            "position": {
+              "x": 500.0,
+              "y": 600.0
+            },
+            "type": "org.apache.nifi.processors.standard.LogAttribute",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Log Level": "error",
+              "Log Payload": "false",
+              "Log prefix": "ingesta vialis"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "success"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0"
+          }
+        ],
+        "inputPorts": [],
+        "outputPorts": [],
+        "connections": [
+          {
+            "identifier": "90495983-aed7-5127-ab0b-353446ad1b28",
+            "name": "",
+            "source": {
+              "id": "5eeb8113-aff5-5268-98c8-04ffc42f8dbc",
+              "type": "PROCESSOR",
+              "groupId": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+              "name": "Disparador manual"
+            },
+            "destination": {
+              "id": "96790c82-baa4-55b4-a8bf-c928cd793f95",
+              "type": "PROCESSOR",
+              "groupId": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+              "name": "Crear base, esquema y tablas"
+            },
+            "selectedRelationships": [
+              "success"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0"
+          },
+          {
+            "identifier": "e01c129c-109b-5051-a141-8d2e99f0bee2",
+            "name": "",
+            "source": {
+              "id": "96790c82-baa4-55b4-a8bf-c928cd793f95",
+              "type": "PROCESSOR",
+              "groupId": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+              "name": "Crear base, esquema y tablas"
+            },
+            "destination": {
+              "id": "bcc951b3-422f-5327-a190-0ca33b939340",
+              "type": "PROCESSOR",
+              "groupId": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+              "name": "Cargar cuadro tarifario"
+            },
+            "selectedRelationships": [
+              "output stream"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0"
+          },
+          {
+            "identifier": "c30437f0-9be6-54b4-a08d-a933603be5b9",
+            "name": "",
+            "source": {
+              "id": "bcc951b3-422f-5327-a190-0ca33b939340",
+              "type": "PROCESSOR",
+              "groupId": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+              "name": "Cargar cuadro tarifario"
+            },
+            "destination": {
+              "id": "cb87b1fb-fb9b-5347-a1ed-3d5047764dfa",
+              "type": "PROCESSOR",
+              "groupId": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+              "name": "Base lista"
+            },
+            "selectedRelationships": [
+              "output stream"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0"
+          },
+          {
+            "identifier": "8fda3f91-ef7f-5067-9cfc-bf8cc35a828c",
+            "name": "",
+            "source": {
+              "id": "96790c82-baa4-55b4-a8bf-c928cd793f95",
+              "type": "PROCESSOR",
+              "groupId": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+              "name": "Crear base, esquema y tablas"
+            },
+            "destination": {
+              "id": "e984ff4d-f913-5e25-8d87-86713721d455",
+              "type": "FUNNEL",
+              "groupId": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "nonzero status"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0"
+          },
+          {
+            "identifier": "cb9208d9-6ca7-5bdc-b913-2a732b95be9f",
+            "name": "",
+            "source": {
+              "id": "bcc951b3-422f-5327-a190-0ca33b939340",
+              "type": "PROCESSOR",
+              "groupId": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+              "name": "Cargar cuadro tarifario"
+            },
+            "destination": {
+              "id": "e984ff4d-f913-5e25-8d87-86713721d455",
+              "type": "FUNNEL",
+              "groupId": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "nonzero status"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0"
+          },
+          {
+            "identifier": "ea67ccc5-8f93-59d1-b0b0-1826a6572d8a",
+            "name": "",
+            "source": {
+              "id": "e984ff4d-f913-5e25-8d87-86713721d455",
+              "type": "FUNNEL",
+              "groupId": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+              "name": ""
+            },
+            "destination": {
+              "id": "75567c6f-1c4b-5cf2-9531-9be33ecdaa05",
+              "type": "PROCESSOR",
+              "groupId": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0",
+              "name": "Errores al preparar la base"
+            },
+            "selectedRelationships": [
+              ""
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0"
+          }
+        ],
+        "labels": [],
+        "funnels": [
+          {
+            "identifier": "e984ff4d-f913-5e25-8d87-86713721d455",
+            "position": {
+              "x": 500.0,
+              "y": 400.0
+            },
+            "componentType": "FUNNEL",
+            "groupIdentifier": "c8b20dc1-6a44-5a58-a0ff-54d9e319d6f0"
+          }
+        ],
+        "controllerServices": [],
+        "variables": {},
+        "parameterContextName": "vialis",
+        "defaultFlowFileExpiration": "0 sec",
+        "defaultBackPressureObjectThreshold": 10000,
+        "defaultBackPressureDataSizeThreshold": "1 GB",
+        "flowFileConcurrency": "UNBOUNDED",
+        "flowFileOutboundPolicy": "STREAM_WHEN_AVAILABLE",
+        "componentType": "PROCESS_GROUP"
+      },
+      {
+        "identifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+        "groupIdentifier": "99598ab6-5993-5208-90c8-2bcf3c44f3a0",
+        "name": "20 - Ingesta GTFS",
+        "comments": "Descarga o toma de la carpeta local un ZIP GTFS, carga los siete archivos en las tablas gtfs_*_raw y ejecuta transformar_gtfs.sql cuando el feed completo terminó de cargar.",
+        "position": {
+          "x": 0,
+          "y": 400
+        },
+        "processGroups": [],
+        "remoteProcessGroups": [],
+        "processors": [
+          {
+            "identifier": "fbfb63f0-7573-5550-bae4-ca303f58e09f",
+            "name": "Disparar descarga del feed",
+            "comments": "Deshabilitado hasta que gtfs.url apunte al feed real.",
+            "position": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "type": "org.apache.nifi.processors.standard.GenerateFlowFile",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "File Size": "0B",
+              "Batch Size": "1",
+              "Data Format": "Text",
+              "Unique FlowFiles": "false"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "24 h",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [],
+            "scheduledState": "DISABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "d011ba7b-87de-5ea0-822c-695df6c3b1d9",
+            "name": "Descargar feed GTFS",
+            "comments": "",
+            "position": {
+              "x": 0.0,
+              "y": 180.0
+            },
+            "type": "org.apache.nifi.processors.standard.InvokeHTTP",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "HTTP Method": "GET",
+              "Remote URL": "#{gtfs.url}",
+              "flow-file-naming-strategy": "URL_PATH",
+              "Read Timeout": "5 mins",
+              "Connection Timeout": "30 secs"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "Original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "27423baa-7e32-5bea-b8d5-def116122643",
+            "name": "Detectar ZIP en la carpeta local",
+            "comments": "",
+            "position": {
+              "x": 600.0,
+              "y": 0.0
+            },
+            "type": "org.apache.nifi.processors.standard.ListFile",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Input Directory": "#{dir.datos}/entrada/gtfs",
+              "File Filter": ".*\\.zip",
+              "Recurse Subdirectories": "false",
+              "Minimum File Age": "15 sec"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "30 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "98c52dea-95b2-5318-a8e5-8c2bbb1289f4",
+            "name": "Leer el ZIP de la carpeta local",
+            "comments": "",
+            "position": {
+              "x": 600.0,
+              "y": 180.0
+            },
+            "type": "org.apache.nifi.processors.standard.FetchFile",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Completion Strategy": "None"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "6d89513b-0d4e-5164-b997-9ab66edfbdad",
+            "name": "Preparar base y tablas gtfs_*_raw",
+            "comments": "El script reemite el ZIP por STDOUT, así que 'output stream' lleva el archivo intacto y un error corta la cadena.",
+            "position": {
+              "x": 300.0,
+              "y": 470.0
+            },
+            "type": "org.apache.nifi.processors.standard.ExecuteStreamCommand",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Command Path": "#{dir.scripts}/preparar_base.sh",
+              "Argument Delimiter": ";",
+              "Ignore STDIN": "false",
+              "argumentsStrategy": "Command Arguments Property",
+              "Command Arguments": "--pasar-contenido;#{dir.sql}/recorridos/crear_gtfs_raw.sql"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "9377a099-9552-5b59-bb0d-10ac72b3d448",
+            "name": "Descomprimir el feed",
+            "comments": "Solo salen los siete archivos que el modelo usa.",
+            "position": {
+              "x": 300.0,
+              "y": 740.0
+            },
+            "type": "org.apache.nifi.processors.standard.UnpackContent",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Packaging Format": "zip",
+              "File Filter": ".*(agency|routes|trips|stops|stop_times|shapes|calendar_dates)\\.txt"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "a2adc8b0-5def-58a8-afbe-2ee981dd8e6d",
+            "name": "Elegir la tabla raw según el archivo",
+            "comments": "stops.txt -> vialis.gtfs_stops_raw",
+            "position": {
+              "x": 300.0,
+              "y": 920.0
+            },
+            "type": "org.apache.nifi.processors.attributes.UpdateAttribute",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-update-attribute-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "tabla.destino": "vialis.gtfs_${filename:substringBeforeLast('.')}_raw"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "2fb73421-1b19-5b4f-bcd8-33c549645a14",
+            "name": "Cargar el archivo en su tabla raw",
+            "comments": "El contenido del FlowFile entra a COPY por STDIN.",
+            "position": {
+              "x": 300.0,
+              "y": 1100.0
+            },
+            "type": "org.apache.nifi.processors.standard.ExecuteStreamCommand",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Command Path": "#{dir.scripts}/cargar_csv.sh",
+              "Argument Delimiter": ";",
+              "Ignore STDIN": "false",
+              "argumentsStrategy": "Command Arguments Property",
+              "Command Arguments": "--tabla;${tabla.destino}"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "c4275b1c-173f-53e1-b44e-e0aea9581dae",
+            "name": "Esperar el feed completo",
+            "comments": "Defragment reagrupa los archivos del mismo ZIP.",
+            "position": {
+              "x": 300.0,
+              "y": 1280.0
+            },
+            "type": "org.apache.nifi.processors.standard.MergeContent",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Merge Strategy": "Defragment",
+              "Merge Format": "Binary Concatenation",
+              "Delimiter Strategy": "Text",
+              "Demarcator File": "\n",
+              "Attribute Strategy": "Keep Only Common Attributes",
+              "Max Bin Age": "30 mins",
+              "Maximum number of Bins": "3"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "9c6802df-7547-5da2-b5a8-31c33b7d082b",
+            "name": "Verificar que llegaron los 7 archivos",
+            "comments": "",
+            "position": {
+              "x": 300.0,
+              "y": 1460.0
+            },
+            "type": "org.apache.nifi.processors.standard.RouteOnAttribute",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Routing Strategy": "Route to Property name",
+              "feed.completo": "${merge.count:equals('7')}"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "d3275998-91eb-52e7-94f2-c100b3c886c9",
+            "name": "Transformar GTFS al modelo Vialis",
+            "comments": "",
+            "position": {
+              "x": 300.0,
+              "y": 1640.0
+            },
+            "type": "org.apache.nifi.processors.standard.ExecuteStreamCommand",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Command Path": "#{dir.scripts}/ejecutar_sql.sh",
+              "Argument Delimiter": ";",
+              "Ignore STDIN": "true",
+              "argumentsStrategy": "Command Arguments Property",
+              "Command Arguments": "#{dir.sql}/recorridos/transformar_gtfs.sql"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "748bff09-aae2-5ab4-b0d7-e8306618dc61",
+            "name": "Recorridos actualizados",
+            "comments": "",
+            "position": {
+              "x": 300.0,
+              "y": 1820.0
+            },
+            "type": "org.apache.nifi.processors.standard.LogAttribute",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Log Level": "info",
+              "Log Payload": "true",
+              "Log prefix": "ingesta vialis"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "success"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "33806ef2-1b6b-50a4-b4fa-816314a06ceb",
+            "name": "Errores de la ingesta GTFS",
+            "comments": "",
+            "position": {
+              "x": 900.0,
+              "y": 1460.0
+            },
+            "type": "org.apache.nifi.processors.standard.LogAttribute",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Log Level": "error",
+              "Log Payload": "false",
+              "Log prefix": "ingesta vialis"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "success"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          }
+        ],
+        "inputPorts": [],
+        "outputPorts": [],
+        "connections": [
+          {
+            "identifier": "5a3b3769-3da2-5d2c-bf17-7e297e4ab89b",
+            "name": "",
+            "source": {
+              "id": "fbfb63f0-7573-5550-bae4-ca303f58e09f",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Disparar descarga del feed"
+            },
+            "destination": {
+              "id": "d011ba7b-87de-5ea0-822c-695df6c3b1d9",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Descargar feed GTFS"
+            },
+            "selectedRelationships": [
+              "success"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "68940e92-6f99-5540-ac6e-3fb39b6a1682",
+            "name": "",
+            "source": {
+              "id": "d011ba7b-87de-5ea0-822c-695df6c3b1d9",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Descargar feed GTFS"
+            },
+            "destination": {
+              "id": "6d89513b-0d4e-5164-b997-9ab66edfbdad",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Preparar base y tablas gtfs_*_raw"
+            },
+            "selectedRelationships": [
+              "Response"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "66bf982f-14f6-5f27-ac39-a141fc56c232",
+            "name": "",
+            "source": {
+              "id": "d011ba7b-87de-5ea0-822c-695df6c3b1d9",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Descargar feed GTFS"
+            },
+            "destination": {
+              "id": "9e77ca80-07fc-5fb1-b1db-f19a9f0d30cc",
+              "type": "FUNNEL",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "Failure",
+              "Retry",
+              "No Retry"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "49aa3142-f67f-54bb-9140-d9449683d17a",
+            "name": "",
+            "source": {
+              "id": "27423baa-7e32-5bea-b8d5-def116122643",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Detectar ZIP en la carpeta local"
+            },
+            "destination": {
+              "id": "98c52dea-95b2-5318-a8e5-8c2bbb1289f4",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Leer el ZIP de la carpeta local"
+            },
+            "selectedRelationships": [
+              "success"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "824619b9-4543-5d5f-a610-0d7f8a809941",
+            "name": "",
+            "source": {
+              "id": "98c52dea-95b2-5318-a8e5-8c2bbb1289f4",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Leer el ZIP de la carpeta local"
+            },
+            "destination": {
+              "id": "6d89513b-0d4e-5164-b997-9ab66edfbdad",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Preparar base y tablas gtfs_*_raw"
+            },
+            "selectedRelationships": [
+              "success"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "5144ff26-e90b-5e3a-ae79-d49192a678a2",
+            "name": "",
+            "source": {
+              "id": "98c52dea-95b2-5318-a8e5-8c2bbb1289f4",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Leer el ZIP de la carpeta local"
+            },
+            "destination": {
+              "id": "9e77ca80-07fc-5fb1-b1db-f19a9f0d30cc",
+              "type": "FUNNEL",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "failure",
+              "not.found",
+              "permission.denied"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "0fde1389-3e9d-5885-a450-763384e48870",
+            "name": "",
+            "source": {
+              "id": "6d89513b-0d4e-5164-b997-9ab66edfbdad",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Preparar base y tablas gtfs_*_raw"
+            },
+            "destination": {
+              "id": "9377a099-9552-5b59-bb0d-10ac72b3d448",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Descomprimir el feed"
+            },
+            "selectedRelationships": [
+              "output stream"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "7bc66ad5-5717-5bb0-8d97-030cd55bd216",
+            "name": "",
+            "source": {
+              "id": "6d89513b-0d4e-5164-b997-9ab66edfbdad",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Preparar base y tablas gtfs_*_raw"
+            },
+            "destination": {
+              "id": "9e77ca80-07fc-5fb1-b1db-f19a9f0d30cc",
+              "type": "FUNNEL",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "nonzero status"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "3c5768bc-d32d-58e3-8fbe-296096f1a282",
+            "name": "",
+            "source": {
+              "id": "9377a099-9552-5b59-bb0d-10ac72b3d448",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Descomprimir el feed"
+            },
+            "destination": {
+              "id": "a2adc8b0-5def-58a8-afbe-2ee981dd8e6d",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Elegir la tabla raw según el archivo"
+            },
+            "selectedRelationships": [
+              "success"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "24f59105-3e24-56f3-b90f-09e50ea36678",
+            "name": "",
+            "source": {
+              "id": "9377a099-9552-5b59-bb0d-10ac72b3d448",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Descomprimir el feed"
+            },
+            "destination": {
+              "id": "9e77ca80-07fc-5fb1-b1db-f19a9f0d30cc",
+              "type": "FUNNEL",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "failure"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "94db6c55-09ef-5ce8-9576-abee2439c756",
+            "name": "",
+            "source": {
+              "id": "a2adc8b0-5def-58a8-afbe-2ee981dd8e6d",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Elegir la tabla raw según el archivo"
+            },
+            "destination": {
+              "id": "2fb73421-1b19-5b4f-bcd8-33c549645a14",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Cargar el archivo en su tabla raw"
+            },
+            "selectedRelationships": [
+              "success"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "311af675-aa0c-5e52-bef4-8299c71c46d3",
+            "name": "",
+            "source": {
+              "id": "2fb73421-1b19-5b4f-bcd8-33c549645a14",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Cargar el archivo en su tabla raw"
+            },
+            "destination": {
+              "id": "c4275b1c-173f-53e1-b44e-e0aea9581dae",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Esperar el feed completo"
+            },
+            "selectedRelationships": [
+              "output stream"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "fc0ab856-91c1-5ada-b194-2876e2fffd28",
+            "name": "",
+            "source": {
+              "id": "2fb73421-1b19-5b4f-bcd8-33c549645a14",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Cargar el archivo en su tabla raw"
+            },
+            "destination": {
+              "id": "9e77ca80-07fc-5fb1-b1db-f19a9f0d30cc",
+              "type": "FUNNEL",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "nonzero status"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "c5b7b346-2f37-5392-9379-a4bccae77b99",
+            "name": "",
+            "source": {
+              "id": "c4275b1c-173f-53e1-b44e-e0aea9581dae",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Esperar el feed completo"
+            },
+            "destination": {
+              "id": "9c6802df-7547-5da2-b5a8-31c33b7d082b",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Verificar que llegaron los 7 archivos"
+            },
+            "selectedRelationships": [
+              "merged"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "8aa3e59d-403e-5636-9b50-b37c1352f096",
+            "name": "",
+            "source": {
+              "id": "c4275b1c-173f-53e1-b44e-e0aea9581dae",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Esperar el feed completo"
+            },
+            "destination": {
+              "id": "9e77ca80-07fc-5fb1-b1db-f19a9f0d30cc",
+              "type": "FUNNEL",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "failure"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "ae2f4d78-44b2-50ac-8d97-87966e392c14",
+            "name": "",
+            "source": {
+              "id": "9c6802df-7547-5da2-b5a8-31c33b7d082b",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Verificar que llegaron los 7 archivos"
+            },
+            "destination": {
+              "id": "d3275998-91eb-52e7-94f2-c100b3c886c9",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Transformar GTFS al modelo Vialis"
+            },
+            "selectedRelationships": [
+              "feed.completo"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "a60537a2-a49d-54c5-b151-e8a72cb01b39",
+            "name": "",
+            "source": {
+              "id": "9c6802df-7547-5da2-b5a8-31c33b7d082b",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Verificar que llegaron los 7 archivos"
+            },
+            "destination": {
+              "id": "9e77ca80-07fc-5fb1-b1db-f19a9f0d30cc",
+              "type": "FUNNEL",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "unmatched"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "88d743a9-7219-5d63-930d-5cb2b130c900",
+            "name": "",
+            "source": {
+              "id": "d3275998-91eb-52e7-94f2-c100b3c886c9",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Transformar GTFS al modelo Vialis"
+            },
+            "destination": {
+              "id": "748bff09-aae2-5ab4-b0d7-e8306618dc61",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Recorridos actualizados"
+            },
+            "selectedRelationships": [
+              "output stream"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "69ca436c-770a-57a7-9c97-c668407c296a",
+            "name": "",
+            "source": {
+              "id": "d3275998-91eb-52e7-94f2-c100b3c886c9",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Transformar GTFS al modelo Vialis"
+            },
+            "destination": {
+              "id": "9e77ca80-07fc-5fb1-b1db-f19a9f0d30cc",
+              "type": "FUNNEL",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "nonzero status"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          },
+          {
+            "identifier": "a7dce592-cd1a-5559-a7bb-be675dc5a059",
+            "name": "",
+            "source": {
+              "id": "9e77ca80-07fc-5fb1-b1db-f19a9f0d30cc",
+              "type": "FUNNEL",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": ""
+            },
+            "destination": {
+              "id": "33806ef2-1b6b-50a4-b4fa-816314a06ceb",
+              "type": "PROCESSOR",
+              "groupId": "07813f88-1de0-5ef5-9e4e-712b50e61bb7",
+              "name": "Errores de la ingesta GTFS"
+            },
+            "selectedRelationships": [
+              ""
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          }
+        ],
+        "labels": [],
+        "funnels": [
+          {
+            "identifier": "9e77ca80-07fc-5fb1-b1db-f19a9f0d30cc",
+            "position": {
+              "x": 900.0,
+              "y": 1280.0
+            },
+            "componentType": "FUNNEL",
+            "groupIdentifier": "07813f88-1de0-5ef5-9e4e-712b50e61bb7"
+          }
+        ],
+        "controllerServices": [],
+        "variables": {},
+        "parameterContextName": "vialis",
+        "defaultFlowFileExpiration": "0 sec",
+        "defaultBackPressureObjectThreshold": 10000,
+        "defaultBackPressureDataSizeThreshold": "1 GB",
+        "flowFileConcurrency": "UNBOUNDED",
+        "flowFileOutboundPolicy": "STREAM_WHEN_AVAILABLE",
+        "componentType": "PROCESS_GROUP"
+      },
+      {
+        "identifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+        "groupIdentifier": "99598ab6-5993-5208-90c8-2bcf3c44f3a0",
+        "name": "30 - Ingesta de viajes",
+        "comments": "Carga el CSV de viajes SUBE, lo convierte en puntos PostGIS con celda H3 y recalcula los hexágonos y la matriz origen-destino.",
+        "position": {
+          "x": 700,
+          "y": 400
+        },
+        "processGroups": [],
+        "remoteProcessGroups": [],
+        "processors": [
+          {
+            "identifier": "4e2cae2b-b10c-5754-afa2-56b7fdf2f64f",
+            "name": "Disparar descarga del CSV",
+            "comments": "Deshabilitado hasta que viajes.url apunte al archivo real.",
+            "position": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "type": "org.apache.nifi.processors.standard.GenerateFlowFile",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "File Size": "0B",
+              "Batch Size": "1",
+              "Data Format": "Text",
+              "Unique FlowFiles": "false"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "24 h",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [],
+            "scheduledState": "DISABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "a7604bb4-132a-5190-8da3-b6bc0f5710d6",
+            "name": "Descargar CSV de viajes",
+            "comments": "",
+            "position": {
+              "x": 0.0,
+              "y": 180.0
+            },
+            "type": "org.apache.nifi.processors.standard.InvokeHTTP",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "HTTP Method": "GET",
+              "Remote URL": "#{viajes.url}",
+              "flow-file-naming-strategy": "URL_PATH",
+              "Read Timeout": "10 mins",
+              "Connection Timeout": "30 secs"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "Original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "a7953c3f-8dc2-551d-b15b-5d5411c62d3d",
+            "name": "Detectar CSV en la carpeta local",
+            "comments": "",
+            "position": {
+              "x": 600.0,
+              "y": 0.0
+            },
+            "type": "org.apache.nifi.processors.standard.ListFile",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Input Directory": "#{dir.datos}/entrada/viajes",
+              "File Filter": ".*\\.(csv|zip)",
+              "Recurse Subdirectories": "false",
+              "Minimum File Age": "15 sec"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "30 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "7d30f71a-3b7c-52bf-8035-c8c172b896e8",
+            "name": "Leer el archivo de la carpeta local",
+            "comments": "",
+            "position": {
+              "x": 600.0,
+              "y": 180.0
+            },
+            "type": "org.apache.nifi.processors.standard.FetchFile",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Completion Strategy": "None"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "240fe830-9a8c-5469-832c-3403fb7d8c49",
+            "name": "¿Viene comprimido?",
+            "comments": "",
+            "position": {
+              "x": 300.0,
+              "y": 380.0
+            },
+            "type": "org.apache.nifi.processors.standard.RouteOnAttribute",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Routing Strategy": "Route to Property name",
+              "comprimido": "${filename:toLower():endsWith('.zip')}"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "ad467f2d-b1aa-57f2-977c-9bc6b1ed3352",
+            "name": "Descomprimir",
+            "comments": "",
+            "position": {
+              "x": 0.0,
+              "y": 560.0
+            },
+            "type": "org.apache.nifi.processors.standard.UnpackContent",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Packaging Format": "zip",
+              "File Filter": ".*\\.csv"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "6f3a0632-f00a-55c0-bf85-05b4f21cee67",
+            "name": "Preparar base y viajes_raw",
+            "comments": "El script reemite el CSV por STDOUT.",
+            "position": {
+              "x": 300.0,
+              "y": 830.0
+            },
+            "type": "org.apache.nifi.processors.standard.ExecuteStreamCommand",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Command Path": "#{dir.scripts}/preparar_base.sh",
+              "Argument Delimiter": ";",
+              "Ignore STDIN": "false",
+              "argumentsStrategy": "Command Arguments Property",
+              "Command Arguments": "--pasar-contenido;#{dir.sql}/viajes/crear_viajes_raw.sql"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "01e529e6-a23e-50eb-be8c-ca5784eee423",
+            "name": "Cargar el CSV en viajes_raw",
+            "comments": "",
+            "position": {
+              "x": 300.0,
+              "y": 1100.0
+            },
+            "type": "org.apache.nifi.processors.standard.ExecuteStreamCommand",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Command Path": "#{dir.scripts}/cargar_csv.sh",
+              "Argument Delimiter": ";",
+              "Ignore STDIN": "false",
+              "argumentsStrategy": "Command Arguments Property",
+              "Command Arguments": "--tabla;vialis.viajes_raw"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "e6d87d17-3288-5f77-9fab-d87ff27eacfa",
+            "name": "Convertir a puntos y celdas H3",
+            "comments": "",
+            "position": {
+              "x": 300.0,
+              "y": 1280.0
+            },
+            "type": "org.apache.nifi.processors.standard.ExecuteStreamCommand",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Command Path": "#{dir.scripts}/ejecutar_sql.sh",
+              "Argument Delimiter": ";",
+              "Ignore STDIN": "true",
+              "argumentsStrategy": "Command Arguments Property",
+              "Command Arguments": "#{dir.sql}/viajes/transformar_viajes.sql"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "5b27d89a-0921-5112-a1c7-615ea19b0343",
+            "name": "Recalcular hexágonos y matriz origen-destino",
+            "comments": "",
+            "position": {
+              "x": 300.0,
+              "y": 1460.0
+            },
+            "type": "org.apache.nifi.processors.standard.ExecuteStreamCommand",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Command Path": "#{dir.scripts}/ejecutar_sql.sh",
+              "Argument Delimiter": ";",
+              "Ignore STDIN": "true",
+              "argumentsStrategy": "Command Arguments Property",
+              "Command Arguments": "#{dir.sql}/viajes/hexagonos_viajes.sql;#{dir.sql}/viajes/matriz_origen_destino.sql"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "original"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "8502ce2b-197c-58bd-b2d8-fe4611eaa6e0",
+            "name": "Viajes actualizados",
+            "comments": "",
+            "position": {
+              "x": 300.0,
+              "y": 1640.0
+            },
+            "type": "org.apache.nifi.processors.standard.LogAttribute",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Log Level": "info",
+              "Log Payload": "true",
+              "Log prefix": "ingesta vialis"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "success"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "c8a9a02f-9d15-5e20-a4a8-4a7397130c45",
+            "name": "Errores de la ingesta de viajes",
+            "comments": "",
+            "position": {
+              "x": 900.0,
+              "y": 1280.0
+            },
+            "type": "org.apache.nifi.processors.standard.LogAttribute",
+            "bundle": {
+              "group": "org.apache.nifi",
+              "artifact": "nifi-standard-nar",
+              "version": "1.28.1"
+            },
+            "properties": {
+              "Log Level": "error",
+              "Log Payload": "false",
+              "Log prefix": "ingesta vialis"
+            },
+            "propertyDescriptors": {},
+            "style": {},
+            "schedulingPeriod": "0 sec",
+            "schedulingStrategy": "TIMER_DRIVEN",
+            "executionNode": "ALL",
+            "penaltyDuration": "30 sec",
+            "yieldDuration": "1 sec",
+            "bulletinLevel": "WARN",
+            "runDurationMillis": 0,
+            "concurrentlySchedulableTaskCount": 1,
+            "autoTerminatedRelationships": [
+              "success"
+            ],
+            "scheduledState": "ENABLED",
+            "retryCount": 10,
+            "retriedRelationships": [],
+            "backoffMechanism": "PENALIZE_FLOWFILE",
+            "maxBackoffPeriod": "10 mins",
+            "componentType": "PROCESSOR",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          }
+        ],
+        "inputPorts": [],
+        "outputPorts": [],
+        "connections": [
+          {
+            "identifier": "6bf5ed58-6401-5fd3-82c7-ac823b8d9a88",
+            "name": "",
+            "source": {
+              "id": "4e2cae2b-b10c-5754-afa2-56b7fdf2f64f",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Disparar descarga del CSV"
+            },
+            "destination": {
+              "id": "a7604bb4-132a-5190-8da3-b6bc0f5710d6",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Descargar CSV de viajes"
+            },
+            "selectedRelationships": [
+              "success"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "bdca6be8-c132-5f66-9ac4-190ea35db319",
+            "name": "",
+            "source": {
+              "id": "a7604bb4-132a-5190-8da3-b6bc0f5710d6",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Descargar CSV de viajes"
+            },
+            "destination": {
+              "id": "240fe830-9a8c-5469-832c-3403fb7d8c49",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "¿Viene comprimido?"
+            },
+            "selectedRelationships": [
+              "Response"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "9c801643-1f98-5383-a27e-6848c8d1a1a0",
+            "name": "",
+            "source": {
+              "id": "a7604bb4-132a-5190-8da3-b6bc0f5710d6",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Descargar CSV de viajes"
+            },
+            "destination": {
+              "id": "7b74c3f9-81e7-51c0-8f23-e507f20d0cbc",
+              "type": "FUNNEL",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "Failure",
+              "Retry",
+              "No Retry"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "d9a499ff-15f4-5391-9b72-aa7104048137",
+            "name": "",
+            "source": {
+              "id": "a7953c3f-8dc2-551d-b15b-5d5411c62d3d",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Detectar CSV en la carpeta local"
+            },
+            "destination": {
+              "id": "7d30f71a-3b7c-52bf-8035-c8c172b896e8",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Leer el archivo de la carpeta local"
+            },
+            "selectedRelationships": [
+              "success"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "24d09a33-42ff-5914-b23f-8cedf7d43b1b",
+            "name": "",
+            "source": {
+              "id": "7d30f71a-3b7c-52bf-8035-c8c172b896e8",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Leer el archivo de la carpeta local"
+            },
+            "destination": {
+              "id": "240fe830-9a8c-5469-832c-3403fb7d8c49",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "¿Viene comprimido?"
+            },
+            "selectedRelationships": [
+              "success"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "2029ed21-e319-5bf2-842d-96539f158709",
+            "name": "",
+            "source": {
+              "id": "7d30f71a-3b7c-52bf-8035-c8c172b896e8",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Leer el archivo de la carpeta local"
+            },
+            "destination": {
+              "id": "7b74c3f9-81e7-51c0-8f23-e507f20d0cbc",
+              "type": "FUNNEL",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "failure",
+              "not.found",
+              "permission.denied"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "74870ef3-e6fc-5755-a7d9-8bcce4093b8f",
+            "name": "",
+            "source": {
+              "id": "240fe830-9a8c-5469-832c-3403fb7d8c49",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "¿Viene comprimido?"
+            },
+            "destination": {
+              "id": "ad467f2d-b1aa-57f2-977c-9bc6b1ed3352",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Descomprimir"
+            },
+            "selectedRelationships": [
+              "comprimido"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "5842d1c1-4968-5e93-bd20-122f31153175",
+            "name": "",
+            "source": {
+              "id": "240fe830-9a8c-5469-832c-3403fb7d8c49",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "¿Viene comprimido?"
+            },
+            "destination": {
+              "id": "6f3a0632-f00a-55c0-bf85-05b4f21cee67",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Preparar base y viajes_raw"
+            },
+            "selectedRelationships": [
+              "unmatched"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "2c2c03c0-2614-5c89-a224-bfef064a2d0f",
+            "name": "",
+            "source": {
+              "id": "ad467f2d-b1aa-57f2-977c-9bc6b1ed3352",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Descomprimir"
+            },
+            "destination": {
+              "id": "6f3a0632-f00a-55c0-bf85-05b4f21cee67",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Preparar base y viajes_raw"
+            },
+            "selectedRelationships": [
+              "success"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "2e7ceb9c-7f46-51ee-a4df-7977f32c3b69",
+            "name": "",
+            "source": {
+              "id": "ad467f2d-b1aa-57f2-977c-9bc6b1ed3352",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Descomprimir"
+            },
+            "destination": {
+              "id": "7b74c3f9-81e7-51c0-8f23-e507f20d0cbc",
+              "type": "FUNNEL",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "failure"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "fae783c1-5061-566a-a767-6237feb87aeb",
+            "name": "",
+            "source": {
+              "id": "6f3a0632-f00a-55c0-bf85-05b4f21cee67",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Preparar base y viajes_raw"
+            },
+            "destination": {
+              "id": "01e529e6-a23e-50eb-be8c-ca5784eee423",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Cargar el CSV en viajes_raw"
+            },
+            "selectedRelationships": [
+              "output stream"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "a3fe2e2e-e29e-5226-97c7-8eefc80d18b2",
+            "name": "",
+            "source": {
+              "id": "6f3a0632-f00a-55c0-bf85-05b4f21cee67",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Preparar base y viajes_raw"
+            },
+            "destination": {
+              "id": "7b74c3f9-81e7-51c0-8f23-e507f20d0cbc",
+              "type": "FUNNEL",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "nonzero status"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "70551cbf-130e-55ac-8f7f-a2be959fa9d0",
+            "name": "",
+            "source": {
+              "id": "01e529e6-a23e-50eb-be8c-ca5784eee423",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Cargar el CSV en viajes_raw"
+            },
+            "destination": {
+              "id": "e6d87d17-3288-5f77-9fab-d87ff27eacfa",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Convertir a puntos y celdas H3"
+            },
+            "selectedRelationships": [
+              "output stream"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "17ff9ded-049a-515b-826d-3bc711fdf08e",
+            "name": "",
+            "source": {
+              "id": "01e529e6-a23e-50eb-be8c-ca5784eee423",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Cargar el CSV en viajes_raw"
+            },
+            "destination": {
+              "id": "7b74c3f9-81e7-51c0-8f23-e507f20d0cbc",
+              "type": "FUNNEL",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "nonzero status"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "e143efd1-4704-5a82-a2dd-4a75c0c9d2f9",
+            "name": "",
+            "source": {
+              "id": "e6d87d17-3288-5f77-9fab-d87ff27eacfa",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Convertir a puntos y celdas H3"
+            },
+            "destination": {
+              "id": "5b27d89a-0921-5112-a1c7-615ea19b0343",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Recalcular hexágonos y matriz origen-destino"
+            },
+            "selectedRelationships": [
+              "output stream"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "ff80a6cd-0a06-5596-8f2c-b141abdcdd25",
+            "name": "",
+            "source": {
+              "id": "e6d87d17-3288-5f77-9fab-d87ff27eacfa",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Convertir a puntos y celdas H3"
+            },
+            "destination": {
+              "id": "7b74c3f9-81e7-51c0-8f23-e507f20d0cbc",
+              "type": "FUNNEL",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "nonzero status"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "cce4d1ea-b9f2-5bac-963b-eb790b41c6dd",
+            "name": "",
+            "source": {
+              "id": "5b27d89a-0921-5112-a1c7-615ea19b0343",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Recalcular hexágonos y matriz origen-destino"
+            },
+            "destination": {
+              "id": "8502ce2b-197c-58bd-b2d8-fe4611eaa6e0",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Viajes actualizados"
+            },
+            "selectedRelationships": [
+              "output stream"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "4f41b064-f2e0-54f9-98b3-ab78d8cdcc9f",
+            "name": "",
+            "source": {
+              "id": "5b27d89a-0921-5112-a1c7-615ea19b0343",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Recalcular hexágonos y matriz origen-destino"
+            },
+            "destination": {
+              "id": "7b74c3f9-81e7-51c0-8f23-e507f20d0cbc",
+              "type": "FUNNEL",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": ""
+            },
+            "selectedRelationships": [
+              "nonzero status"
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          },
+          {
+            "identifier": "3fc23d87-6ce9-5aad-b025-25ff5ad33e5b",
+            "name": "",
+            "source": {
+              "id": "7b74c3f9-81e7-51c0-8f23-e507f20d0cbc",
+              "type": "FUNNEL",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": ""
+            },
+            "destination": {
+              "id": "c8a9a02f-9d15-5e20-a4a8-4a7397130c45",
+              "type": "PROCESSOR",
+              "groupId": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde",
+              "name": "Errores de la ingesta de viajes"
+            },
+            "selectedRelationships": [
+              ""
+            ],
+            "backPressureObjectThreshold": 10000,
+            "backPressureDataSizeThreshold": "1 GB",
+            "flowFileExpiration": "0 sec",
+            "prioritizers": [],
+            "bends": [],
+            "labelIndex": 1,
+            "zIndex": 0,
+            "loadBalanceStrategy": "DO_NOT_LOAD_BALANCE",
+            "partitioningAttribute": "",
+            "loadBalanceCompression": "DO_NOT_COMPRESS",
+            "componentType": "CONNECTION",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          }
+        ],
+        "labels": [],
+        "funnels": [
+          {
+            "identifier": "7b74c3f9-81e7-51c0-8f23-e507f20d0cbc",
+            "position": {
+              "x": 900.0,
+              "y": 1100.0
+            },
+            "componentType": "FUNNEL",
+            "groupIdentifier": "d8e3a9b1-f142-51bf-9c19-c46cbce53dde"
+          }
+        ],
+        "controllerServices": [],
+        "variables": {},
+        "parameterContextName": "vialis",
+        "defaultFlowFileExpiration": "0 sec",
+        "defaultBackPressureObjectThreshold": 10000,
+        "defaultBackPressureDataSizeThreshold": "1 GB",
+        "flowFileConcurrency": "UNBOUNDED",
+        "flowFileOutboundPolicy": "STREAM_WHEN_AVAILABLE",
+        "componentType": "PROCESS_GROUP"
+      }
+    ],
+    "remoteProcessGroups": [],
+    "processors": [],
+    "inputPorts": [],
+    "outputPorts": [],
+    "connections": [],
+    "labels": [],
+    "funnels": [],
+    "controllerServices": [],
+    "variables": {},
+    "parameterContextName": "vialis",
+    "defaultFlowFileExpiration": "0 sec",
+    "defaultBackPressureObjectThreshold": 10000,
+    "defaultBackPressureDataSizeThreshold": "1 GB",
+    "flowFileConcurrency": "UNBOUNDED",
+    "flowFileOutboundPolicy": "STREAM_WHEN_AVAILABLE",
+    "componentType": "PROCESS_GROUP"
+  },
+  "parameterContexts": {
+    "vialis": {
+      "identifier": "304c4f64-a992-5b7f-81ae-88020383ed1b",
+      "name": "vialis",
+      "description": "Rutas y orígenes de datos del pipeline de ingesta.",
+      "parameters": [
+        {
+          "name": "dir.sql",
+          "value": "/opt/vialis/sql",
+          "description": "Carpeta con los scripts SQL del repositorio.",
+          "sensitive": false,
+          "provided": false
+        },
+        {
+          "name": "dir.scripts",
+          "value": "/opt/vialis/scripts",
+          "description": "Carpeta con los scripts que ejecuta ExecuteStreamCommand.",
+          "sensitive": false,
+          "provided": false
+        },
+        {
+          "name": "dir.datos",
+          "value": "/opt/vialis/datos",
+          "description": "Carpeta vigilada para las cargas manuales.",
+          "sensitive": false,
+          "provided": false
+        },
+        {
+          "name": "gtfs.url",
+          "value": "https://ejemplo.invalid/gtfs.zip",
+          "description": "URL del ZIP GTFS. Hay que reemplazarla por la del feed real.",
+          "sensitive": false,
+          "provided": false
+        },
+        {
+          "name": "viajes.url",
+          "value": "https://ejemplo.invalid/viajes.csv",
+          "description": "URL del CSV de viajes. Hay que reemplazarla por la real.",
+          "sensitive": false,
+          "provided": false
+        }
+      ],
+      "inheritedParameterContexts": [],
+      "componentType": "PARAMETER_CONTEXT"
+    }
+  },
+  "externalControllerServices": {},
+  "parameterProviders": {},
+  "flowEncodingVersion": "1.0",
+  "latest": false
+}

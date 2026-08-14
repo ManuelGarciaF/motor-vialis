@@ -1,0 +1,73 @@
+# Entorno local del pipeline de ingesta.
+#
+#     docker compose up -d --build
+#
+# NiFi queda en http://localhost:8080/nifi y PostgreSQL en localhost:5432.
+# Ambos puertos se publican solo en la interfaz de loopback.
+#
+# La base `vialis` NO se crea acá a propósito: crearla es el primer paso del
+# pipeline (`preparar_base.sh`). El contenedor arranca únicamente con la base
+# `postgres` que trae la imagen.
+name: vialis
+
+services:
+  postgres:
+    image: ${IMAGEN_POSTGRES:-postgis/postgis:18-master}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "127.0.0.1:${PUERTO_POSTGRES:-5432}:5432"
+    volumes:
+      - postgres-datos:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  nifi:
+    build: ./nifi
+    image: vialis/nifi:1.28.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # NiFi sin TLS ni autenticación, publicado solo en loopback: es un
+      # entorno de desarrollo. Para exponerlo hay que volver al modo seguro
+      # con SINGLE_USER_CREDENTIALS_* y el puerto 8443.
+      NIFI_WEB_HTTP_HOST: 0.0.0.0
+      NIFI_WEB_HTTP_PORT: 8080
+      # Los scripts que ejecuta el flow se conectan con estas variables.
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATABASE: ${NOMBRE_BASE:-vialis}
+      PGDATABASE_ADMIN: postgres
+      VIALIS_SQL_DIR: /opt/vialis/sql
+    ports:
+      - "127.0.0.1:${PUERTO_NIFI:-8080}:8080"
+    volumes:
+      - ../sql:/opt/vialis/sql:ro
+      - ./nifi/scripts:/opt/vialis/scripts:ro
+      - ${DIR_DATOS:-./datos}:/opt/vialis/datos
+      - nifi-conf:/opt/nifi/nifi-current/conf
+      - nifi-estado:/opt/nifi/nifi-current/state
+      - nifi-flowfiles:/opt/nifi/nifi-current/flowfile_repository
+      - nifi-contenido:/opt/nifi/nifi-current/content_repository
+      - nifi-procedencia:/opt/nifi/nifi-current/provenance_repository
+      - nifi-base:/opt/nifi/nifi-current/database_repository
+      - nifi-logs:/opt/nifi/nifi-current/logs
+    restart: unless-stopped
+
+volumes:
+  postgres-datos:
+  nifi-conf:
+  nifi-estado:
+  nifi-flowfiles:
+  nifi-contenido:
+  nifi-procedencia:
+  nifi-base:
+  nifi-logs:

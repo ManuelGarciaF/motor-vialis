@@ -1,0 +1,4 @@
+stop_id,stop_code,stop_name,stop_lat,stop_lon
+P1,0001,Parada Uno,-34.600000,-58.400000
+P2,0002,Parada Dos,-34.600000,-58.390000
+P3,0003,Parada Tres,-34.600000,-58.370000
