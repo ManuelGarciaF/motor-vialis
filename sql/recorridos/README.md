@@ -180,6 +180,33 @@ parada física sin duplicar su nombre ni sus coordenadas.
 La última parada de cada recorrido tiene el tramo, la distancia y los tiempos
 en `NULL`, ya que no existe una parada siguiente.
 
+### Ubicación de las paradas sobre el recorrido
+
+Para cortar `tramo_hasta_siguiente` hay que saber en qué fracción del `shape`
+cae cada parada. `ST_LineLocatePoint` devuelve la proyección **más cercana**, y
+esa respuesta es ambigua cuando el recorrido pasa dos veces por el mismo lugar:
+la parada se engancha a la pasada equivocada, la fracción retrocede y el tramo
+se descarta por quedar invertido.
+
+Por eso las paradas se ubican de forma **monótona**: cada parada se busca
+únicamente sobre el tramo de `shape` que queda por delante de la anterior
+(`ST_LineSubstring(geom, fraccion_anterior, 1)`), lo que respeta el orden de la
+ruta. Los tres casos que esto resuelve, medidos sobre el feed del AMBA:
+
+| Caso                  | Ejemplo                        | Qué pasaba sin ubicación monótona                                     |
+|-----------------------|--------------------------------|-----------------------------------------------------------------------|
+| Recorrido circular    | `AZUL1` (11,5 km, inicio = fin)| La última parada **es** el punto de inicio y proyectaba en `0.0`      |
+| Pasada equivocada     | `79J`, `395B`                  | El recorrido vuelve a un corredor ya transitado: retrocesos de 12-46 km |
+| Retroceso corto       | `91E`, `91B`                   | El recorrido dobla sobre sí mismo: retrocesos de 427 y 683 m          |
+
+La auto-intersección por sí sola no es el problema: 500 de los 2.066 recorridos
+tienen `shape` no simple y solo 5 se rompían.
+
+El caso base de la recursión clampea la fracción a 1 en lugar de cortar. Si
+cortara, las paradas posteriores quedarían sin fila y desaparecerían de
+`recorridos_paradas`; clampeando conservan su fila y su tramo queda en `NULL`,
+que es la degradación correcta.
+
 ### Tiempo comercial por tramo
 
 Los percentiles se calculan solamente con viajes cuya secuencia completa de

@@ -297,7 +297,7 @@ JOIN vialis.gtfs_stop_times_raw st
 JOIN vialis.gtfs_stops_raw s
     ON s.stop_id = st.stop_id;
 
-WITH stop_fractions AS (
+WITH RECURSIVE stop_inputs AS (
     SELECT
         recorrido.id_recorrido,
         ct.route_id,
@@ -309,7 +309,7 @@ WITH stop_fractions AS (
             ORDER BY st.stop_sequence
         )::INTEGER AS stop_ordinal,
         recorrido.geom,
-        ST_LineLocatePoint(recorrido.geom, parada.posicion) AS fraccion
+        parada.posicion
     FROM gtfs_canonical_trips ct
     JOIN vialis.recorridos recorrido
         ON recorrido.gtfs_route_id = ct.route_id
@@ -320,21 +320,60 @@ WITH stop_fractions AS (
         ON st.trip_id = ct.trip_id
     JOIN vialis.paradas parada
         ON parada.gtfs_stop_id = st.stop_id
-), ordered_stops AS (
+), monotonic_fractions AS (
+    -- La primera parada se ubica sobre el recorrido completo.
     SELECT
         id_recorrido,
-        route_id,
-        direction_id,
-        id_parada,
-        nro_parada,
         stop_ordinal,
-        geom,
-        fraccion,
-        LEAD(fraccion) OVER (
-            PARTITION BY id_recorrido
-            ORDER BY nro_parada
+        ST_LineLocatePoint(geom, posicion) AS fraccion
+    FROM stop_inputs
+    WHERE stop_ordinal = 1
+
+    UNION ALL
+
+    -- Cada parada siguiente se ubica solo sobre el tramo de recorrido que
+    -- queda por delante. ST_LineLocatePoint devuelve la proyeccion mas
+    -- cercana, que es ambigua cuando el recorrido pasa dos veces por el mismo
+    -- lugar; restringir la busqueda al remanente respeta el orden de la ruta y
+    -- es lo que evita que una parada se enganche a una pasada anterior.
+    --
+    -- El CASE clampea a 1 en vez de cortar la recursion con un WHERE: cortarla
+    -- dejaria a las paradas posteriores sin fila en este CTE y el JOIN de
+    -- ordered_stops las perderia.
+    SELECT
+        next_stop.id_recorrido,
+        next_stop.stop_ordinal,
+        CASE
+            WHEN previous.fraccion >= 1 THEN 1
+            ELSE previous.fraccion
+                + (1 - previous.fraccion)
+                * ST_LineLocatePoint(
+                    ST_LineSubstring(next_stop.geom, previous.fraccion, 1),
+                    next_stop.posicion
+                )
+        END
+    FROM monotonic_fractions previous
+    JOIN stop_inputs next_stop
+        ON next_stop.id_recorrido = previous.id_recorrido
+        AND next_stop.stop_ordinal = previous.stop_ordinal + 1
+), ordered_stops AS (
+    SELECT
+        stop_input.id_recorrido,
+        stop_input.route_id,
+        stop_input.direction_id,
+        stop_input.id_parada,
+        stop_input.nro_parada,
+        stop_input.stop_ordinal,
+        stop_input.geom,
+        fraction.fraccion,
+        LEAD(fraction.fraccion) OVER (
+            PARTITION BY stop_input.id_recorrido
+            ORDER BY stop_input.stop_ordinal
         ) AS fraccion_siguiente
-    FROM stop_fractions
+    FROM stop_inputs stop_input
+    JOIN monotonic_fractions fraction
+        ON fraction.id_recorrido = stop_input.id_recorrido
+        AND fraction.stop_ordinal = stop_input.stop_ordinal
 ), stop_segments AS (
     SELECT
         id_recorrido,
