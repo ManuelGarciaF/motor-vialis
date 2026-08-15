@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"reflect"
 	"testing"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
@@ -172,6 +173,7 @@ func TestServiceLoadsGlobalFallbackOnce(t *testing.T) {
 
 func TestServiceRejectsInvalidRepositoryMeasurements(t *testing.T) {
 	repository := &fakeRepository{
+		answerVerbatim: true,
 		measured: []MeasuredSegment{
 			measuredSegment(1, "A", "B", 100, nil),
 		},
@@ -194,6 +196,90 @@ func TestServiceWrapsRepositoryErrors(t *testing.T) {
 	)
 	if !errors.Is(err, want) {
 		t.Fatalf("Estimate() error = %v, want wrapped error", err)
+	}
+}
+
+func TestServiceStopsQueryingOnceEverySegmentResolves(t *testing.T) {
+	enough := []Reference{
+		reference(1, 100, 1000, Paces{0.1, 0.2, 0.3}),
+		reference(2, 100, 1000, Paces{0.1, 0.2, 0.3}),
+		reference(3, 100, 1000, Paces{0.1, 0.2, 0.3}),
+	}
+	repository := &fakeRepository{measured: []MeasuredSegment{
+		measuredSegment(0, "A", "B", 1000, enough),
+		measuredSegment(1, "B", "C", 1000, enough),
+	}}
+
+	if _, err := NewService(repository, testPolicy()).Estimate(
+		context.Background(),
+		routeWithSegmentCount(2),
+	); err != nil {
+		t.Fatalf("Estimate() error = %v", err)
+	}
+
+	want := []float64{100}
+	if !reflect.DeepEqual(repository.requestedRadii, want) {
+		t.Fatalf(
+			"requested radii = %v, want %v: the wider corridors are discarded, "+
+				"so measuring them is wasted work",
+			repository.requestedRadii,
+			want,
+		)
+	}
+}
+
+func TestServiceOnlyWidensTheSearchForUnresolvedSegments(t *testing.T) {
+	repository := &fakeRepository{measured: []MeasuredSegment{
+		measuredSegment(0, "A", "B", 1000, []Reference{
+			reference(1, 100, 1000, Paces{0.1, 0.2, 0.3}),
+			reference(2, 100, 1000, Paces{0.1, 0.2, 0.3}),
+			reference(3, 100, 1000, Paces{0.1, 0.2, 0.3}),
+		}),
+		measuredSegment(1, "B", "C", 1000, []Reference{
+			reference(4, 300, 1000, Paces{0.2, 0.3, 0.4}),
+			reference(5, 300, 1000, Paces{0.2, 0.3, 0.4}),
+			reference(6, 300, 1000, Paces{0.2, 0.3, 0.4}),
+		}),
+	}}
+
+	result, err := NewService(repository, testPolicy()).Estimate(
+		context.Background(),
+		routeWithSegmentCount(2),
+	)
+	if err != nil {
+		t.Fatalf("Estimate() error = %v", err)
+	}
+
+	wantOrders := [][]int{{0, 1}, {1}}
+	if !reflect.DeepEqual(repository.requestedOrders, wantOrders) {
+		t.Fatalf(
+			"requested orders = %v, want %v",
+			repository.requestedOrders,
+			wantOrders,
+		)
+	}
+	if result.BySegment[0].Source != SourceLocal100 ||
+		result.BySegment[1].Source != SourceLocal300 {
+		t.Fatalf("sources = %#v", result.BySegment)
+	}
+}
+
+func TestServiceRejectsPolicyWithoutReferenceRadii(t *testing.T) {
+	policy := testPolicy()
+	policy.ReferenceRadiiMeters = nil
+	repository := &fakeRepository{measured: []MeasuredSegment{
+		measuredSegment(0, "A", "B", 1000, nil),
+	}}
+
+	_, err := NewService(repository, policy).Estimate(
+		context.Background(),
+		routeWithSegmentCount(1),
+	)
+	if err == nil {
+		t.Fatal("Estimate() error = nil")
+	}
+	if len(repository.requestedRadii) != 0 {
+		t.Fatalf("requested radii = %v, want none", repository.requestedRadii)
 	}
 }
 
@@ -227,14 +313,41 @@ type fakeRepository struct {
 	referencesError error
 	globalError     error
 	globalCalls     int
+	requestedRadii  []float64
+	requestedOrders [][]int
+	answerVerbatim  bool
 }
 
+// FindSegmentReferences answers only for the requested segments, the way the
+// PostgreSQL repository does, so the tests exercise the narrowing search.
 func (repository *fakeRepository) FindSegmentReferences(
 	_ context.Context,
-	_ []Segment,
+	segments []Segment,
 	_ Policy,
+	radiusMeters float64,
 ) ([]MeasuredSegment, error) {
-	return repository.measured, repository.referencesError
+	repository.requestedRadii = append(repository.requestedRadii, radiusMeters)
+	orders := make([]int, 0, len(segments))
+	requested := make(map[int]bool, len(segments))
+	for _, segment := range segments {
+		orders = append(orders, segment.Order)
+		requested[segment.Order] = true
+	}
+	repository.requestedOrders = append(repository.requestedOrders, orders)
+	if repository.referencesError != nil {
+		return nil, repository.referencesError
+	}
+	if repository.answerVerbatim {
+		return repository.measured, nil
+	}
+
+	answer := make([]MeasuredSegment, 0, len(segments))
+	for _, measured := range repository.measured {
+		if requested[measured.Order] {
+			answer = append(answer, measured)
+		}
+	}
+	return answer, nil
 }
 
 func (repository *fakeRepository) FindGlobalPaces(

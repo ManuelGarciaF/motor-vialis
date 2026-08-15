@@ -65,11 +65,16 @@ type GlobalPaces struct {
 }
 
 // Repository measures input geometry and finds local and global GTFS paces.
+//
+// FindSegmentReferences answers for a single corridor radius so the estimator
+// can widen the search only for the segments that still need it. It must
+// return one measurement per requested segment, with or without references.
 type Repository interface {
 	FindSegmentReferences(
 		ctx context.Context,
 		segments []Segment,
 		policy Policy,
+		radiusMeters float64,
 	) ([]MeasuredSegment, error)
 	FindGlobalPaces(
 		ctx context.Context,

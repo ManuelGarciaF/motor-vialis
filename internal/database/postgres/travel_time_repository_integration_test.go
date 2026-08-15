@@ -71,41 +71,56 @@ func TestTravelTimeRepositoryIntegration(t *testing.T) {
 		{Latitude: -40, Longitude: -50},
 		{Latitude: -40, Longitude: -49.99},
 	}}
-	measured, err := repository.FindSegmentReferences(
-		ctx,
-		[]traveltime.Segment{{
-			Order:             0,
-			OriginStopID:      "A",
-			DestinationStopID: "B",
-			Path:              inputPath,
-		}},
-		config.DefaultTravelTimePolicy(),
-	)
-	if err != nil {
-		t.Fatalf("FindSegmentReferences() error = %v", err)
-	}
-	if len(measured) != 1 {
-		t.Fatalf("segments = %d, want 1", len(measured))
-	}
-	if math.Abs(measured[0].LengthMeters-853.94) > 2 {
-		t.Fatalf("length = %v, want approximately 853.94", measured[0].LengthMeters)
-	}
-	if len(measured[0].References) != 3 {
-		t.Fatalf("references = %#v, want forward reference at three radii", measured[0].References)
-	}
-	for _, reference := range measured[0].References {
-		if reference.RouteID != forwardRouteID {
+	policy := config.DefaultTravelTimePolicy()
+	for _, radiusMeters := range policy.ReferenceRadiiMeters {
+		measured, err := repository.FindSegmentReferences(
+			ctx,
+			[]traveltime.Segment{{
+				Order:             0,
+				OriginStopID:      "A",
+				DestinationStopID: "B",
+				Path:              inputPath,
+			}},
+			policy,
+			radiusMeters,
+		)
+		if err != nil {
+			t.Fatalf("FindSegmentReferences(%v) error = %v", radiusMeters, err)
+		}
+		if len(measured) != 1 {
+			t.Fatalf("segments at %v m = %d, want 1", radiusMeters, len(measured))
+		}
+		if math.Abs(measured[0].LengthMeters-853.94) > 2 {
+			t.Fatalf("length = %v, want approximately 853.94", measured[0].LengthMeters)
+		}
+		if len(measured[0].References) != 1 {
 			t.Fatalf(
-				"reference route = %d, want %d; reverse route %d must be excluded",
-				reference.RouteID,
-				forwardRouteID,
-				reverseRouteID,
+				"references at %v m = %#v, want the forward reference",
+				radiusMeters,
+				measured[0].References,
 			)
 		}
-		if reference.Paces.OffPeak <= 0 ||
-			reference.Paces.OffPeak > reference.Paces.Typical ||
-			reference.Paces.Typical > reference.Paces.Peak {
-			t.Fatalf("reference paces = %#v", reference.Paces)
+		for _, reference := range measured[0].References {
+			if reference.RadiusMeters != radiusMeters {
+				t.Fatalf(
+					"reference radius = %v, want %v",
+					reference.RadiusMeters,
+					radiusMeters,
+				)
+			}
+			if reference.RouteID != forwardRouteID {
+				t.Fatalf(
+					"reference route = %d, want %d; reverse route %d must be excluded",
+					reference.RouteID,
+					forwardRouteID,
+					reverseRouteID,
+				)
+			}
+			if reference.Paces.OffPeak <= 0 ||
+				reference.Paces.OffPeak > reference.Paces.Typical ||
+				reference.Paces.Typical > reference.Paces.Peak {
+				t.Fatalf("reference paces = %#v", reference.Paces)
+			}
 		}
 	}
 

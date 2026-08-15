@@ -41,7 +41,7 @@ SELECT
     reference.typical_seconds_per_meter,
     reference.peak_seconds_per_meter
 FROM measured_segments input
-CROSS JOIN unnest($5::DOUBLE PRECISION[]) AS radius(radius_meters)
+CROSS JOIN (SELECT $5::DOUBLE PRECISION AS radius_meters) AS radius
 LEFT JOIN LATERAL (
     SELECT
         route_stop.id_recorrido,

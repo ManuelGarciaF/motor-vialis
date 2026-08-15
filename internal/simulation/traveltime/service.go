@@ -25,30 +25,22 @@ func (service *Service) Estimate(
 	ctx context.Context,
 	input route.Route,
 ) (Result, error) {
-	segments := segmentsFromRoute(input)
-	measured, err := service.repository.FindSegmentReferences(
-		ctx,
-		segments,
-		service.policy,
-	)
-	if err != nil {
-		return Result{}, fmt.Errorf("find segment references: %w", err)
-	}
-
-	ordered, err := orderMeasuredSegments(measured, len(segments))
+	estimates, err := service.resolveLocalPaces(ctx, segmentsFromRoute(input))
 	if err != nil {
 		return Result{}, err
 	}
 
 	result := Result{
 		Confidence: ConfidenceHigh,
-		BySegment:  make([]SegmentResult, 0, len(ordered)),
+		BySegment:  make([]SegmentResult, 0, len(estimates)),
 	}
 	var global *GlobalPaces
-	for _, segment := range ordered {
-		paces, source, confidence, referenceCount, found :=
-			service.selectLocalPaces(segment)
-		if !found {
+	for _, estimate := range estimates {
+		paces := estimate.paces
+		source := estimate.source
+		confidence := estimate.confidence
+		referenceCount := estimate.referenceCount
+		if !estimate.found {
 			if global == nil {
 				fallback, fallbackErr := service.repository.FindGlobalPaces(
 					ctx,
@@ -73,13 +65,14 @@ func (service *Service) Estimate(
 			referenceCount = global.RouteCount
 		}
 
+		length := estimate.lengthMeters
 		segmentResult := SegmentResult{
-			OriginStopID:        segment.OriginStopID,
-			DestinationStopID:   segment.DestinationStopID,
-			DistanceMeters:      segment.LengthMeters,
-			OffPeakSeconds:      estimatedSeconds(segment.LengthMeters, paces.OffPeak),
-			TypicalSeconds:      estimatedSeconds(segment.LengthMeters, paces.Typical),
-			PeakSeconds:         estimatedSeconds(segment.LengthMeters, paces.Peak),
+			OriginStopID:        estimate.segment.OriginStopID,
+			DestinationStopID:   estimate.segment.DestinationStopID,
+			DistanceMeters:      length,
+			OffPeakSeconds:      estimatedSeconds(length, paces.OffPeak),
+			TypicalSeconds:      estimatedSeconds(length, paces.Typical),
+			PeakSeconds:         estimatedSeconds(length, paces.Peak),
 			Confidence:          confidence,
 			ReferenceRouteCount: referenceCount,
 			Source:              source,
@@ -107,21 +100,102 @@ func segmentsFromRoute(input route.Route) []Segment {
 	return segments
 }
 
+// segmentEstimate is the local commercial pace chosen for one input segment.
+type segmentEstimate struct {
+	segment        Segment
+	lengthMeters   float64
+	paces          Paces
+	source         ReferenceSource
+	confidence     Confidence
+	referenceCount int
+	found          bool
+}
+
+// resolveLocalPaces queries one corridor radius at a time, widening the search
+// only for the segments that no narrower radius could resolve.
+//
+// An estimate keeps the first radius that reaches MinimumReferenceRoutes, so
+// asking for every radius at once measures corridors that are then discarded.
+// The widest radius is also by far the most expensive to measure, which makes
+// that discarded work the dominant cost of a simulation.
+func (service *Service) resolveLocalPaces(
+	ctx context.Context,
+	segments []Segment,
+) ([]segmentEstimate, error) {
+	if len(service.policy.ReferenceRadiiMeters) == 0 {
+		return nil, fmt.Errorf("measure route segments: policy has no reference radii")
+	}
+
+	estimates := make([]segmentEstimate, len(segments))
+	for index, segment := range segments {
+		estimates[index] = segmentEstimate{segment: segment}
+	}
+
+	pending := segments
+	for radiusIndex, radius := range service.policy.ReferenceRadiiMeters {
+		if len(pending) == 0 {
+			break
+		}
+		measured, err := service.repository.FindSegmentReferences(
+			ctx,
+			pending,
+			service.policy,
+			radius,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("find segment references: %w", err)
+		}
+		ordered, err := orderMeasuredSegments(measured, pending)
+		if err != nil {
+			return nil, err
+		}
+
+		isLastRadius := radiusIndex == len(service.policy.ReferenceRadiiMeters)-1
+		unresolved := make([]Segment, 0, len(pending))
+		for _, segment := range ordered {
+			estimate := &estimates[segment.Order]
+			estimate.lengthMeters = segment.LengthMeters
+
+			paces, source, confidence, count, found :=
+				service.pacesAtRadius(segment, radius, isLastRadius)
+			if !found {
+				unresolved = append(unresolved, estimate.segment)
+				continue
+			}
+			estimate.paces = paces
+			estimate.source = source
+			estimate.confidence = confidence
+			estimate.referenceCount = count
+			estimate.found = true
+		}
+		pending = unresolved
+	}
+	return estimates, nil
+}
+
+// orderMeasuredSegments returns the measurements in the order they were
+// requested and rejects a repository that answers with a different set.
 func orderMeasuredSegments(
 	measured []MeasuredSegment,
-	count int,
+	requested []Segment,
 ) ([]MeasuredSegment, error) {
-	if len(measured) != count {
+	if len(measured) != len(requested) {
 		return nil, fmt.Errorf(
 			"measure route segments: got %d segments, want %d",
 			len(measured),
-			count,
+			len(requested),
 		)
 	}
-	ordered := make([]MeasuredSegment, count)
-	seen := make([]bool, count)
+	positions := make(map[int]int, len(requested))
+	for position, segment := range requested {
+		positions[segment.Order] = position
+	}
+
+	ordered := make([]MeasuredSegment, len(requested))
+	seen := make([]bool, len(requested))
 	for _, segment := range measured {
-		if segment.Order < 0 || segment.Order >= count || seen[segment.Order] {
+		position, wasRequested := positions[segment.Order]
+		if !wasRequested || seen[position] {
 			return nil, fmt.Errorf(
 				"measure route segments: invalid segment order %d",
 				segment.Order,
@@ -133,41 +207,39 @@ func orderMeasuredSegments(
 				segment.Order,
 			)
 		}
-		seen[segment.Order] = true
-		ordered[segment.Order] = segment
+		seen[position] = true
+		ordered[position] = segment
 	}
 	return ordered, nil
 }
 
-func (service *Service) selectLocalPaces(
+func (service *Service) pacesAtRadius(
 	segment MeasuredSegment,
+	radiusMeters float64,
+	isLastRadius bool,
 ) (Paces, ReferenceSource, Confidence, int, bool) {
-	for radiusIndex, radius := range service.policy.ReferenceRadiiMeters {
-		routes := consolidateRoutes(segment, radius)
-		isLastRadius := radiusIndex == len(service.policy.ReferenceRadiiMeters)-1
-		if len(routes) < service.policy.MinimumReferenceRoutes &&
-			!(isLastRadius && len(routes) > 0) {
-			continue
-		}
-
-		paces := Paces{
-			OffPeak: weightedMedian(routes, func(value routePace) float64 {
-				return value.Paces.OffPeak
-			}),
-			Typical: weightedMedian(routes, func(value routePace) float64 {
-				return value.Paces.Typical
-			}),
-			Peak: weightedMedian(routes, func(value routePace) float64 {
-				return value.Paces.Peak
-			}),
-		}
-		if !validPaces(paces) {
-			continue
-		}
-		return paces, sourceForRadius(radius), confidenceFor(radius, len(routes)),
-			len(routes), true
+	routes := consolidateRoutes(segment, radiusMeters)
+	if len(routes) < service.policy.MinimumReferenceRoutes &&
+		!(isLastRadius && len(routes) > 0) {
+		return Paces{}, "", "", 0, false
 	}
-	return Paces{}, "", "", 0, false
+
+	paces := Paces{
+		OffPeak: weightedMedian(routes, func(value routePace) float64 {
+			return value.Paces.OffPeak
+		}),
+		Typical: weightedMedian(routes, func(value routePace) float64 {
+			return value.Paces.Typical
+		}),
+		Peak: weightedMedian(routes, func(value routePace) float64 {
+			return value.Paces.Peak
+		}),
+	}
+	if !validPaces(paces) {
+		return Paces{}, "", "", 0, false
+	}
+	return paces, sourceForRadius(radiusMeters),
+		confidenceFor(radiusMeters, len(routes)), len(routes), true
 }
 
 type routePace struct {
