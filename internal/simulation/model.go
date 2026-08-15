@@ -26,7 +26,8 @@ type Metrics struct {
 
 // Result groups independent simulation calculations.
 type Result struct {
-	Demand  demand.Result  `json:"demand"`
-	Revenue revenue.Result `json:"revenue"`
-	Metrics Metrics        `json:"metrics"`
+	Demand  demand.Result      `json:"demand"`
+	Revenue revenue.Result     `json:"revenue"`
+	Metrics Metrics            `json:"metrics"`
+	ByStop  []StopContribution `json:"byStop"`
 }

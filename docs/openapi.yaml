@@ -327,6 +327,39 @@ components:
         travelTime:
           $ref: "#/components/schemas/TravelTimeResult"
 
+    StopContribution:
+      type: object
+      description: >-
+        Demand and revenue attributed to one stop. Origin and destination
+        figures are reported apart because every stop pair contributes to both
+        of its stops: adding the two columns would count each trip twice, while
+        each column on its own sums to the route total. Every stop is listed,
+        including those contributing nothing.
+      properties:
+        stopOrder:
+          type: integer
+          description: Position of the stop in the route, starting at zero.
+        stopId:
+          type: string
+        originGrossDemand:
+          type: number
+          format: double
+        originPotentialDemand:
+          type: number
+          format: double
+        destinationGrossDemand:
+          type: number
+          format: double
+        destinationPotentialDemand:
+          type: number
+          format: double
+        originPotentialRevenueCents:
+          type: number
+          format: double
+        destinationPotentialRevenueCents:
+          type: number
+          format: double
+
     SimulationResult:
       type: object
       properties:
@@ -336,3 +369,7 @@ components:
           $ref: "#/components/schemas/RevenueResult"
         metrics:
           $ref: "#/components/schemas/Metrics"
+        byStop:
+          type: array
+          items:
+            $ref: "#/components/schemas/StopContribution"

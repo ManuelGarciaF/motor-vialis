@@ -79,5 +79,6 @@ func (service *Service) Simulate(
 			TotalDistanceMeters: travelTimeResult.TotalDistanceMeters,
 			TravelTime:          travelTimeResult,
 		},
+		ByStop: StopContributions(input, demandResult, revenueResult),
 	}, nil
 }

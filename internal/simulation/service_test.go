@@ -56,6 +56,14 @@ func TestServiceSimulateBuildsNestedResult(t *testing.T) {
 		!reflect.DeepEqual(timeEstimator.received, input) {
 		t.Fatal("estimators did not receive the validated route")
 	}
+
+	if len(result.ByStop) != len(input.Stops) {
+		t.Fatalf("byStop = %d entries, want %d", len(result.ByStop), len(input.Stops))
+	}
+	if result.ByStop[0].OriginPotentialDemand != 75 ||
+		result.ByStop[1].DestinationPotentialDemand != 75 {
+		t.Fatalf("byStop = %#v", result.ByStop)
+	}
 }
 
 func TestServiceRejectsInvalidRouteBeforeEstimators(t *testing.T) {
