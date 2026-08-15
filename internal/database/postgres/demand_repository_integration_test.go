@@ -71,8 +71,8 @@ func TestDemandRepositoryIntegration(t *testing.T) {
                 $1::h3index,
                 ST_Project(
                     ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,
-                    $4,
-                    0
+                    $4::DOUBLE PRECISION,
+                    0::DOUBLE PRECISION
                 )::geometry,
                 1
             )
