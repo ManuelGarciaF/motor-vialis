@@ -73,6 +73,12 @@ paths:
                   code: validation_error
                   field: route.jurisdiction
                   message: "must be caba, province, or national"
+        "504":
+          description: La simulación superó `SIMULATION_TIMEOUT`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           description: Error de infraestructura (base de datos, falta de referencias GTFS o de banda tarifaria).
           content:
@@ -83,6 +89,59 @@ paths:
                 error:
                   code: internal_error
                   message: "estimate travel time: ..."
+
+  /comparisons:
+    post:
+      operationId: createComparison
+      summary: Compara una ruta propuesta contra una existente
+      description: >
+        Simula ambas rutas y devuelve los dos resultados más la diferencia
+        entre ellos. Las dos rutas se envían completas: el motor evalúa rutas,
+        no las edita, así que armar la propuesta —incluida la geometría de cada
+        tramo modificado— es responsabilidad del cliente.
+
+
+        Ambas deben declarar la misma jurisdicción: resultados calculados bajo
+        cuadros tarifarios distintos no son comparables.
+      tags: [simulations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComparisonRequest"
+      responses:
+        "200":
+          description: Ambos resultados y su delta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comparison"
+        "400":
+          description: >
+            Alguna de las rutas es inválida, falta, o las jurisdicciones
+            difieren. El `field` indica cuál de las dos rutas falló.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: validation_error
+                  field: proposed.stops[3].id
+                  message: "must be unique within the route"
+        "504":
+          description: La comparación superó `SIMULATION_TIMEOUT`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Error de infraestructura.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
 components:
   schemas:
@@ -104,7 +163,7 @@ components:
           properties:
             code:
               type: string
-              enum: [validation_error, internal_error]
+              enum: [validation_error, not_found, timeout, internal_error]
             field:
               type: string
               description: Presente sólo en errores de validación.
@@ -352,3 +411,114 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StopResult"
+
+    ComparisonRequest:
+      type: object
+      required: [baseline, proposed]
+      properties:
+        baseline:
+          $ref: "#/components/schemas/Route"
+        proposed:
+          $ref: "#/components/schemas/Route"
+
+    Change:
+      type: object
+      description: >-
+        Una métrica en ambas versiones y cuánto se movió. `relative` es una
+        fracción de la baseline, así que 0.12 significa doce por ciento más.
+      properties:
+        baseline:
+          type: number
+          format: double
+        proposed:
+          type: number
+          format: double
+        absolute:
+          type: number
+          format: double
+        relative:
+          type: number
+          format: double
+          nullable: true
+          description: >-
+            Nulo cuando la baseline es cero, porque ahí el cociente no está
+            definido: agregar demanda a una ruta que no llevaba ninguna no es
+            crecimiento infinito, es una ganancia absoluta y sólo `absolute` la
+            describe.
+
+    IntChange:
+      type: object
+      description: Change para valores contados en unidades enteras.
+      properties:
+        baseline:
+          type: integer
+          format: int64
+        proposed:
+          type: integer
+          format: int64
+        absolute:
+          type: integer
+          format: int64
+        relative:
+          type: number
+          format: double
+          nullable: true
+
+    ConfidenceChange:
+      type: object
+      description: >-
+        Ambos niveles de confianza, sin restar: son etiquetas ordinales, así
+        que la distancia entre dos de ellas no significa nada.
+      properties:
+        baseline:
+          $ref: "#/components/schemas/Confidence"
+        proposed:
+          $ref: "#/components/schemas/Confidence"
+
+    TravelTimeDelta:
+      type: object
+      properties:
+        offPeakSeconds:
+          $ref: "#/components/schemas/IntChange"
+        typicalSeconds:
+          $ref: "#/components/schemas/IntChange"
+        peakSeconds:
+          $ref: "#/components/schemas/IntChange"
+        confidence:
+          $ref: "#/components/schemas/ConfidenceChange"
+
+    Delta:
+      type: object
+      description: Cuánto movió la propuesta cada métrica de la baseline.
+      properties:
+        stopCount:
+          $ref: "#/components/schemas/IntChange"
+        demand:
+          type: object
+          properties:
+            grossDemand:
+              $ref: "#/components/schemas/Change"
+            potentialDemand:
+              $ref: "#/components/schemas/Change"
+        revenue:
+          type: object
+          properties:
+            potentialRevenueCents:
+              $ref: "#/components/schemas/Change"
+        metrics:
+          type: object
+          properties:
+            totalDistanceMeters:
+              $ref: "#/components/schemas/Change"
+            travelTime:
+              $ref: "#/components/schemas/TravelTimeDelta"
+
+    Comparison:
+      type: object
+      properties:
+        baseline:
+          $ref: "#/components/schemas/SimulationResult"
+        proposed:
+          $ref: "#/components/schemas/SimulationResult"
+        delta:
+          $ref: "#/components/schemas/Delta"

@@ -30,6 +30,12 @@ const (
 	defaultWriteTimeout      = 30 * time.Second
 	defaultIdleTimeout       = 60 * time.Second
 
+	// defaultSimulationTimeout sits below defaultWriteTimeout so a slow
+	// simulation is answered with a timeout status instead of having its
+	// connection closed mid-response. Raise both together when comparing long
+	// suburban routes.
+	defaultSimulationTimeout = 25 * time.Second
+
 	defaultSimulationRevenueCaptureFactor = 1.0
 	defaultSimulationRegisteredCardShare  = 1.0
 
@@ -50,6 +56,7 @@ type Config struct {
 	ReadTimeout                       time.Duration
 	WriteTimeout                      time.Duration
 	IdleTimeout                       time.Duration
+	SimulationTimeout                 time.Duration
 }
 
 // FromEnv loads configuration from environment variables and applies safe defaults.
@@ -88,6 +95,7 @@ func FromEnv() (Config, error) {
 		ReadTimeout:                       defaultReadTimeout,
 		WriteTimeout:                      defaultWriteTimeout,
 		IdleTimeout:                       defaultIdleTimeout,
+		SimulationTimeout:                 defaultSimulationTimeout,
 	}
 
 	durations := []struct {
@@ -98,6 +106,7 @@ func FromEnv() (Config, error) {
 		{name: "HTTP_READ_TIMEOUT", target: &cfg.ReadTimeout},
 		{name: "HTTP_WRITE_TIMEOUT", target: &cfg.WriteTimeout},
 		{name: "HTTP_IDLE_TIMEOUT", target: &cfg.IdleTimeout},
+		{name: "SIMULATION_TIMEOUT", target: &cfg.SimulationTimeout},
 	}
 
 	for _, duration := range durations {

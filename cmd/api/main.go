@@ -54,7 +54,7 @@ func main() {
 	)
 	service := simulation.NewService(demandEstimator, travelTimeEstimator, revenueEstimator)
 
-	handler := httpapi.NewHandler(logger, service)
+	handler := httpapi.NewHandler(logger, service, service, cfg.SimulationTimeout)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddress,
