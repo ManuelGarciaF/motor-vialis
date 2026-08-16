@@ -13,14 +13,12 @@ import (
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/config"
 	"github.com/ManuelGarciaF/vialis-motor/internal/database/postgres"
+	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/revenue"
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
-
-const maximumEndpointAlignmentMeters = 250.0
 
 func main() {
 	cfg, err := config.FromEnv()
@@ -82,8 +80,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("simulate route: %v", err)
 	}
-	result.Demand.ByStopPair = nil
-	result.Metrics.TravelTime.BySegment = nil
 
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
@@ -107,61 +103,8 @@ func decodeRoute(reader io.Reader) (simulation.Route, error) {
 		}
 		return simulation.Route{}, fmt.Errorf("decode trailing content: %w", err)
 	}
-	if err := alignStoredPathEndpoints(&input); err != nil {
+	if err := lines.AlignStoredPathEndpoints(&input); err != nil {
 		return simulation.Route{}, err
 	}
 	return input, nil
-}
-
-// alignStoredPathEndpoints adapts paths exported from stored GTFS routes.
-//
-// GTFS shape fractions can place a segment boundary close to, but not exactly
-// on, its physical stop. The simulation's domain model remains strict; this
-// test executable replaces only the first and last positions while preserving
-// every intermediate point of the stored path.
-func alignStoredPathEndpoints(input *simulation.Route) error {
-	for index := 0; index < len(input.Stops)-1; index++ {
-		path := input.Stops[index].PathToNext
-		if path == nil || len(path.Positions) < 2 {
-			continue
-		}
-
-		origin := input.Stops[index].Position
-		destination := input.Stops[index+1].Position
-		first := path.Positions[0]
-		last := path.Positions[len(path.Positions)-1]
-		startGap := route.DistanceMeters(first, origin)
-		endGap := route.DistanceMeters(last, destination)
-		forwardGap := startGap + endGap
-		reverseGap := route.DistanceMeters(first, destination) +
-			route.DistanceMeters(last, origin)
-
-		// Do not hide a reversed LineString. The regular route validation will
-		// report it with its domain-specific error.
-		if reverseGap < forwardGap {
-			continue
-		}
-		if startGap > maximumEndpointAlignmentMeters {
-			return fmt.Errorf(
-				"route.stops[%d].pathToNext first coordinate is %.1f meters "+
-					"from the current stop; maximum automatic alignment is %.0f meters",
-				index,
-				startGap,
-				maximumEndpointAlignmentMeters,
-			)
-		}
-		if endGap > maximumEndpointAlignmentMeters {
-			return fmt.Errorf(
-				"route.stops[%d].pathToNext last coordinate is %.1f meters "+
-					"from the next stop; maximum automatic alignment is %.0f meters",
-				index,
-				endGap,
-				maximumEndpointAlignmentMeters,
-			)
-		}
-
-		path.Positions[0] = origin
-		path.Positions[len(path.Positions)-1] = destination
-	}
-	return nil
 }

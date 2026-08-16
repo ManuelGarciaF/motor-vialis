@@ -38,12 +38,13 @@ func newTravelTimeRepository(query queryFunc) *TravelTimeRepository {
 	return &TravelTimeRepository{query: query}
 }
 
-// FindSegmentReferences measures all input LineStrings and returns references
-// for every configured corridor radius.
+// FindSegmentReferences measures all input LineStrings and returns the existing
+// GTFS route segments within one corridor radius.
 func (repository *TravelTimeRepository) FindSegmentReferences(
 	ctx context.Context,
 	segments []traveltime.Segment,
 	policy traveltime.Policy,
+	radiusMeters float64,
 ) ([]traveltime.MeasuredSegment, error) {
 	orders := make([]int32, len(segments))
 	originStopIDs := make([]string, len(segments))
@@ -71,7 +72,7 @@ func (repository *TravelTimeRepository) FindSegmentReferences(
 		originStopIDs,
 		destinationStopIDs,
 		paths,
-		policy.ReferenceRadiiMeters,
+		radiusMeters,
 		policy.DirectionToleranceDegrees,
 		policy.MinimumCommercialSpeedKPH,
 		policy.MaximumCommercialSpeedKPH,

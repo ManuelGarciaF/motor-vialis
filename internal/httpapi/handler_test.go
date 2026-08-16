@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/httpapi"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
@@ -43,7 +44,30 @@ func (simulator *fakeSimulator) Simulate(
 	return simulator.result, simulator.err
 }
 
+type fakeComparator struct {
+	result   simulation.Comparison
+	err      error
+	received simulation.ComparisonInput
+	calls    int
+}
+
+func (comparator *fakeComparator) Compare(
+	_ context.Context,
+	input simulation.ComparisonInput,
+) (simulation.Comparison, error) {
+	comparator.calls++
+	comparator.received = input
+	return comparator.result, comparator.err
+}
+
 func newTestRouter(simulator httpapi.Simulator) http.Handler {
+	return newTestRouterWith(simulator, &fakeComparator{})
+}
+
+func newTestRouterWith(
+	simulator httpapi.Simulator,
+	comparator httpapi.Comparator,
+) http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return httpapi.NewHandler(logger, simulator).Routes()
+	return httpapi.NewHandler(logger, simulator, comparator, 5*time.Second).Routes()
 }

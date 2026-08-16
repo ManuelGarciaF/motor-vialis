@@ -73,11 +73,27 @@ func (service *Service) Simulate(
 	}
 
 	return Result{
-		Demand:  demandResult,
-		Revenue: revenueResult,
-		Metrics: Metrics{
-			TotalDistanceMeters: travelTimeResult.TotalDistanceMeters,
-			TravelTime:          travelTimeResult,
+		Global: GlobalResult{
+			Demand: DemandTotals{
+				GrossDemand:     demandResult.GrossDemand,
+				PotentialDemand: demandResult.PotentialDemand,
+			},
+			Revenue: RevenueTotals{
+				Jurisdiction:          revenueResult.Jurisdiction,
+				CaptureFactor:         revenueResult.CaptureFactor,
+				RegisteredCardShare:   revenueResult.RegisteredCardShare,
+				PotentialRevenueCents: revenueResult.PotentialRevenueCents,
+			},
+			Metrics: MetricsTotals{
+				TotalDistanceMeters: travelTimeResult.TotalDistanceMeters,
+				TravelTime: TravelTimeTotals{
+					OffPeakSeconds: travelTimeResult.OffPeakSeconds,
+					TypicalSeconds: travelTimeResult.TypicalSeconds,
+					PeakSeconds:    travelTimeResult.PeakSeconds,
+					Confidence:     travelTimeResult.Confidence,
+				},
+			},
 		},
+		ByStop: stopResults(input, demandResult, travelTimeResult, revenueResult),
 	}, nil
 }

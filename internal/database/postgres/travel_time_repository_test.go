@@ -19,11 +19,11 @@ func TestTravelTimeRepositoryFindSegmentReferences(t *testing.T) {
 			int64(10), 12.0, 1000.0, 0.10, 0.20, 0.30,
 		},
 		{
-			0, "A", "B", 1200.0, 300.0,
+			0, "A", "B", 1200.0, 100.0,
 			nil, nil, nil, nil, nil, nil,
 		},
 		{
-			0, "A", "B", 1200.0, 800.0,
+			0, "A", "B", 1200.0, 100.0,
 			int64(11), 50.0, 1200.0, 0.20, 0.30, 0.40,
 		},
 	}}}
@@ -43,6 +43,7 @@ func TestTravelTimeRepositoryFindSegmentReferences(t *testing.T) {
 			Path:              path,
 		}},
 		policy,
+		100,
 	)
 	if err != nil {
 		t.Fatalf("FindSegmentReferences() error = %v", err)
@@ -68,7 +69,7 @@ func TestTravelTimeRepositoryFindSegmentReferences(t *testing.T) {
 		[]string{"A"},
 		[]string{"B"},
 		[]string{`{"type":"LineString","coordinates":[[-58.38,-34.6],[-58.39,-34.61]]}`},
-		[]float64{100, 300, 800},
+		100.0,
 		60.0,
 		2.0,
 		80.0,
@@ -86,8 +87,6 @@ func TestTravelTimeRepositoryFindSegmentReferences(t *testing.T) {
 func TestTravelTimeRepositoryKeepsSegmentWithoutReferences(t *testing.T) {
 	query := &fakeQuery{rows: &fakeRows{values: [][]any{
 		{0, "A", "B", 900.0, 100.0, nil, nil, nil, nil, nil, nil},
-		{0, "A", "B", 900.0, 300.0, nil, nil, nil, nil, nil, nil},
-		{0, "A", "B", 900.0, 800.0, nil, nil, nil, nil, nil, nil},
 	}}}
 	actual, err := newTravelTimeRepository(query.execute).FindSegmentReferences(
 		context.Background(),
@@ -99,6 +98,7 @@ func TestTravelTimeRepositoryKeepsSegmentWithoutReferences(t *testing.T) {
 			}},
 		}},
 		config.DefaultTravelTimePolicy(),
+		100,
 	)
 	if err != nil {
 		t.Fatalf("FindSegmentReferences() error = %v", err)
@@ -157,6 +157,7 @@ func TestTravelTimeRepositoryWrapsQueryErrors(t *testing.T) {
 		context.Background(),
 		nil,
 		config.DefaultTravelTimePolicy(),
+		100,
 	)
 	if !errors.Is(err, want) {
 		t.Fatalf("FindSegmentReferences() error = %v, want wrapped error", err)

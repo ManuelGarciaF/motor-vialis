@@ -73,6 +73,12 @@ paths:
                   code: validation_error
                   field: route.jurisdiction
                   message: "must be caba, province, or national"
+        "504":
+          description: La simulación superó `SIMULATION_TIMEOUT`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           description: Error de infraestructura (base de datos, falta de referencias GTFS o de banda tarifaria).
           content:
@@ -83,6 +89,59 @@ paths:
                 error:
                   code: internal_error
                   message: "estimate travel time: ..."
+
+  /comparisons:
+    post:
+      operationId: createComparison
+      summary: Compara una ruta propuesta contra una existente
+      description: >
+        Simula ambas rutas y devuelve los dos resultados más la diferencia
+        entre ellos. Las dos rutas se envían completas: el motor evalúa rutas,
+        no las edita, así que armar la propuesta —incluida la geometría de cada
+        tramo modificado— es responsabilidad del cliente.
+
+
+        Ambas deben declarar la misma jurisdicción: resultados calculados bajo
+        cuadros tarifarios distintos no son comparables.
+      tags: [simulations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComparisonRequest"
+      responses:
+        "200":
+          description: Ambos resultados y su delta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comparison"
+        "400":
+          description: >
+            Alguna de las rutas es inválida, falta, o las jurisdicciones
+            difieren. El `field` indica cuál de las dos rutas falló.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: validation_error
+                  field: proposed.stops[3].id
+                  message: "must be unique within the route"
+        "504":
+          description: La comparación superó `SIMULATION_TIMEOUT`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Error de infraestructura.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
 components:
   schemas:
@@ -104,7 +163,7 @@ components:
           properties:
             code:
               type: string
-              enum: [validation_error, internal_error]
+              enum: [validation_error, not_found, timeout, internal_error]
             field:
               type: string
               description: Presente sólo en errores de validación.
@@ -181,25 +240,7 @@ components:
           items:
             $ref: "#/components/schemas/Stop"
 
-    StopPairDemand:
-      type: object
-      properties:
-        originStopOrder:
-          type: integer
-        originStopId:
-          type: string
-        destinationStopOrder:
-          type: integer
-        destinationStopId:
-          type: string
-        grossDemand:
-          type: number
-          format: double
-        potentialDemand:
-          type: number
-          format: double
-
-    DemandResult:
+    DemandTotals:
       type: object
       properties:
         grossDemand:
@@ -208,10 +249,6 @@ components:
         potentialDemand:
           type: number
           format: double
-        byStopPair:
-          type: array
-          items:
-            $ref: "#/components/schemas/StopPairDemand"
 
     Confidence:
       type: string
@@ -221,34 +258,12 @@ components:
       type: string
       enum: [local_100m, local_300m, local_800m, global]
 
-    SegmentResult:
+    TravelTimeTotals:
       type: object
-      properties:
-        originStopId:
-          type: string
-        destinationStopId:
-          type: string
-        distanceMeters:
-          type: number
-          format: double
-        offPeakSeconds:
-          type: integer
-          format: int64
-        typicalSeconds:
-          type: integer
-          format: int64
-        peakSeconds:
-          type: integer
-          format: int64
-        confidence:
-          $ref: "#/components/schemas/Confidence"
-        referenceRouteCount:
-          type: integer
-        source:
-          $ref: "#/components/schemas/ReferenceSource"
-
-    TravelTimeResult:
-      type: object
+      description: >-
+        Commercial time for the whole route under each GTFS scenario.
+        Confidence is the worst of any segment, because a route is only as
+        trustworthy as its least supported part.
       properties:
         offPeakSeconds:
           type: integer
@@ -261,41 +276,8 @@ components:
           format: int64
         confidence:
           $ref: "#/components/schemas/Confidence"
-        bySegment:
-          type: array
-          items:
-            $ref: "#/components/schemas/SegmentResult"
 
-    RevenueStopPairResult:
-      type: object
-      properties:
-        originStopId:
-          type: string
-        destinationStopId:
-          type: string
-        distanceMeters:
-          type: number
-          format: double
-        potentialDemand:
-          type: number
-          format: double
-        capturedDemand:
-          type: number
-          format: double
-        registeredFareCents:
-          type: integer
-          format: int64
-        unregisteredFareCents:
-          type: integer
-          format: int64
-        weightedFareCents:
-          type: number
-          format: double
-        potentialRevenueCents:
-          type: number
-          format: double
-
-    RevenueResult:
+    RevenueTotals:
       type: object
       properties:
         jurisdiction:
@@ -313,26 +295,230 @@ components:
         potentialRevenueCents:
           type: number
           format: double
-        byStopPair:
-          type: array
-          items:
-            $ref: "#/components/schemas/RevenueStopPairResult"
 
-    Metrics:
+    MetricsTotals:
       type: object
       properties:
         totalDistanceMeters:
           type: number
           format: double
         travelTime:
-          $ref: "#/components/schemas/TravelTimeResult"
+          $ref: "#/components/schemas/TravelTimeTotals"
+
+    GlobalResult:
+      type: object
+      description: Totals for the route as a whole.
+      properties:
+        demand:
+          $ref: "#/components/schemas/DemandTotals"
+        revenue:
+          $ref: "#/components/schemas/RevenueTotals"
+        metrics:
+          $ref: "#/components/schemas/MetricsTotals"
+
+    StopDemand:
+      type: object
+      description: >-
+        Demand attributed to one stop. Demand beginning at the stop and demand
+        ending there are reported apart because every origin-destination pair
+        contributes to both of its stops: adding the two would count each trip
+        twice, while each on its own sums to the route total.
+      properties:
+        originGross:
+          type: number
+          format: double
+        originPotential:
+          type: number
+          format: double
+        destinationGross:
+          type: number
+          format: double
+        destinationPotential:
+          type: number
+          format: double
+
+    StopRevenue:
+      type: object
+      description: >-
+        Fare revenue attributed to one stop, split the same way and for the
+        same reason as StopDemand.
+      properties:
+        originPotentialCents:
+          type: number
+          format: double
+        destinationPotentialCents:
+          type: number
+          format: double
+
+    SegmentResult:
+      type: object
+      description: The ride between two consecutive stops.
+      properties:
+        distanceMeters:
+          type: number
+          format: double
+        offPeakSeconds:
+          type: integer
+          format: int64
+        typicalSeconds:
+          type: integer
+          format: int64
+        peakSeconds:
+          type: integer
+          format: int64
+        confidence:
+          $ref: "#/components/schemas/Confidence"
+        source:
+          $ref: "#/components/schemas/ReferenceSource"
+        referenceRouteCount:
+          type: integer
+
+    StopResult:
+      type: object
+      description: >-
+        One stop's part in the route. Every stop is listed, including those
+        contributing nothing: showing that a stop carries no demand is what
+        makes removing it a defensible decision.
+      properties:
+        stopOrder:
+          type: integer
+          description: Position of the stop in the route, starting at zero.
+        stopId:
+          type: string
+        demand:
+          $ref: "#/components/schemas/StopDemand"
+        revenue:
+          $ref: "#/components/schemas/StopRevenue"
+        segmentToNext:
+          allOf:
+            - $ref: "#/components/schemas/SegmentResult"
+          nullable: true
+          description: >-
+            The ride from this stop to the following one, so it is null on the
+            last stop, mirroring the pathToNext of the submitted route.
 
     SimulationResult:
       type: object
+      description: >-
+        The engine answers on two axes: the route as a whole and each stop's
+        part in it. The estimators derive demand and revenue from every
+        origin-destination pair, which grows with the square of the stop count;
+        that detail stays inside the engine.
       properties:
+        global:
+          $ref: "#/components/schemas/GlobalResult"
+        byStop:
+          type: array
+          items:
+            $ref: "#/components/schemas/StopResult"
+
+    ComparisonRequest:
+      type: object
+      required: [baseline, proposed]
+      properties:
+        baseline:
+          $ref: "#/components/schemas/Route"
+        proposed:
+          $ref: "#/components/schemas/Route"
+
+    Change:
+      type: object
+      description: >-
+        Una métrica en ambas versiones y cuánto se movió. `relative` es una
+        fracción de la baseline, así que 0.12 significa doce por ciento más.
+      properties:
+        baseline:
+          type: number
+          format: double
+        proposed:
+          type: number
+          format: double
+        absolute:
+          type: number
+          format: double
+        relative:
+          type: number
+          format: double
+          nullable: true
+          description: >-
+            Nulo cuando la baseline es cero, porque ahí el cociente no está
+            definido: agregar demanda a una ruta que no llevaba ninguna no es
+            crecimiento infinito, es una ganancia absoluta y sólo `absolute` la
+            describe.
+
+    IntChange:
+      type: object
+      description: Change para valores contados en unidades enteras.
+      properties:
+        baseline:
+          type: integer
+          format: int64
+        proposed:
+          type: integer
+          format: int64
+        absolute:
+          type: integer
+          format: int64
+        relative:
+          type: number
+          format: double
+          nullable: true
+
+    ConfidenceChange:
+      type: object
+      description: >-
+        Ambos niveles de confianza, sin restar: son etiquetas ordinales, así
+        que la distancia entre dos de ellas no significa nada.
+      properties:
+        baseline:
+          $ref: "#/components/schemas/Confidence"
+        proposed:
+          $ref: "#/components/schemas/Confidence"
+
+    TravelTimeDelta:
+      type: object
+      properties:
+        offPeakSeconds:
+          $ref: "#/components/schemas/IntChange"
+        typicalSeconds:
+          $ref: "#/components/schemas/IntChange"
+        peakSeconds:
+          $ref: "#/components/schemas/IntChange"
+        confidence:
+          $ref: "#/components/schemas/ConfidenceChange"
+
+    Delta:
+      type: object
+      description: Cuánto movió la propuesta cada métrica de la baseline.
+      properties:
+        stopCount:
+          $ref: "#/components/schemas/IntChange"
         demand:
-          $ref: "#/components/schemas/DemandResult"
+          type: object
+          properties:
+            grossDemand:
+              $ref: "#/components/schemas/Change"
+            potentialDemand:
+              $ref: "#/components/schemas/Change"
         revenue:
-          $ref: "#/components/schemas/RevenueResult"
+          type: object
+          properties:
+            potentialRevenueCents:
+              $ref: "#/components/schemas/Change"
         metrics:
-          $ref: "#/components/schemas/Metrics"
+          type: object
+          properties:
+            totalDistanceMeters:
+              $ref: "#/components/schemas/Change"
+            travelTime:
+              $ref: "#/components/schemas/TravelTimeDelta"
+
+    Comparison:
+      type: object
+      properties:
+        baseline:
+          $ref: "#/components/schemas/SimulationResult"
+        proposed:
+          $ref: "#/components/schemas/SimulationResult"
+        delta:
+          $ref: "#/components/schemas/Delta"

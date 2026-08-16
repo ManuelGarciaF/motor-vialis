@@ -1,7 +1,9 @@
 package simulation
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -30,7 +32,10 @@ func TestServiceSimulateBuildsNestedResult(t *testing.T) {
 	}
 	demandEstimator := &fakeDemandEstimator{result: demandResult}
 	timeEstimator := &fakeTravelTimeEstimator{result: timeResult}
-	revenueResult := revenue.Result{PotentialRevenueCents: 1234}
+	revenueResult := revenue.Result{
+		Jurisdiction:          route.JurisdictionCABA,
+		PotentialRevenueCents: 1234,
+	}
 	revenueEstimator := &fakeRevenueEstimator{result: revenueResult}
 
 	result, err := NewService(demandEstimator, timeEstimator, revenueEstimator).Simulate(
@@ -40,21 +45,68 @@ func TestServiceSimulateBuildsNestedResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Simulate() error = %v", err)
 	}
-	if !reflect.DeepEqual(result.Demand, demandResult) {
-		t.Fatalf("demand = %#v, want %#v", result.Demand, demandResult)
+	wantGlobal := GlobalResult{
+		Demand: DemandTotals{GrossDemand: 100, PotentialDemand: 75},
+		Revenue: RevenueTotals{
+			Jurisdiction:          route.JurisdictionCABA,
+			PotentialRevenueCents: 1234,
+		},
+		Metrics: MetricsTotals{
+			TotalDistanceMeters: 1200,
+			TravelTime: TravelTimeTotals{
+				OffPeakSeconds: 200,
+				TypicalSeconds: 240,
+				PeakSeconds:    300,
+				Confidence:     traveltime.ConfidenceHigh,
+			},
+		},
 	}
-	if result.Metrics.TotalDistanceMeters != 1200 {
-		t.Fatalf("distance = %v, want 1200", result.Metrics.TotalDistanceMeters)
-	}
-	if !reflect.DeepEqual(result.Metrics.TravelTime, timeResult) {
-		t.Fatalf("travel time = %#v, want %#v", result.Metrics.TravelTime, timeResult)
-	}
-	if !reflect.DeepEqual(result.Revenue, revenueResult) {
-		t.Fatalf("revenue = %#v, want %#v", result.Revenue, revenueResult)
+	if !reflect.DeepEqual(result.Global, wantGlobal) {
+		t.Fatalf("global = %#v, want %#v", result.Global, wantGlobal)
 	}
 	if !reflect.DeepEqual(demandEstimator.received, input) ||
 		!reflect.DeepEqual(timeEstimator.received, input) {
 		t.Fatal("estimators did not receive the validated route")
+	}
+
+	if len(result.ByStop) != len(input.Stops) {
+		t.Fatalf("byStop = %d entries, want %d", len(result.ByStop), len(input.Stops))
+	}
+	if result.ByStop[0].Demand.OriginPotential != 75 ||
+		result.ByStop[1].Demand.DestinationPotential != 75 {
+		t.Fatalf("byStop = %#v", result.ByStop)
+	}
+}
+
+// The per-pair and per-segment detail is an implementation concern of the
+// estimators, so it must not reach the encoded answer.
+func TestServiceResultOmitsPerPairDetail(t *testing.T) {
+	result, err := NewService(
+		&fakeDemandEstimator{result: demand.Result{
+			PotentialDemand: 10,
+			ByStopPair: []demand.StopPairDemand{
+				{OriginStopID: "A", DestinationStopID: "B", PotentialDemand: 10},
+			},
+		}},
+		&fakeTravelTimeEstimator{result: traveltime.Result{
+			BySegment: []traveltime.SegmentResult{{OriginStopID: "A"}},
+		}},
+		&fakeRevenueEstimator{result: revenue.Result{
+			ByStopPair: []revenue.StopPairResult{{OriginStopID: "A"}},
+		}},
+	).Simulate(context.Background(), validRoute())
+	if err != nil {
+		t.Fatalf("Simulate() error = %v", err)
+	}
+
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	for _, field := range []string{"byStopPair", "bySegment"} {
+		if bytes.Contains(encoded, []byte(field)) {
+			t.Fatalf("encoded result contains %q: %s", field, encoded)
+		}
 	}
 }
 
