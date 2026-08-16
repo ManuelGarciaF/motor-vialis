@@ -14,7 +14,7 @@ import (
 
 func TestCreateSimulationReturnsResult(t *testing.T) {
 	simulator := &fakeSimulator{}
-	simulator.result.Metrics.TotalDistanceMeters = 1500
+	simulator.result.Global.Metrics.TotalDistanceMeters = 1500
 	router := newTestRouter(simulator)
 
 	response := doSimulationRequest(t, router, validRouteJSON())
@@ -26,8 +26,8 @@ func TestCreateSimulationReturnsResult(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.Metrics.TotalDistanceMeters != 1500 {
-		t.Fatalf("totalDistanceMeters = %v, want 1500", got.Metrics.TotalDistanceMeters)
+	if got.Global.Metrics.TotalDistanceMeters != 1500 {
+		t.Fatalf("totalDistanceMeters = %v, want 1500", got.Global.Metrics.TotalDistanceMeters)
 	}
 	if simulator.received.Jurisdiction != route.JurisdictionCABA {
 		t.Fatalf("simulator received jurisdiction = %q, want %q", simulator.received.Jurisdiction, route.JurisdictionCABA)

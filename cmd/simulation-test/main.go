@@ -80,8 +80,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("simulate route: %v", err)
 	}
-	result.Demand.ByStopPair = nil
-	result.Metrics.TravelTime.BySegment = nil
 
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")

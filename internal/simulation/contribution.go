@@ -4,53 +4,35 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/revenue"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
 
-// StopContribution attributes route-level demand and revenue to one stop.
+// stopResults collapses the per-pair and per-segment detail the estimators
+// produced into one entry per stop, in route order.
 //
-// Origin and destination figures are reported apart on purpose. Every stop pair
-// contributes to its origin stop and to its destination stop, so a column
-// adding both would count each trip twice; kept apart, each column sums to the
-// route total. They also answer different questions: demand that begins at a
-// stop and demand that ends there justify different decisions.
-type StopContribution struct {
-	StopOrder int    `json:"stopOrder"`
-	StopID    string `json:"stopId"`
-
-	OriginGrossDemand          float64 `json:"originGrossDemand"`
-	OriginPotentialDemand      float64 `json:"originPotentialDemand"`
-	DestinationGrossDemand     float64 `json:"destinationGrossDemand"`
-	DestinationPotentialDemand float64 `json:"destinationPotentialDemand"`
-
-	OriginPotentialRevenueCents      float64 `json:"originPotentialRevenueCents"`
-	DestinationPotentialRevenueCents float64 `json:"destinationPotentialRevenueCents"`
-}
-
-// StopContributions aggregates the stop pairs already calculated by the demand
-// and revenue estimators into one entry per stop, in route order.
-//
-// Stops that contribute nothing are still listed: showing that a stop adds no
-// demand is exactly what makes removing it a defensible decision.
-func StopContributions(
+// Stops that contribute nothing are still listed: showing that a stop carries
+// no demand is exactly what makes removing it a defensible decision.
+func stopResults(
 	input route.Route,
 	demandResult demand.Result,
+	travelTimeResult traveltime.Result,
 	revenueResult revenue.Result,
-) []StopContribution {
-	contributions := make([]StopContribution, len(input.Stops))
+) []StopResult {
+	results := make([]StopResult, len(input.Stops))
 	orderByStopID := make(map[string]int, len(input.Stops))
 	for order, stop := range input.Stops {
-		contributions[order] = StopContribution{StopOrder: order, StopID: stop.ID}
+		results[order] = StopResult{StopOrder: order, StopID: stop.ID}
 		orderByStopID[stop.ID] = order
 	}
 
 	for _, pair := range demandResult.ByStopPair {
 		if origin, found := orderByStopID[pair.OriginStopID]; found {
-			contributions[origin].OriginGrossDemand += pair.GrossDemand
-			contributions[origin].OriginPotentialDemand += pair.PotentialDemand
+			results[origin].Demand.OriginGross += pair.GrossDemand
+			results[origin].Demand.OriginPotential += pair.PotentialDemand
 		}
 		if destination, found := orderByStopID[pair.DestinationStopID]; found {
-			contributions[destination].DestinationGrossDemand += pair.GrossDemand
-			contributions[destination].DestinationPotentialDemand += pair.PotentialDemand
+			results[destination].Demand.DestinationGross += pair.GrossDemand
+			results[destination].Demand.DestinationPotential += pair.PotentialDemand
 		}
 	}
 
@@ -58,12 +40,29 @@ func StopContributions(
 	// identifier; route.Validate has already guaranteed those are unique.
 	for _, pair := range revenueResult.ByStopPair {
 		if origin, found := orderByStopID[pair.OriginStopID]; found {
-			contributions[origin].OriginPotentialRevenueCents += pair.PotentialRevenueCents
+			results[origin].Revenue.OriginPotentialCents += pair.PotentialRevenueCents
 		}
 		if destination, found := orderByStopID[pair.DestinationStopID]; found {
-			contributions[destination].DestinationPotentialRevenueCents +=
+			results[destination].Revenue.DestinationPotentialCents +=
 				pair.PotentialRevenueCents
 		}
 	}
-	return contributions
+
+	// The travel-time estimator answers one measurement per segment in route
+	// order, so segment i is the ride away from stop i.
+	for index, segment := range travelTimeResult.BySegment {
+		if index >= len(results)-1 {
+			break
+		}
+		results[index].SegmentToNext = &SegmentResult{
+			DistanceMeters:      segment.DistanceMeters,
+			OffPeakSeconds:      segment.OffPeakSeconds,
+			TypicalSeconds:      segment.TypicalSeconds,
+			PeakSeconds:         segment.PeakSeconds,
+			Confidence:          segment.Confidence,
+			Source:              segment.Source,
+			ReferenceRouteCount: segment.ReferenceRouteCount,
+		}
+	}
+	return results
 }
