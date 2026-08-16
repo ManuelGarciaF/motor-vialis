@@ -21,6 +21,21 @@ func (err *ValidationError) Error() string {
 	return fmt.Sprintf("%s: %s", err.Field, err.Message)
 }
 
+// Rooted returns a copy of the error whose field path starts at root instead
+// of the "route" prefix Validate uses.
+//
+// A caller validating more than one route in the same request needs the error
+// to say which of them failed, and "route.stops[3].id" cannot.
+func (err *ValidationError) Rooted(root string) *ValidationError {
+	field, found := strings.CutPrefix(err.Field, "route")
+	if found {
+		field = root + field
+	} else {
+		field = root + "." + err.Field
+	}
+	return &ValidationError{Field: field, Message: err.Message}
+}
+
 // Validate checks the complete route contract used by every estimator.
 func Validate(input Route) error {
 	if input.Jurisdiction != JurisdictionCABA &&
