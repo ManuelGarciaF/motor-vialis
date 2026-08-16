@@ -2,7 +2,7 @@
 
 **Alcance:** visión funcional y conceptual del motor completo  
 **Estado documentado:** funcionamiento implementado actualmente  
-**Última actualización:** 5 de agosto de 2026
+**Última actualización:** 15 de agosto de 2026
 
 ## Contenido
 
@@ -17,13 +17,14 @@
 9. [Fuentes y confianza](#9-fuentes-y-confianza)
 10. [Cálculo de recaudación potencial](#10-cálculo-de-recaudación-potencial)
 11. [Resultado de la simulación](#11-resultado-de-la-simulación)
-12. [Ejemplo conceptual](#12-ejemplo-conceptual)
-13. [Preparación y actualización de datos](#13-preparación-y-actualización-de-datos)
-14. [Decisiones funcionales](#14-decisiones-funcionales)
-15. [Alcance actual y limitaciones](#15-alcance-actual-y-limitaciones)
-16. [Evolución prevista](#16-evolución-prevista)
-17. [Glosario](#17-glosario)
-18. [Conclusión](#18-conclusión)
+12. [Comparación de dos rutas](#12-comparación-de-dos-rutas)
+13. [Ejemplo conceptual](#13-ejemplo-conceptual)
+14. [Preparación y actualización de datos](#14-preparación-y-actualización-de-datos)
+15. [Decisiones funcionales](#15-decisiones-funcionales)
+16. [Alcance actual y limitaciones](#16-alcance-actual-y-limitaciones)
+17. [Evolución prevista](#17-evolución-prevista)
+18. [Glosario](#18-glosario)
+19. [Conclusión](#19-conclusión)
 
 ## 1. Objetivo del motor
 
@@ -69,6 +70,8 @@ Para una ruta propuesta, el motor puede responder:
 7. ¿En qué tramos fue necesario recurrir a un promedio general?
 8. ¿Qué recaudación potencial generaría, según la jurisdicción y los
    supuestos de captación y mezcla de pago configurados?
+9. ¿Cuánto aporta cada parada a la demanda y a la recaudación de la ruta?
+10. Frente a una ruta ya definida, ¿qué efecto tiene modificarla? (sección 12)
 
 ### 1.2. Qué todavía no responde
 
@@ -244,8 +247,12 @@ aplican los supuestos de captación y mezcla de pago configurados.
 
 ### 3.7. Integración
 
-El resultado agrupa demanda, recaudación y métricas operativas. Si la ruta es
-inválida o se produce un error de datos, no se entrega un resultado parcial.
+El detalle por par de paradas y por tramo se colapsa en dos ejes: los totales
+de la ruta y el aporte de cada parada (sección 11). Si la ruta es inválida o se
+produce un error de datos, no se entrega un resultado parcial.
+
+Cuando se comparan dos rutas, este flujo se ejecuta completo para cada una y
+después se calcula la diferencia (sección 12).
 
 ## 4. Definición de la ruta a simular
 
@@ -811,6 +818,13 @@ flowchart TD
 Se usa siempre el primer corredor que cumple la condición. Esto prioriza
 similitud territorial antes que cantidad adicional de datos lejanos.
 
+Los corredores se miden de a uno y en orden, y cada ampliación se consulta
+únicamente para los tramos que el corredor anterior no logró resolver. Medir un
+corredor de 800 metros es mucho más costoso que uno de 100, y en la mayoría de
+los recorridos casi todos los tramos quedan resueltos en el más angosto, así
+que anticipar esa medición sería trabajo que después se descarta. La regla de
+selección es la misma: sólo cambia cuándo se paga cada medición.
+
 ### 8.12. Respaldo global
 
 Si no existe ninguna referencia local, el motor utiliza una mediana global de
@@ -934,7 +948,7 @@ Los importes se almacenan en centavos para evitar errores de redondeo. El
 cuadro cargado actualmente corresponde a las tarifas AMBA publicadas para
 agosto de 2026 (`sql/tarifas/insertar_tarifas_vigentes.sql`). Actualizarlo es
 un proceso administrado, igual que el resto de los datos de referencia
-(sección 13).
+(sección 14).
 
 ### 10.3. Distancia del par
 
@@ -993,156 +1007,279 @@ mismos supuestos, no una proyección financiera.
 
 ## 11. Resultado de la simulación
 
-El resultado separa:
+El resultado tiene dos ejes: la ruta completa y el aporte de cada parada.
 
 ```text
 Resultado
-├── Demanda
-├── Recaudación
-└── Métricas
-    ├── Distancia total
-    └── Tiempo de viaje
+├── global
+│   ├── Demanda
+│   ├── Recaudación
+│   └── Métricas
+│       ├── Distancia total
+│       └── Tiempo de viaje
+└── byStop
+    └── una entrada por parada
+        ├── Demanda
+        ├── Recaudación
+        └── Tramo hacia la parada siguiente
 ```
 
-### 11.1. Demanda
+### 11.1. Nivel de detalle
 
-Incluye:
+Internamente el motor calcula bastante más de lo que informa. La demanda y la
+recaudación se derivan de cada par origen-destino, y la cantidad de pares crece
+con el cuadrado de la cantidad de paradas: un recorrido de 139 paradas produce
+más de 2.400 pares.
+
+Ese detalle queda dentro del motor. Para decidir si una ruta vale la pena
+alcanza con conocer la ruta en conjunto y la parte que le toca a cada parada,
+que son exactamente los dos ejes de la salida.
+
+### 11.2. Totales de la ruta
+
+`global.demand` informa:
 
 - `grossDemand`: demanda bruta total.
 - `potentialDemand`: demanda potencial total.
-- `byStopPair`: detalle por origen y destino.
 
-Cada par informa:
-
-- Orden e ID de la parada de origen.
-- Orden e ID de la parada de destino.
-- Demanda bruta.
-- Demanda potencial.
-
-### 11.2. Distancia
-
-`totalDistanceMeters` representa la suma de todas las geometrías.
-
-Cada tramo también informa su propia distancia.
-
-### 11.3. Tiempo
-
-Incluye:
-
-- `offPeakSeconds`.
-- `typicalSeconds`.
-- `peakSeconds`.
-- `confidence`.
-- `bySegment`.
-
-### 11.4. Detalle por tramo
-
-Cada tramo informa:
-
-- Parada de origen.
-- Parada de destino.
-- Distancia.
-- Tres tiempos.
-- Confianza.
-- Cantidad de líneas de referencia.
-- Fuente.
-
-### 11.5. Recaudación
-
-Incluye:
+`global.revenue` informa:
 
 - `jurisdiction`: jurisdicción aplicada.
 - `captureFactor` y `registeredCardShare`: supuestos de política vigentes al
   momento de la simulación.
 - `potentialRevenueCents`: recaudación potencial total, en centavos.
-- `byStopPair`: detalle por par de paradas.
 
-Cada par informa distancia, demanda potencial, demanda captada, tarifa
-registrada, tarifa sin registrar, tarifa ponderada y recaudación potencial de
-ese par.
+`global.metrics` informa:
 
-### 11.6. Ejemplo de estructura
+- `totalDistanceMeters`: suma de todas las geometrías.
+- `travelTime`: los tres escenarios y la confianza total.
+
+### 11.3. Aporte por parada
+
+Cada entrada de `byStop` informa el orden y el identificador de la parada, más
+tres bloques.
+
+`demand` y `revenue` distinguen lo que **nace** en la parada de lo que **termina**
+en ella:
+
+| Campo | Significado |
+|---|---|
+| `demand.originGross` | Demanda bruta de los viajes que empiezan en la parada. |
+| `demand.originPotential` | Lo mismo, ponderado por accesibilidad. |
+| `demand.destinationGross` | Demanda bruta de los viajes que terminan en la parada. |
+| `demand.destinationPotential` | Lo mismo, ponderado por accesibilidad. |
+| `revenue.originPotentialCents` | Recaudación de los viajes que empiezan ahí. |
+| `revenue.destinationPotentialCents` | Recaudación de los viajes que terminan ahí. |
+
+Origen y destino se informan por separado a propósito. Cada par aporta a sus
+dos paradas, así que sumar ambas columnas contaría cada viaje dos veces;
+separadas, cada columna suma exactamente el total de la ruta:
+
+```text
+Σ originPotential = Σ destinationPotential = global.demand.potentialDemand
+```
+
+Además responden preguntas distintas: una parada donde la gente sube y una
+donde baja justifican decisiones urbanísticas diferentes.
+
+`segmentToNext` describe el viaje desde esa parada hasta la siguiente:
+distancia, los tres tiempos, confianza, fuente y cantidad de líneas de
+referencia. Es `null` en la última parada, igual que el `PathToNext` de la ruta
+que se envía (sección 4.3).
+
+Se informan **todas** las paradas, incluidas las que aportan cero. Mostrar que
+una parada no aporta demanda es justamente lo que permite justificar
+eliminarla.
+
+### 11.4. Ejemplo de estructura
 
 ```json
 {
-  "demand": {
-    "grossDemand": 175,
-    "potentialDemand": 118,
-    "byStopPair": [
-      {
-        "originStopOrder": 0,
-        "originStopId": "A",
-        "destinationStopOrder": 1,
-        "destinationStopId": "B",
-        "grossDemand": 100,
-        "potentialDemand": 70
+  "global": {
+    "demand": {
+      "grossDemand": 175,
+      "potentialDemand": 118
+    },
+    "revenue": {
+      "jurisdiction": "caba",
+      "captureFactor": 1,
+      "registeredCardShare": 1,
+      "potentialRevenueCents": 118000
+    },
+    "metrics": {
+      "totalDistanceMeters": 1500,
+      "travelTime": {
+        "offPeakSeconds": 300,
+        "typicalSeconds": 450,
+        "peakSeconds": 600,
+        "confidence": "medium"
       }
-    ]
-  },
-  "revenue": {
-    "jurisdiction": "caba",
-    "captureFactor": 1,
-    "registeredCardShare": 1,
-    "potentialRevenueCents": 70000,
-    "byStopPair": [
-      {
-        "originStopId": "A",
-        "destinationStopId": "B",
-        "distanceMeters": 1000,
-        "potentialDemand": 70,
-        "capturedDemand": 70,
-        "registeredFareCents": 1000,
-        "unregisteredFareCents": 1600,
-        "weightedFareCents": 1000,
-        "potentialRevenueCents": 70000
-      }
-    ]
-  },
-  "metrics": {
-    "totalDistanceMeters": 1500,
-    "travelTime": {
-      "offPeakSeconds": 300,
-      "typicalSeconds": 450,
-      "peakSeconds": 600,
-      "confidence": "medium",
-      "bySegment": [
-        {
-          "originStopId": "A",
-          "destinationStopId": "B",
-          "distanceMeters": 1000,
-          "offPeakSeconds": 100,
-          "typicalSeconds": 200,
-          "peakSeconds": 300,
-          "confidence": "high",
-          "referenceRouteCount": 3,
-          "source": "local_100m"
-        }
-      ]
     }
-  }
+  },
+  "byStop": [
+    {
+      "stopOrder": 0,
+      "stopId": "A",
+      "demand": {
+        "originGross": 150,
+        "originPotential": 100,
+        "destinationGross": 0,
+        "destinationPotential": 0
+      },
+      "revenue": {
+        "originPotentialCents": 100000,
+        "destinationPotentialCents": 0
+      },
+      "segmentToNext": {
+        "distanceMeters": 1000,
+        "offPeakSeconds": 100,
+        "typicalSeconds": 200,
+        "peakSeconds": 300,
+        "confidence": "high",
+        "source": "local_100m",
+        "referenceRouteCount": 3
+      }
+    }
+  ]
 }
 ```
 
-Los números son ilustrativos.
+Los números son ilustrativos y se muestra una sola parada.
 
-### 11.7. Cómo leer el resultado
+### 11.5. Cómo leer el resultado
 
 Una evaluación debería observar al menos:
 
 1. Demanda potencial total.
-2. Distribución de la demanda entre pares.
-3. Distancia total.
-4. Tiempo típico total.
-5. Diferencia entre valle y pico.
-6. Tramos lentos.
-7. Tramos con confianza baja.
-8. Uso de respaldo global.
-9. Recaudación potencial total y su distribución entre pares.
+2. Distribución de la demanda entre paradas, y si se concentra en pocas.
+3. Paradas con aporte nulo o casi nulo.
+4. Distancia total.
+5. Tiempo típico total.
+6. Diferencia entre valle y pico.
+7. Tramos lentos.
+8. Tramos con confianza baja.
+9. Uso de respaldo global.
+10. Recaudación potencial total y su distribución entre paradas.
 
 El total por sí solo puede ocultar dónde se concentra la demanda o la
 recaudación, o dónde la estimación es débil.
 
-## 12. Ejemplo conceptual
+### 11.6. Una advertencia sobre el aporte por parada
+
+El aporte de una parada **no** es lo que la ruta perdería si se la elimina.
+
+Al quitar una parada, sus zonas H3 se reasignan a las paradas vecinas que
+queden dentro del radio de acceso (sección 6.3), así que una parte de su
+demanda se conserva. En un caso medido sobre una línea real, una parada que
+aportaba 1.710 de demanda potencial de origen produjo una caída de 1.307 al
+eliminarla: el resto pasó a sus vecinas.
+
+Para saber el efecto real de una modificación hay que simular la ruta
+modificada y comparar (sección 12).
+
+## 12. Comparación de dos rutas
+
+Modificar una línea existente —agregar paradas, eliminarlas o cambiar las
+calles por las que circula— sólo tiene sentido si se puede ver el efecto de esa
+modificación. Para eso el motor puede evaluar dos rutas y devolver ambos
+resultados junto con la diferencia entre ellos.
+
+### 12.1. Dos rutas completas, no un cambio declarado
+
+La entrada son **dos rutas enteras**: una base y una propuesta. No se envía una
+descripción de qué cambió.
+
+El motor evalúa rutas, no las edita (sección 15.1). Si se enviara algo como
+"eliminar la parada 8", el motor tendría que decidir por dónde pasa ahora el
+recorrido entre las paradas 7 y 9, y esa decisión es de diseño, no de
+evaluación: podría unir los dos tramos, tomar otra avenida, o evitar un giro
+prohibido. Quien propone la modificación es quien sabe cuál corresponde.
+
+Por eso **la geometría siempre la aporta quien consulta**. Al eliminar una
+parada, el nuevo `PathToNext` del tramo resultante viene en la propuesta.
+
+Ambas rutas se validan con las mismas reglas de la sección 5, sin excepción.
+
+### 12.2. Misma jurisdicción
+
+Las dos rutas deben declarar la misma jurisdicción. Comparar resultados
+calculados bajo cuadros tarifarios distintos mezclaría el efecto de la
+modificación con el de un cambio de tarifa, y la diferencia dejaría de ser
+atribuible a la propuesta.
+
+El resto de los supuestos —captación, mezcla de pago, método de accesibilidad—
+son configuración del motor, así que ya son idénticos para ambas.
+
+### 12.3. Qué se informa
+
+```text
+Comparación
+├── baseline   ← resultado completo de la ruta base
+├── proposed   ← resultado completo de la ruta propuesta
+└── delta      ← cuánto se movió cada métrica
+```
+
+Los dos resultados son idénticos en estructura al de una simulación individual
+(sección 11), así que el aporte por parada de cada versión está disponible para
+ver de dónde viene la diferencia.
+
+El `delta` informa, para cada métrica:
+
+| Campo | Significado |
+|---|---|
+| `baseline` | Valor en la ruta base. |
+| `proposed` | Valor en la ruta propuesta. |
+| `absolute` | `proposed − baseline`. |
+| `relative` | Fracción de la base: `0,12` significa doce por ciento más. |
+
+Cubre cantidad de paradas, demanda bruta y potencial, recaudación potencial,
+distancia total y los tres tiempos de viaje.
+
+### 12.4. Diferencias relativas indefinidas
+
+Cuando el valor de la ruta base es cero, `relative` se informa como nulo.
+
+El cociente no está definido ahí, y presentarlo como crecimiento infinito sería
+engañoso: agregar demanda a una ruta que no llevaba ninguna es una ganancia
+absoluta, y sólo `absolute` la describe correctamente.
+
+### 12.5. Confianza
+
+La confianza no se resta. Se informan las dos etiquetas:
+
+```json
+{ "baseline": "high", "proposed": "medium" }
+```
+
+Alta, media y baja son categorías ordenadas, no cantidades: la distancia entre
+dos de ellas no significa nada, así que restarlas produciría un número sin
+interpretación. Que una modificación baje la confianza es información
+relevante, y mostrar ambos valores es la forma honesta de comunicarlo.
+
+### 12.6. Qué observar en una comparación
+
+Un delta favorable en demanda no alcanza por sí solo. Conviene mirar además:
+
+1. Si el tiempo de viaje creció, y cuánto respecto de la demanda ganada.
+2. Si la confianza empeoró, lo que indicaría que la propuesta pasa por zonas
+   con menos referencias.
+3. Cómo se redistribuyó la demanda entre paradas, comparando el `byStop` de
+   ambas versiones.
+4. Si la distancia cambió, lo que además puede mover la banda tarifaria de
+   algunos pares (sección 10.4).
+
+### 12.7. Limitaciones
+
+La comparación hereda todas las limitaciones de cada simulación (sección 16).
+Además:
+
+- Ambas rutas se evalúan contra el estado actual de la base. La comparación es
+  válida entre sí, pero no es una serie histórica.
+- No se persiste (sección 16.10): cada comparación se calcula en el momento.
+- El motor no propone modificaciones ni sugiere qué parada conviene eliminar.
+  Evalúa la propuesta que recibe.
+
+## 13. Ejemplo conceptual
 
 Supongamos una ruta:
 
@@ -1153,7 +1290,7 @@ A → B → C
 El tramo `A → B` recorre una avenida rápida. El tramo `B → C` atraviesa una
 zona céntrica.
 
-### 12.1. Demanda
+### 13.1. Demanda
 
 | Par | Demanda bruta | Accesibilidad combinada | Demanda potencial |
 |---|---:|---:|---:|
@@ -1162,7 +1299,7 @@ zona céntrica.
 | B → C | 25 | 0,72 | 18 |
 | **Total** | **175** | — | **118** |
 
-### 12.2. Tiempo
+### 13.2. Tiempo
 
 | Tramo | Distancia | Ritmo típico | Tiempo típico | Fuente |
 |---|---:|---:|---:|---|
@@ -1172,7 +1309,7 @@ zona céntrica.
 
 Una velocidad única habría ocultado que el segundo tramo es más lento.
 
-### 12.3. Recaudación
+### 13.3. Recaudación
 
 Para simplificar, se asume una única banda tarifaria de 1.000 centavos, con
 captación total y pago 100 % con tarjeta registrada (valores predeterminados):
@@ -1184,9 +1321,55 @@ captación total y pago 100 % con tarjeta registrada (valores predeterminados):
 | B → C | 500 m | 18 | 1.000 centavos | 18.000 centavos |
 | **Total** | — | **118** | — | **118.000 centavos** |
 
-### 12.4. Interpretación
+### 13.4. Aporte por parada
 
-El escenario sugiere:
+Los pares anteriores son el cálculo interno. Lo que el motor informa es el
+aporte de cada parada (sección 11.3), que se obtiene agrupándolos:
+
+| Parada | Demanda origen | Demanda destino | Recaudación origen | Recaudación destino | Tramo siguiente |
+|---|---:|---:|---:|---:|---|
+| A | 100 | 0 | 100.000 | 0 | 1.000 m, 200 s |
+| B | 18 | 70 | 18.000 | 70.000 | 500 m, 250 s |
+| C | 0 | 48 | 0 | 48.000 | — |
+| **Total** | **118** | **118** | **118.000** | **118.000** | **1.500 m, 450 s** |
+
+Las dos columnas de demanda suman 118 cada una, que es la demanda potencial
+total. Sumarlas entre sí daría 236 y no correspondería a nada: cada par ya está
+contado una vez como origen y otra como destino.
+
+La parada A no recibe a nadie porque es la cabecera, y C no origina viajes
+porque es la terminal. Ambas aparecen igual, con sus ceros.
+
+### 13.5. Comparación de una modificación
+
+Supongamos que se propone eliminar la parada B, uniendo los dos tramos en uno
+solo de 1.500 metros. La ruta pasa a ser `A → C`.
+
+El aporte de B era de 18 de demanda origen y 70 de destino, pero la ruta no
+pierde 88: al desaparecer B, sus zonas H3 se reasignan a A y a C si quedan
+dentro del radio de acceso, y parte de esa demanda se conserva con otra
+accesibilidad. Con valores ilustrativos:
+
+| Métrica | Base | Propuesta | Absoluto | Relativo |
+|---|---:|---:|---:|---:|
+| Paradas | 3 | 2 | −1 | −0,33 |
+| Demanda potencial | 118 | 95 | −23 | −0,19 |
+| Recaudación potencial | 118.000 | 95.000 | −23.000 | −0,19 |
+| Distancia total | 1.500 m | 1.500 m | 0 | 0 |
+| Tiempo típico | 450 s | 430 s | −20 | −0,04 |
+| Confianza | media | media | — | — |
+
+La distancia no cambia porque la geometría es la misma: sólo se dejó de
+detener en el medio. El tiempo baja levemente al ahorrarse una detención. Y la
+demanda cae 23, bastante menos que los 88 que B mostraba como aporte.
+
+Esa diferencia entre "lo que la parada aportaba" y "lo que la ruta pierde" es
+la razón por la que una modificación se evalúa simulando y comparando, y no
+restando el aporte de la parada eliminada.
+
+### 13.6. Interpretación
+
+El escenario original sugiere:
 
 - Una demanda potencial de 118 viajes representativos.
 - Un recorrido de 1,5 km.
@@ -1195,16 +1378,20 @@ El escenario sugiere:
   íntegramente con tarjeta registrada.
 - Mejor respaldo en el primer tramo que en el segundo.
 
+La modificación evaluada reduce la demanda un 19 % a cambio de 20 segundos
+menos de recorrido, sin cambiar la distancia ni la confianza. Si ese
+intercambio conviene depende de criterios que el motor no evalúa.
+
 No permite concluir todavía:
 
 - Cuántos pasajeros elegirían efectivamente la línea.
 - Cuántos vehículos serían necesarios.
 
-## 13. Preparación y actualización de datos
+## 14. Preparación y actualización de datos
 
 El motor necesita datos preparados antes de simular.
 
-### 13.1. Flujo de movilidad
+### 14.1. Flujo de movilidad
 
 ```mermaid
 flowchart LR
@@ -1223,7 +1410,7 @@ La actualización de viajes modifica:
 - Cantidades de la matriz.
 - Demanda estimada de futuras simulaciones.
 
-### 13.2. Flujo GTFS
+### 14.2. Flujo GTFS
 
 ```mermaid
 flowchart LR
@@ -1245,7 +1432,7 @@ Una actualización GTFS puede modificar:
 - Cantidad de líneas disponibles en cada corredor.
 - Confianza de una misma ruta simulada.
 
-### 13.3. Flujo de tarifas
+### 14.3. Flujo de tarifas
 
 ```mermaid
 flowchart LR
@@ -1261,7 +1448,7 @@ realiza mediante un script SQL versionado
 (`sql/tarifas/insertar_tarifas_vigentes.sql`) que debe actualizarse
 manualmente cuando cambia el cuadro publicado.
 
-### 13.4. Naturaleza de las actualizaciones
+### 14.4. Naturaleza de las actualizaciones
 
 La preparación no ocurre dentro de cada simulación. Es un proceso previo
 administrado.
@@ -1272,7 +1459,7 @@ Esto permite respuestas más rápidas, pero requiere:
 - Actualizar viajes, GTFS y tarifas con una frecuencia definida.
 - Validar las cargas antes de reemplazar datos productivos.
 
-### 13.5. Reconstrucción GTFS
+### 14.5. Reconstrucción GTFS
 
 La transformación GTFS actual reconstruye las tablas finales de recorridos y
 paradas.
@@ -1286,7 +1473,7 @@ Antes de ejecutarla se debe:
 Los datos de viajes, matriz OD y tarifas no se modifican durante esa
 reconstrucción.
 
-### 13.6. Estado operativo actual
+### 14.6. Estado operativo actual
 
 El repositorio incluye los procesos de transformación, pero algunos pasos de
 carga de archivos se realizan externamente.
@@ -1300,21 +1487,21 @@ Además:
 - Las simulaciones no se persisten.
 - No existe todavía un historial de versiones de datos y resultados.
 
-## 14. Decisiones funcionales
+## 15. Decisiones funcionales
 
-### 14.1. Evaluar una ruta, no diseñarla
+### 15.1. Evaluar una ruta, no diseñarla
 
 El motor no propone automáticamente paradas o calles. Esto mantiene separadas:
 
 - Generación de alternativas.
 - Evaluación de alternativas.
 
-### 14.2. Un sentido por simulación
+### 15.2. Un sentido por simulación
 
 La demanda y el recorrido son direccionales. Ida y vuelta deben evaluarse por
 separado si sus paradas o geometrías difieren.
 
-### 14.3. Demanda territorial
+### 15.3. Demanda territorial
 
 La demanda se vincula con áreas cercanas a paradas y no exclusivamente con
 puntos exactos.
@@ -1322,43 +1509,43 @@ puntos exactos.
 Esto es apropiado para analizar cobertura, aunque no reemplaza un modelo de
 elección de transporte.
 
-### 14.4. Asignación exclusiva de zonas
+### 15.4. Asignación exclusiva de zonas
 
 Evita doble contabilización, pero hace que la distribución por parada dependa
 de la configuración completa de paradas.
 
-### 14.5. Recorrido exacto
+### 15.5. Recorrido exacto
 
 Permite medir distancia y condiciones locales sin depender de un servicio
 externo de mapas.
 
-### 14.6. Tiempo local antes que promedio global
+### 15.6. Tiempo local antes que promedio global
 
 Se priorizan referencias cercanas. El promedio global se utiliza únicamente
 como respaldo.
 
-### 14.7. Variabilidad explícita
+### 15.7. Variabilidad explícita
 
 El motor devuelve tres escenarios en lugar de un único tiempo. Esto comunica
 que la operación no tiene una duración constante.
 
-### 14.8. Procedencia visible
+### 15.8. Procedencia visible
 
 Fuente y confianza forman parte del resultado para que una cifra estimada no se
 presente sin contexto.
 
-### 14.9. Fallar ante geometrías inválidas
+### 15.9. Fallar ante geometrías inválidas
 
 Una corrección automática podría evaluar una ruta distinta. Por eso la entrada
 se rechaza y debe corregirse en origen.
 
-### 14.10. Jurisdicción como entrada explícita
+### 15.10. Jurisdicción como entrada explícita
 
 La jurisdicción tarifaria se declara en la ruta y no se infiere de las
 coordenadas. Inferirla automáticamente podría aplicar una tarifa incorrecta en
 zonas limítrofes sin que quede en evidencia.
 
-### 14.11. Captación y mezcla de pago como supuestos de política
+### 15.11. Captación y mezcla de pago como supuestos de política
 
 El factor de captación y la proporción de tarjeta registrada son parámetros de
 configuración, no resultados calibrados con datos observados de la línea. Se
@@ -1366,9 +1553,42 @@ tratan igual que la política de accesibilidad (sección 6.4): valores
 explícitos, documentados y versionables, no un modelo de elección de
 transporte.
 
-## 15. Alcance actual y limitaciones
+### 15.12. Comparar dos rutas completas, no un cambio declarado
 
-### 15.1. Demanda y recaudación potencial no equivalen a captación real
+Una modificación se expresa enviando la ruta resultante entera, no una
+instrucción de qué cambiar. Es consecuencia directa de la decisión 15.1: si el
+motor tuviera que interpretar "eliminar esta parada", tendría que decidir por
+dónde pasa ahora el recorrido, y eso es diseñar. Quien propone el cambio es
+quien sabe si corresponde unir los dos tramos, tomar otra calle o evitar un
+giro prohibido.
+
+### 15.13. Un resultado del tamaño de la decisión
+
+El motor calcula el detalle de cada par origen-destino pero no lo informa. La
+cantidad de pares crece con el cuadrado de la cantidad de paradas, y ese
+detalle no es lo que se mira para decidir si una ruta conviene.
+
+La salida se organiza entonces en los dos ejes que sí sostienen una decisión:
+la ruta completa y el aporte de cada parada (sección 11). Devolver menos
+también es lo que hace práctico entregar dos resultados completos en una
+comparación.
+
+### 15.14. Diferencias relativas indefinidas en lugar de infinitas
+
+Cuando una métrica vale cero en la ruta base, la diferencia relativa se informa
+como nula y no como un crecimiento enorme. Un cociente indefinido presentado
+como número invita a leerlo como una mejora espectacular cuando en realidad
+sólo indica que antes no había nada que comparar.
+
+### 15.15. La confianza no se resta
+
+Alta, media y baja son categorías ordenadas, no cantidades. Una comparación
+informa ambas etiquetas en lugar de su diferencia, porque la distancia entre
+dos niveles no tiene interpretación (sección 12.5).
+
+## 16. Alcance actual y limitaciones
+
+### 16.1. Demanda y recaudación potencial no equivalen a captación real
 
 La demanda potencial indica movimientos accesibles, no pasajeros asegurados.
 La recaudación potencial (sección 10) aplica un factor de captación
@@ -1384,7 +1604,7 @@ Faltan variables como:
 - Preferencias de los usuarios.
 - Evasión y elasticidad frente a la tarifa.
 
-### 15.2. Día típico
+### 16.2. Día típico
 
 Los datos de movilidad representan un día hábil típico. No describen:
 
@@ -1393,12 +1613,12 @@ Los datos de movilidad representan un día hábil típico. No describen:
 - Estacionalidad.
 - Cambios recientes no incluidos en la carga.
 
-### 15.3. Cobertura geográfica
+### 16.3. Cobertura geográfica
 
 La fuente de viajes tiene alcance AMBA. El alcance efectivo depende del archivo
 cargado y no de un recorte automático del motor.
 
-### 15.4. Accesibilidad simplificada
+### 16.4. Accesibilidad simplificada
 
 La distancia es geográfica y no peatonal. El modelo no conoce:
 
@@ -1407,13 +1627,13 @@ La distancia es geográfica y no peatonal. El modelo no conoce:
 - Calidad urbana.
 - Seguridad.
 
-### 15.5. Búsqueda H3 acotada
+### 16.5. Búsqueda H3 acotada
 
 La búsqueda de demanda parte de la vecindad H3 inmediata de la parada y después
 aplica el radio de 800 metros. Esta estrategia es eficiente, pero debería
 revisarse si se cambia la resolución H3 o el radio.
 
-### 15.6. Horarios programados
+### 16.6. Horarios programados
 
 Los tiempos GTFS no observan:
 
@@ -1423,25 +1643,25 @@ Los tiempos GTFS no observan:
 - Incumplimientos.
 - Variabilidad diaria no programada.
 
-### 15.7. Dirección aproximada
+### 16.7. Dirección aproximada
 
 La compatibilidad usa la orientación general entre extremos del tramo. En
 geometrías muy curvas, la dirección local puede estar representada de forma
 simplificada.
 
-### 15.8. Cantidad de muestras
+### 16.8. Cantidad de muestras
 
 Se conserva cuántos viajes GTFS contribuyeron a cada percentil, pero esa
 cantidad no aumenta automáticamente el peso de una línea durante la
 simulación.
 
-### 15.9. Cuadro tarifario sin versionado histórico
+### 16.9. Cuadro tarifario sin versionado histórico
 
 La simulación usa siempre el cuadro tarifario vigente en la base de datos al
 momento de ejecutarse. No conserva tarifas históricas ni permite simular con
 la tarifa de una fecha pasada.
 
-### 15.10. Resultado no persistido
+### 16.10. Resultado no persistido
 
 Actualmente no se guarda:
 
@@ -1454,17 +1674,33 @@ Actualmente no se guarda:
 Dos ejecuciones en momentos distintos podrían cambiar después de actualizar la
 base, sin que el motor conserve por sí mismo la comparación histórica.
 
-### 15.11. Exposición actual
+### 16.11. Exposición actual
 
-El servicio HTTP publica una comprobación de salud, pero todavía no expone la
-simulación.
+El servicio HTTP publica una comprobación de salud, la simulación de una ruta y
+la comparación de dos rutas. El contrato está documentado en
+`docs/openapi.yaml`. También existe una herramienta de línea de comandos que
+simula una ruta desde un archivo JSON.
 
-La ejecución completa se realiza mediante una herramienta de prueba que recibe
-un archivo JSON.
+Todavía no se expone un catálogo de las líneas existentes: quien consulta debe
+construir la ruta base por su cuenta, aunque corresponda a una línea que el
+motor ya tiene cargada.
 
-## 16. Evolución prevista
+### 16.12. Cálculo sincrónico
 
-### 16.1. Modelo de captación calibrado
+Cada consulta se resuelve dentro del mismo pedido, contra un límite de tiempo
+configurable. Las dos simulaciones de una comparación se calculan en paralelo,
+así que una comparación tarda aproximadamente lo mismo que la más lenta de las
+dos rutas, no la suma.
+
+La mayoría de los recorridos del AMBA se resuelven en menos de un segundo, pero
+unos pocos recorridos suburbanos muy extensos —de 90 a 130 kilómetros—
+requieren bastante más, porque cada uno de sus tramos atraviesa muchos
+corredores existentes. Para esos casos el límite de tiempo puede quedar corto y
+la respuesta ser un error de tiempo agotado.
+
+## 17. Evolución prevista
+
+### 17.1. Modelo de captación calibrado
 
 El factor de captación y la mezcla de pago son actualmente parámetros fijos de
 configuración (secciones 10.5 y 10.6). Pueden complementarse con un modelo que
@@ -1478,7 +1714,7 @@ estime captación a partir de:
 Esto permitiría reemplazar el supuesto fijo por una proporción específica de
 cada ruta y jurisdicción.
 
-### 16.2. Comparación con líneas similares
+### 17.2. Comparación con líneas similares
 
 Una línea existente puede considerarse similar según:
 
@@ -1492,7 +1728,7 @@ Una línea existente puede considerarse similar según:
 
 La comparación debería explicar qué criterios originaron la similitud.
 
-### 16.3. Datos observados
+### 17.3. Datos observados
 
 Tiempos GPS o AVL podrían incorporarse con una jerarquía de fuentes:
 
@@ -1504,7 +1740,7 @@ observación local
 
 La salida debería mantener la procedencia.
 
-### 16.4. Persistencia y escenarios
+### 17.4. Persistencia y escenarios
 
 Guardar las simulaciones permitiría:
 
@@ -1513,13 +1749,13 @@ Guardar las simulaciones permitiría:
 - Auditar cambios.
 - Asociar cada cálculo con una versión de datos.
 
-### 16.5. Versionado histórico de tarifas
+### 17.5. Versionado histórico de tarifas
 
 Guardar cada cuadro tarifario con su fecha de vigencia permitiría simular con
 la tarifa vigente en una fecha pasada y auditar variaciones de recaudación
 potencial causadas exclusivamente por actualizaciones tarifarias.
 
-### 16.6. Publicación mediante API
+### 17.6. Publicación mediante API
 
 El mismo contrato puede exponerse a una aplicación web sin cambiar el
 funcionamiento conceptual.
@@ -1530,15 +1766,17 @@ También conviene separar:
 - Disponibilidad de la base.
 - Vigencia de los datos.
 
-## 17. Glosario
+## 18. Glosario
 
 | Término | Significado |
 |---|---|
 | Accesibilidad | Coeficiente que reduce el aporte de una zona según su distancia a la parada. |
+| Aporte por parada | Demanda y recaudación atribuidas a una parada, separadas según los viajes que nacen y los que terminan en ella. |
 | Banda tarifaria | Rango de distancia con una tarifa registrada y una tarifa sin registrar definidas para una jurisdicción. |
 | Demanda bruta | Viajes de la matriz entre zonas cubiertas, antes de ponderar accesibilidad. |
 | Demanda captada | Demanda potencial de un par de paradas multiplicada por el factor de captación. |
 | Demanda potencial | Demanda bruta ponderada por accesibilidad en origen y destino. |
+| Delta | Diferencia entre la ruta propuesta y la ruta base, con su valor absoluto y su fracción relativa. |
 | Factor de captación | Proporción configurable de la demanda potencial que se asume paga un viaje en la línea. |
 | Factor de expansión | Peso estadístico que convierte una fila de muestra en viajes representados. |
 | GTFS | Formato estándar de oferta, recorridos, paradas y horarios de transporte. |
@@ -1551,11 +1789,12 @@ También conviene separar:
 | Percentil 75 | Valor por debajo del cual queda el 75 % de los tiempos. |
 | Recaudación potencial | Ingreso estimado por tarifa a partir de la demanda captada y la tarifa ponderada de cada par de paradas. |
 | Ritmo comercial | Segundos necesarios por metro recorrido, incluyendo detenciones según el criterio GTFS. |
+| Ruta base | Ruta contra la que se compara una propuesta. En una modificación, la línea tal como existe hoy. |
 | Tarifa ponderada | Combinación de la tarifa registrada y la tarifa sin registrar según la proporción de tarjeta registrada asumida. |
 | Tramo | Recorrido desde una parada hasta la siguiente. |
 | Viaje canónico | Viaje GTFS elegido para representar la secuencia principal de una línea y sentido. |
 
-## 18. Conclusión
+## 19. Conclusión
 
 Vialis Motor evalúa una ruta nueva combinando movilidad existente, oferta de
 transporte programada, geometría detallada y el cuadro tarifario de la
@@ -1568,11 +1807,17 @@ Su funcionamiento se apoya en tres cálculos complementarios:
 - La recaudación potencial traduce esa demanda en un ingreso estimado, bajo
   supuestos explícitos de captación y mezcla de pago.
 
-El resultado conserva detalle por par de paradas y por tramo. Esto permite
-identificar no solo cuánta demanda, tiempo o recaudación tiene una propuesta,
-sino dónde se originan esos valores y qué tan sólidas son las referencias
-utilizadas.
+El resultado se organiza en dos ejes: la ruta completa y el aporte de cada
+parada, con el tramo que la conecta con la siguiente. Esto permite identificar
+no solo cuánta demanda, tiempo o recaudación tiene una propuesta, sino dónde se
+originan esos valores y qué tan sólidas son las referencias utilizadas.
+
+Sobre esa misma base, el motor puede evaluar dos rutas y devolver la diferencia
+entre ellas (sección 12). Así una modificación de una línea existente —agregar
+o quitar paradas, cambiar las calles que recorre— deja de ser un resultado
+aislado y pasa a poder leerse como impacto: cuánta demanda gana o pierde,
+cuánto tiempo agrega y si la estimación se vuelve menos confiable.
 
 Las métricas actuales constituyen una base para completar la evaluación de
-viabilidad con comparación, costos y un modelo de captación calibrado, sin
-perder la trazabilidad del cálculo.
+viabilidad con costos, comparación automática contra líneas similares y un
+modelo de captación calibrado, sin perder la trazabilidad del cálculo.
