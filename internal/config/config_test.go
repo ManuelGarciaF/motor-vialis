@@ -81,6 +81,71 @@ func TestFromEnvRejectsInvalidRevenueAssumptions(t *testing.T) {
 	}
 }
 
+func TestFromEnvLoadsTheDefaultLinesPolicy(t *testing.T) {
+	clearDatabaseEnv(t)
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if cfg.LinesPolicy != DefaultLinesPolicy() {
+		t.Fatalf("lines policy = %#v, want %#v", cfg.LinesPolicy, DefaultLinesPolicy())
+	}
+}
+
+func TestFromEnvLoadsTheLinesPolicy(t *testing.T) {
+	clearDatabaseEnv(t)
+	t.Setenv("LINES_ALIGNMENT_TOLERANCE_METERS", "120.5")
+	t.Setenv("LINES_DEFAULT_PAGE_SIZE", "20")
+	t.Setenv("LINES_MAXIMUM_PAGE_SIZE", "40")
+
+	cfg, err := FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v", err)
+	}
+	if cfg.LinesPolicy.AlignmentToleranceMeters != 120.5 {
+		t.Fatalf("tolerance = %v, want 120.5", cfg.LinesPolicy.AlignmentToleranceMeters)
+	}
+	if cfg.LinesPolicy.DefaultPageSize != 20 || cfg.LinesPolicy.MaximumPageSize != 40 {
+		t.Fatalf("page sizes = %#v, want 20/40", cfg.LinesPolicy)
+	}
+}
+
+func TestFromEnvRejectsAnInvalidLinesPolicy(t *testing.T) {
+	cases := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{"zero tolerance", "LINES_ALIGNMENT_TOLERANCE_METERS", "0"},
+		{"negative tolerance", "LINES_ALIGNMENT_TOLERANCE_METERS", "-1"},
+		{"non numeric tolerance", "LINES_ALIGNMENT_TOLERANCE_METERS", "wide"},
+		{"zero page size", "LINES_DEFAULT_PAGE_SIZE", "0"},
+		{"non numeric page size", "LINES_MAXIMUM_PAGE_SIZE", "all"},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			clearDatabaseEnv(t)
+			t.Setenv(testCase.key, testCase.value)
+			if _, err := FromEnv(); err == nil {
+				t.Fatalf("FromEnv() error = nil for %s=%q", testCase.key, testCase.value)
+			}
+		})
+	}
+}
+
+// A default page larger than the maximum would silently return fewer lines
+// than configured, so it is refused at startup instead.
+func TestFromEnvRejectsADefaultPageLargerThanTheMaximum(t *testing.T) {
+	clearDatabaseEnv(t)
+	t.Setenv("LINES_DEFAULT_PAGE_SIZE", "100")
+	t.Setenv("LINES_MAXIMUM_PAGE_SIZE", "50")
+
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("FromEnv() error = nil")
+	}
+}
+
 func TestFromEnvRejectsUnknownAccessibilityMethod(t *testing.T) {
 	clearDatabaseEnv(t)
 	t.Setenv("SIMULATION_ACCESSIBILITY_METHOD", "unknown")

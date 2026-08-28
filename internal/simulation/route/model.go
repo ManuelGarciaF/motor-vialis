@@ -92,6 +92,9 @@ type Stop struct {
 
 // Route is one independently simulated, ordered route.
 type Route struct {
-	Jurisdiction Jurisdiction `json:"jurisdiction"`
+	// Jurisdiction is omitted when empty so a route exported from stored GTFS
+	// data — which records no tariff authority — does not claim one. Validate
+	// still requires it before anything is simulated.
+	Jurisdiction Jurisdiction `json:"jurisdiction,omitempty"`
 	Stops        []Stop       `json:"stops"`
 }

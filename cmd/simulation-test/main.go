@@ -45,7 +45,7 @@ func main() {
 		log.Fatalf("open route file: %v", err)
 	}
 	defer inputFile.Close()
-	input, err := decodeRoute(inputFile)
+	input, err := decodeRoute(inputFile, cfg.LinesPolicy.AlignmentToleranceMeters)
 	if err != nil {
 		log.Fatalf("decode route file: %v", err)
 	}
@@ -88,7 +88,10 @@ func main() {
 	}
 }
 
-func decodeRoute(reader io.Reader) (simulation.Route, error) {
+func decodeRoute(
+	reader io.Reader,
+	alignmentToleranceMeters float64,
+) (simulation.Route, error) {
 	decoder := json.NewDecoder(reader)
 	decoder.DisallowUnknownFields()
 
@@ -103,7 +106,7 @@ func decodeRoute(reader io.Reader) (simulation.Route, error) {
 		}
 		return simulation.Route{}, fmt.Errorf("decode trailing content: %w", err)
 	}
-	if err := lines.AlignStoredPathEndpoints(&input); err != nil {
+	if err := lines.AlignStoredPathEndpoints(&input, alignmentToleranceMeters); err != nil {
 		return simulation.Route{}, err
 	}
 	return input, nil

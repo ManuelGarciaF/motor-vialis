@@ -33,7 +33,7 @@ go test ./internal/simulation/demand/...   # single package
 # unless TEST_DATABASE_URL is set:
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/vialis go test ./internal/database/postgres/...
 
-# Run the API service (checks DB connectivity on startup, then serves /health)
+# Run the API service (checks DB connectivity on startup, then serves)
 go run ./cmd/api
 
 # Run a single simulation from a JSON route file (see examples/linea-132.json)
@@ -52,7 +52,9 @@ binaries read the same `config.FromEnv()`, and `simulation-test` accepts
 
 ```
 cmd/api, cmd/simulation-test        entry points; wire dependencies, no logic
-internal/httpapi                    HTTP handlers (currently just /health)
+internal/httpapi                    HTTP handlers (/lines, /simulations,
+                                     /comparisons); see docs/openapi.yaml
+internal/lines                      reads stored GTFS lines back out as routes
 internal/simulation                 orchestrator: Service.Simulate()
 internal/simulation/{demand,traveltime,revenue}   estimators (pure domain logic)
 internal/simulation/route           shared Route/Position/LineString model + Validate()
@@ -98,6 +100,18 @@ SQL against a real PostGIS+H3 instance.
    exists). Produces off-peak/typical/peak (p25/p50/p75) seconds per segment,
    a source tag, and a confidence level; total confidence is the worst
    segment confidence.
+0. **Picking a baseline** (`internal/lines`, optional): `GET /lines` and
+   `GET /lines/{id}` read `vialis.recorridos`/`paradas`/`recorridos_paradas`
+   back out as a `route.Route` a client can modify and resubmit. The exported
+   route carries no `Jurisdiction` — GTFS does not record one and the engine
+   never infers it, so the caller sets it before simulating. This is the only
+   place `AlignStoredPathEndpoints` runs: it relaxes the 20m endpoint rule to
+   `LINES_ALIGNMENT_TOLERANCE_METERS` for the engine's *own* stored geometry,
+   never for caller input. Stored data that cannot form a valid route is
+   reported as `line_not_simulable` (422) rather than repaired; the monotone
+   stop location in `transformar_gtfs.sql` means this should not happen on the
+   current feed. User-designed lines are persisted by a different service;
+   nothing here writes.
 4. **Revenue** (`internal/simulation/revenue`): for each demand stop pair,
    sums segment distances to look up a jurisdiction-specific tariff band
    (`route.Jurisdiction`: `caba`/`province`/`national`), then applies

@@ -1200,7 +1200,79 @@ parada, el nuevo `PathToNext` del tramo resultante viene en la propuesta.
 
 Ambas rutas se validan con las mismas reglas de la sección 5, sin excepción.
 
-### 12.2. Misma jurisdicción
+### 12.2. De dónde sale la ruta base
+
+La ruta base suele ser una línea que ya existe. El motor guarda las líneas del
+AMBA que cargó el flujo GTFS (sección 14.2) y las expone en dos endpoints de
+sólo lectura: uno que las lista con su metadata —línea, ramal, sentido,
+distancia, cantidad de paradas— y otro que devuelve una de ellas con sus
+paradas y la geometría exacta de cada tramo, ya con la forma que acepta el
+endpoint de simulación. El listado acepta un texto de búsqueda y una caja
+geográfica, y se pagina.
+
+El listado no incluye geometría. Devolver el recorrido de todas las líneas del
+AMBA en una sola respuesta pesaría megabytes, y quien está eligiendo una línea
+todavía no la necesita: alcanza con el nombre, el sentido y el tamaño. La
+geometría se pide después, de a una línea.
+
+El flujo completo de una modificación queda entonces así:
+
+```text
+1. listar líneas          → elegir la línea a modificar
+2. consultar la línea     → ruta base, con geometría
+3. modificarla            → ruta propuesta (la arma quien consulta)
+4. comparar ambas         → efecto de la modificación
+```
+
+El paso 3 sigue siendo responsabilidad de quien consulta, por lo dicho en
+12.1: el motor entrega la línea tal como está almacenada, no la edita.
+
+**La ruta devuelta no trae jurisdicción.** GTFS no registra qué autoridad
+tarifaria rige una línea, y el motor no la deduce de la geometría (sección
+15.10). Consultar una línea es leer un dato almacenado; elegir bajo qué cuadro
+tarifario evaluarla es una decisión de quien simula, y se toma recién en el
+paso 4. Por eso el campo no aparece en la respuesta y hay que agregarlo antes
+de simular.
+
+**Si los datos almacenados no formaran una ruta válida, la consulta falla en
+lugar de devolverla.** El flujo GTFS ubica cada parada sobre el `shape` de la
+línea y recorta el tramo que va hasta la siguiente; si una parada no lograra
+avanzar sobre el recorrido, ese tramo quedaría vacío y la ruta tendría un
+hueco. Una ruta con un hueco no cumple las reglas de la sección 5, y el motor
+no inventa la geometría faltante (sección 15.9). La ubicación monótona de las
+paradas resolvió los casos que producían esto —recorridos circulares, pasadas
+equivocadas y retrocesos cortos— así que sobre el feed actual del AMBA no
+quedan líneas en esa condición; la respuesta de error existe para no entregar
+una ruta que el endpoint de simulación rechazaría.
+
+**Alineación de los extremos.** Hay una corrección que el motor sí aplica
+sobre su propia geometría almacenada. El recorte del `shape` se hace por
+fracción de la línea: el extremo de cada tramo es la *proyección* de la parada
+sobre el recorrido, no la parada misma. Si una parada no cayera exactamente
+sobre el `shape`, esos dos puntos diferirían y la diferencia podría superar los
+20 metros que exige la validación de la sección 5. Al exportar una línea
+almacenada, el motor reemplaza el primer y el último punto de cada tramo por
+las coordenadas de las paradas correspondientes, y ningún punto intermedio: el
+itinerario descrito no cambia.
+
+En el feed actual del AMBA la corrección no mueve nada. Sus paradas están
+exactamente sobre el `shape` de su recorrido —la distancia máxima entre una y
+otro es de 0 metros sobre 139.044 tramos— así que la proyección coincide con la
+parada. La alineación existe para que un feed que no cumpla esa condición no
+haga inservibles las líneas almacenadas.
+
+La tolerancia de esa corrección es mucho más amplia que los 20 metros de la
+validación porque responde otra pregunta. La validación decide si quien
+consulta envió geometría coherente; la alineación decide si un tramo
+almacenado es reconociblemente el mismo lugar que su parada. Si la diferencia
+supera la tolerancia, la línea se informa como no simulable en vez de
+corregirse igual.
+
+Esta corrección **nunca se aplica a la geometría que envía quien consulta**.
+Esa se sigue validando contra los 20 metros, sin excepción: el motor puede
+confiar en sus propios datos, no en una entrada.
+
+### 12.3. Misma jurisdicción
 
 Las dos rutas deben declarar la misma jurisdicción. Comparar resultados
 calculados bajo cuadros tarifarios distintos mezclaría el efecto de la
@@ -1210,7 +1282,7 @@ atribuible a la propuesta.
 El resto de los supuestos —captación, mezcla de pago, método de accesibilidad—
 son configuración del motor, así que ya son idénticos para ambas.
 
-### 12.3. Qué se informa
+### 12.4. Qué se informa
 
 ```text
 Comparación
@@ -1235,7 +1307,7 @@ El `delta` informa, para cada métrica:
 Cubre cantidad de paradas, demanda bruta y potencial, recaudación potencial,
 distancia total y los tres tiempos de viaje.
 
-### 12.4. Diferencias relativas indefinidas
+### 12.5. Diferencias relativas indefinidas
 
 Cuando el valor de la ruta base es cero, `relative` se informa como nulo.
 
@@ -1243,7 +1315,7 @@ El cociente no está definido ahí, y presentarlo como crecimiento infinito ser�
 engañoso: agregar demanda a una ruta que no llevaba ninguna es una ganancia
 absoluta, y sólo `absolute` la describe correctamente.
 
-### 12.5. Confianza
+### 12.6. Confianza
 
 La confianza no se resta. Se informan las dos etiquetas:
 
@@ -1256,7 +1328,7 @@ dos de ellas no significa nada, así que restarlas produciría un número sin
 interpretación. Que una modificación baje la confianza es información
 relevante, y mostrar ambos valores es la forma honesta de comunicarlo.
 
-### 12.6. Qué observar en una comparación
+### 12.7. Qué observar en una comparación
 
 Un delta favorable en demanda no alcanza por sí solo. Conviene mirar además:
 
@@ -1268,7 +1340,7 @@ Un delta favorable en demanda no alcanza por sí solo. Conviene mirar además:
 4. Si la distancia cambió, lo que además puede mover la banda tarifaria de
    algunos pares (sección 10.4).
 
-### 12.7. Limitaciones
+### 12.8. Limitaciones
 
 La comparación hereda todas las limitaciones de cada simulación (sección 16).
 Además:
@@ -1584,7 +1656,7 @@ sólo indica que antes no había nada que comparar.
 
 Alta, media y baja son categorías ordenadas, no cantidades. Una comparación
 informa ambas etiquetas en lugar de su diferencia, porque la distancia entre
-dos niveles no tiene interpretación (sección 12.5).
+dos niveles no tiene interpretación (sección 12.6).
 
 ## 16. Alcance actual y limitaciones
 

@@ -13,6 +13,7 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/config"
 	"github.com/ManuelGarciaF/vialis-motor/internal/database/postgres"
 	"github.com/ManuelGarciaF/vialis-motor/internal/httpapi"
+	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/revenue"
@@ -53,8 +54,18 @@ func main() {
 		},
 	)
 	service := simulation.NewService(demandEstimator, travelTimeEstimator, revenueEstimator)
+	linesService := lines.NewService(
+		postgres.NewLinesRepository(database),
+		cfg.LinesPolicy,
+	)
 
-	handler := httpapi.NewHandler(logger, service, service, cfg.SimulationTimeout)
+	handler := httpapi.NewHandler(
+		logger,
+		service,
+		service,
+		linesService,
+		cfg.SimulationTimeout,
+	)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddress,

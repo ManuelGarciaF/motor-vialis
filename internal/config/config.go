@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
@@ -52,6 +54,7 @@ type Config struct {
 	SimulationTravelTimePolicy        traveltime.Policy
 	SimulationRevenueCaptureFactor    float64
 	SimulationRegisteredCardShare     float64
+	LinesPolicy                       lines.Policy
 	ReadHeaderTimeout                 time.Duration
 	ReadTimeout                       time.Duration
 	WriteTimeout                      time.Duration
@@ -83,6 +86,10 @@ func FromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	linesPolicy, err := linesPolicyFromEnv()
+	if err != nil {
+		return Config{}, err
+	}
 
 	cfg := Config{
 		HTTPAddress:                       valueOrDefault("HTTP_ADDRESS", defaultHTTPAddress),
@@ -91,6 +98,7 @@ func FromEnv() (Config, error) {
 		SimulationTravelTimePolicy:        DefaultTravelTimePolicy(),
 		SimulationRevenueCaptureFactor:    captureFactor,
 		SimulationRegisteredCardShare:     registeredCardShare,
+		LinesPolicy:                       linesPolicy,
 		ReadHeaderTimeout:                 defaultReadHeaderTimeout,
 		ReadTimeout:                       defaultReadTimeout,
 		WriteTimeout:                      defaultWriteTimeout,
@@ -152,6 +160,30 @@ func proportionFromEnv(name string, defaultValue float64) (float64, error) {
 	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil || parsed < 0 || parsed > 1 {
 		return 0, fmt.Errorf("%s must be a number between 0 and 1: %q", name, value)
+	}
+	return parsed, nil
+}
+
+func positiveFloatFromEnv(name string, defaultValue float64) (float64, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return defaultValue, nil
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil || parsed <= 0 || math.IsInf(parsed, 0) {
+		return 0, fmt.Errorf("%s must be a positive number: %q", name, value)
+	}
+	return parsed, nil
+}
+
+func positiveIntFromEnv(name string, defaultValue int) (int, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return defaultValue, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer: %q", name, value)
 	}
 	return parsed, nil
 }

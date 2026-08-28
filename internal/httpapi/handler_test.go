@@ -5,30 +5,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
 	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/httpapi"
+	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
 )
-
-func TestHealth(t *testing.T) {
-	router := newTestRouter(&fakeSimulator{})
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health", nil))
-
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
-	}
-	if response.Header().Get("Content-Type") != "application/json" {
-		t.Fatalf("Content-Type = %q, want application/json", response.Header().Get("Content-Type"))
-	}
-	if strings.TrimSpace(response.Body.String()) != `{"status":"ok"}` {
-		t.Fatalf("body = %s, want an ok response", response.Body.String())
-	}
-}
 
 type fakeSimulator struct {
 	result   simulation.Result
@@ -60,6 +42,28 @@ func (comparator *fakeComparator) Compare(
 	return comparator.result, comparator.err
 }
 
+type fakeLines struct {
+	page     lines.Page
+	detail   lines.Detail
+	err      error
+	received lines.Query
+	// requestedID records the id of the last Get call.
+	requestedID int64
+}
+
+func (stored *fakeLines) List(
+	_ context.Context,
+	query lines.Query,
+) (lines.Page, error) {
+	stored.received = query
+	return stored.page, stored.err
+}
+
+func (stored *fakeLines) Get(_ context.Context, id int64) (lines.Detail, error) {
+	stored.requestedID = id
+	return stored.detail, stored.err
+}
+
 func newTestRouter(simulator httpapi.Simulator) http.Handler {
 	return newTestRouterWith(simulator, &fakeComparator{})
 }
@@ -68,6 +72,20 @@ func newTestRouterWith(
 	simulator httpapi.Simulator,
 	comparator httpapi.Comparator,
 ) http.Handler {
+	return newTestRouterWithAll(simulator, comparator, &fakeLines{})
+}
+
+func newTestRouterWithAll(
+	simulator httpapi.Simulator,
+	comparator httpapi.Comparator,
+	storedLines httpapi.Lines,
+) http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return httpapi.NewHandler(logger, simulator, comparator, 5*time.Second).Routes()
+	return httpapi.NewHandler(
+		logger,
+		simulator,
+		comparator,
+		storedLines,
+		5*time.Second,
+	).Routes()
 }

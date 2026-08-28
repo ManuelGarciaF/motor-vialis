@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
 )
 
@@ -31,11 +32,19 @@ type Comparator interface {
 	) (simulation.Comparison, error)
 }
 
+// Lines reads the stored GTFS lines the engine already knows, so a client can
+// pick one as the starting point of a proposal.
+type Lines interface {
+	List(ctx context.Context, query lines.Query) (lines.Page, error)
+	Get(ctx context.Context, id int64) (lines.Detail, error)
+}
+
 // Handler exposes the service's endpoints over HTTP.
 type Handler struct {
 	logger     *slog.Logger
 	simulator  Simulator
 	comparator Comparator
+	lines      Lines
 	timeout    time.Duration
 }
 
@@ -43,19 +52,22 @@ func NewHandler(
 	logger *slog.Logger,
 	simulator Simulator,
 	comparator Comparator,
+	storedLines Lines,
 	timeout time.Duration,
 ) *Handler {
 	return &Handler{
 		logger:     logger,
 		simulator:  simulator,
 		comparator: comparator,
+		lines:      storedLines,
 		timeout:    timeout,
 	}
 }
 
 func (handler *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", handler.health)
+	mux.HandleFunc("GET /lines", handler.listLines)
+	mux.HandleFunc("GET /lines/{id}", handler.getLine)
 	mux.HandleFunc("POST /simulations", handler.createSimulation)
 	mux.HandleFunc("POST /comparisons", handler.createComparison)
 	return handler.recoverPanic(handler.logRequest(mux))
@@ -82,10 +94,6 @@ func decodeBody(request *http.Request, target any) error {
 	return decoder.Decode(target)
 }
 
-func (handler *Handler) health(writer http.ResponseWriter, _ *http.Request) {
-	writeJSON(writer, http.StatusOK, healthResponse{Status: "ok"})
-}
-
 func (handler *Handler) logRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		startedAt := time.Now()
@@ -103,15 +111,17 @@ func (handler *Handler) recoverPanic(next http.Handler) http.Handler {
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				handler.logger.Error("panic recovered", "error", recovered)
-				writeJSON(writer, http.StatusInternalServerError, healthResponse{Status: "error"})
+				writeError(
+					writer,
+					http.StatusInternalServerError,
+					errorCodeInternal,
+					"",
+					"internal error",
+				)
 			}
 		}()
 		next.ServeHTTP(writer, request)
 	})
-}
-
-type healthResponse struct {
-	Status string `json:"status"`
 }
 
 func writeJSON(writer http.ResponseWriter, status int, value any) {

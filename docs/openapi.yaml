@@ -11,18 +11,162 @@ servers:
     description: Local
 
 paths:
-  /health:
+  /lines:
     get:
-      operationId: getHealth
-      summary: Estado del proceso
-      tags: [health]
+      operationId: listLines
+      summary: Lista las líneas GTFS almacenadas
+      description: >
+        Devuelve sólo metadata: la geometría de todas las líneas del AMBA en un
+        listado pesaría megabytes, así que las paradas y los tramos se piden de
+        a una línea con `GET /lines/{id}`.
+
+
+        Las líneas propias del usuario las persiste otro servicio; acá sólo
+        están las que cargó la ETL de GTFS (ver `sql/recorridos/README.md`).
+      tags: [lines]
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: >
+            Coincidencia parcial, sin distinguir mayúsculas, contra la línea, el
+            ramal, el nombre público o el destino. Se busca el texto literal:
+            `%` y `_` no son comodines.
+          schema:
+            type: string
+          example: "132"
+        - name: bbox
+          in: query
+          required: false
+          description: >
+            Caja del viewport como `minLon,minLat,maxLon,maxLat` en WGS 84. Se
+            queda con las líneas cuya geometría alcanza la caja.
+          schema:
+            type: string
+          example: "-58.6,-34.8,-58.2,-34.4"
+        - name: limit
+          in: query
+          required: false
+          description: >
+            Cantidad de líneas por página. El valor predeterminado y el máximo
+            salen de `LINES_DEFAULT_PAGE_SIZE` y `LINES_MAXIMUM_PAGE_SIZE`; un
+            pedido más grande que el máximo se recorta y la respuesta informa el
+            `limit` que realmente se aplicó.
+          schema:
+            type: integer
+            minimum: 0
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
       responses:
         "200":
-          description: El servicio está corriendo.
+          description: Una página de líneas y el total de coincidencias.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/HealthResponse"
+                $ref: "#/components/schemas/LinePage"
+        "400":
+          description: Algún parámetro de filtrado o paginación es inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: validation_error
+                  field: bbox
+                  message: "must be minLongitude,minLatitude,maxLongitude,maxLatitude"
+        "500":
+          description: Error de infraestructura.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /lines/{id}:
+    get:
+      operationId: getLine
+      summary: Devuelve una línea GTFS como ruta simulable
+      description: >
+        El campo `route` tiene exactamente la forma que acepta `POST
+        /simulations`: el cliente lo modifica —agrega, corre o saca paradas, con
+        la geometría de cada tramo que toque— y lo manda como `proposed` de
+        `POST /comparisons`, usando el original como `baseline`.
+
+
+        Los nombres de las paradas van en `stops` y no dentro de `route`, porque
+        `/simulations` rechaza campos desconocidos y `route` tiene que poder
+        reenviarse tal cual.
+
+
+        `route` no trae `jurisdiction`: GTFS no la registra y el motor no la
+        deduce de la geometría, así que la elige quien simula.
+
+
+        La geometría almacenada se alinea contra sus paradas antes de
+        devolverse: la ETL corta el `shape` por fracción, así que el extremo de
+        un tramo es la proyección de la parada sobre el recorrido. Sobre el feed
+        actual del AMBA esa proyección coincide con la parada y la corrección no
+        mueve nada; existe para feeds cuyas paradas no caigan sobre el `shape`
+        (ver `LINES_ALIGNMENT_TOLERANCE_METERS`).
+      tags: [lines]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: La línea con su ruta y el nombre de cada parada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineDetail"
+        "400":
+          description: El id no es un entero positivo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No hay ninguna línea almacenada con ese id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: not_found
+                  field: id
+                  message: "no stored line has this id"
+        "422":
+          description: >
+            La línea existe pero su geometría almacenada no describe una ruta
+            válida —un hueco entre dos paradas, menos de dos paradas, o un
+            extremo demasiado lejos de su parada—. Es un problema de los datos,
+            no del pedido: reintentar no cambia nada. No debería ocurrir con el
+            feed actual del AMBA; está previsto para no devolver una ruta que
+            `POST /simulations` rechazaría.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: line_not_simulable
+                  message: "line 12 cannot be simulated: no stored geometry between stops[3] and stops[4]"
+        "500":
+          description: Error de infraestructura.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /simulations:
     post:
@@ -145,14 +289,6 @@ paths:
 
 components:
   schemas:
-    HealthResponse:
-      type: object
-      required: [status]
-      properties:
-        status:
-          type: string
-          example: ok
-
     Error:
       type: object
       required: [error]
@@ -163,7 +299,14 @@ components:
           properties:
             code:
               type: string
-              enum: [validation_error, not_found, timeout, internal_error]
+              enum:
+                [
+                  validation_error,
+                  not_found,
+                  line_not_simulable,
+                  timeout,
+                  internal_error,
+                ]
             field:
               type: string
               description: Presente sólo en errores de validación.
@@ -239,6 +382,108 @@ components:
           minItems: 2
           items:
             $ref: "#/components/schemas/Stop"
+
+    LineSummary:
+      type: object
+      description: Una línea GTFS almacenada, sin geometría.
+      required: [id, line, publicName, directionId, distanceMeters, stopCount]
+      properties:
+        id:
+          type: integer
+          format: int64
+        line:
+          type: string
+          description: Número o nombre de la línea, sin el ramal.
+          example: "132"
+        branch:
+          type: string
+          example: TRONCAL
+        publicName:
+          type: string
+        directionId:
+          type: integer
+          enum: [0, 1]
+          description: >
+            Sentido GTFS. Cada sentido es una línea distinta acá, porque el
+            motor simula una dirección por vez.
+        destination:
+          type: string
+        description:
+          type: string
+        distanceMeters:
+          type: integer
+        stopCount:
+          type: integer
+
+    LinePage:
+      type: object
+      required: [lines, total, limit, offset]
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineSummary"
+        total:
+          type: integer
+          description: >
+            Coincidencias totales del filtro, no de esta página: alcanza para
+            armar el paginador sin recorrerlas.
+        limit:
+          type: integer
+          description: El límite que se aplicó, ya recortado al máximo configurado.
+        offset:
+          type: integer
+
+    LineStopDescription:
+      type: object
+      description: >
+        El nombre de una parada de la línea. Va acá y no dentro de `route`
+        porque `/simulations` rechaza campos desconocidos, y `route` tiene que
+        poder reenviarse sin editar. Se corresponde con `route.stops` por orden
+        y por id.
+      required: [stopOrder, stopId, name]
+      properties:
+        stopOrder:
+          type: integer
+          description: Posición de la parada en la ruta, empezando en cero.
+        stopId:
+          type: string
+          description: >
+            El `stop_id` de GTFS. Cuando una línea pasa dos veces por la misma
+            parada —un recorrido circular termina donde empieza— la repetición
+            lleva `#` y su `stop_sequence`, porque `route` exige ids únicos.
+        name:
+          type: string
+        code:
+          type: string
+
+    ExportedRoute:
+      type: object
+      description: >
+        Un `Route` sin `jurisdiction`. GTFS no registra qué autoridad tarifaria
+        rige una línea y el motor no la deduce de la geometría, así que la elige
+        quien simula: hay que agregar el campo antes de mandar esto a `POST
+        /simulations`. El resto ya viene con la forma que ese endpoint acepta.
+      required: [stops]
+      properties:
+        stops:
+          type: array
+          minItems: 2
+          items:
+            $ref: "#/components/schemas/Stop"
+
+    LineDetail:
+      type: object
+      required: [line, route, stops]
+      properties:
+        line:
+          $ref: "#/components/schemas/LineSummary"
+        route:
+          $ref: "#/components/schemas/ExportedRoute"
+        stops:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineStopDescription"
 
     DemandTotals:
       type: object

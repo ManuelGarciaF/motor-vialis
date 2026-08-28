@@ -7,10 +7,14 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 )
 
+// testToleranceMeters mirrors the production default in internal/config; the
+// alignment rules are the same whatever value is configured.
+const testToleranceMeters = 250.0
+
 func TestAlignStoredPathEndpointsProducesAValidRoute(t *testing.T) {
 	input := storedRoute()
 
-	if err := AlignStoredPathEndpoints(&input); err != nil {
+	if err := AlignStoredPathEndpoints(&input, testToleranceMeters); err != nil {
 		t.Fatalf("AlignStoredPathEndpoints() error = %v", err)
 	}
 	if err := route.Validate(input); err != nil {
@@ -42,7 +46,7 @@ func TestAlignStoredPathEndpointsKeepsIntermediatePositions(t *testing.T) {
 	input := storedRoute()
 	middle := input.Stops[0].PathToNext.Positions[1]
 
-	if err := AlignStoredPathEndpoints(&input); err != nil {
+	if err := AlignStoredPathEndpoints(&input, testToleranceMeters); err != nil {
 		t.Fatalf("AlignStoredPathEndpoints() error = %v", err)
 	}
 
@@ -72,7 +76,7 @@ func TestAlignStoredPathEndpointsRejectsImplausibleGap(t *testing.T) {
 		},
 	}
 
-	err := AlignStoredPathEndpoints(&input)
+	err := AlignStoredPathEndpoints(&input, testToleranceMeters)
 	if err == nil {
 		t.Fatal("AlignStoredPathEndpoints() error = nil")
 	}
@@ -83,11 +87,11 @@ func TestAlignStoredPathEndpointsRejectsImplausibleGap(t *testing.T) {
 	if gapError.StopIndex != 0 || gapError.AtStart {
 		t.Fatalf("gap error = %#v, want the end of stops[0]", gapError)
 	}
-	if gapError.GapMeters <= AlignmentToleranceMeters {
+	if gapError.GapMeters <= testToleranceMeters {
 		t.Fatalf(
 			"gap = %v, want more than the %v m tolerance",
 			gapError.GapMeters,
-			AlignmentToleranceMeters,
+			testToleranceMeters,
 		)
 	}
 }
@@ -112,7 +116,7 @@ func TestAlignStoredPathEndpointsLeavesReversedPathsUntouched(t *testing.T) {
 		},
 	}
 
-	if err := AlignStoredPathEndpoints(&input); err != nil {
+	if err := AlignStoredPathEndpoints(&input, testToleranceMeters); err != nil {
 		t.Fatalf("AlignStoredPathEndpoints() error = %v", err)
 	}
 
@@ -139,7 +143,7 @@ func TestAlignStoredPathEndpointsIgnoresPathsItCannotAlign(t *testing.T) {
 		},
 	}
 
-	if err := AlignStoredPathEndpoints(&input); err != nil {
+	if err := AlignStoredPathEndpoints(&input, testToleranceMeters); err != nil {
 		t.Fatalf("AlignStoredPathEndpoints() error = %v", err)
 	}
 	if len(input.Stops[0].PathToNext.Positions) != 1 {

@@ -7,21 +7,13 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 )
 
-// AlignmentToleranceMeters is the largest gap this package closes between the
-// endpoint of a stored path and the stop it belongs to.
-//
-// It is far wider than the tolerance route.Validate accepts because the two
-// answer different questions: route.Validate decides whether a caller sent
-// coherent geometry, while this constant decides whether a stored path is
-// recognisably the same place as its stop.
-const AlignmentToleranceMeters = 250.0
-
 // GapError reports a stored path whose endpoint is too far from its stop to be
 // treated as the same place.
 type GapError struct {
-	StopIndex int
-	AtStart   bool
-	GapMeters float64
+	StopIndex       int
+	AtStart         bool
+	GapMeters       float64
+	ToleranceMeters float64
 }
 
 func (err *GapError) Error() string {
@@ -38,7 +30,7 @@ func (err *GapError) Error() string {
 		endpoint,
 		err.GapMeters,
 		stop,
-		AlignmentToleranceMeters,
+		err.ToleranceMeters,
 	)
 }
 
@@ -49,9 +41,14 @@ func (err *GapError) Error() string {
 // an intermediate one, turns such a path into geometry route.Validate accepts
 // without altering the itinerary it describes.
 //
+// toleranceMeters is the largest gap this closes. It is far wider than the
+// tolerance route.Validate accepts because the two answer different questions:
+// route.Validate decides whether a caller sent coherent geometry, while this
+// decides whether a stored path is recognisably the same place as its stop.
+//
 // This runs when the engine exports its own stored data, never on geometry a
 // caller sent: input keeps being validated against the strict tolerance.
-func AlignStoredPathEndpoints(input *route.Route) error {
+func AlignStoredPathEndpoints(input *route.Route, toleranceMeters float64) error {
 	for index := 0; index < len(input.Stops)-1; index++ {
 		path := input.Stops[index].PathToNext
 		if path == nil || len(path.Positions) < 2 {
@@ -73,11 +70,20 @@ func AlignStoredPathEndpoints(input *route.Route) error {
 		if reverseGap < forwardGap {
 			continue
 		}
-		if startGap > AlignmentToleranceMeters {
-			return &GapError{StopIndex: index, AtStart: true, GapMeters: startGap}
+		if startGap > toleranceMeters {
+			return &GapError{
+				StopIndex:       index,
+				AtStart:         true,
+				GapMeters:       startGap,
+				ToleranceMeters: toleranceMeters,
+			}
 		}
-		if endGap > AlignmentToleranceMeters {
-			return &GapError{StopIndex: index, GapMeters: endGap}
+		if endGap > toleranceMeters {
+			return &GapError{
+				StopIndex:       index,
+				GapMeters:       endGap,
+				ToleranceMeters: toleranceMeters,
+			}
 		}
 
 		path.Positions[0] = origin

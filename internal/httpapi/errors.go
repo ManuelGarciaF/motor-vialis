@@ -25,6 +25,10 @@ const (
 	errorCodeNotFound   = "not_found"
 	errorCodeTimeout    = "timeout"
 	errorCodeInternal   = "internal_error"
+	// errorCodeNotSimulable marks a stored line the engine cannot express as a
+	// valid route. It is neither the caller's mistake nor a transient failure,
+	// so retrying or fixing the request will not help.
+	errorCodeNotSimulable = "line_not_simulable"
 )
 
 func writeError(writer http.ResponseWriter, status int, code, field, message string) {
