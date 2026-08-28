@@ -41,17 +41,24 @@ go run ./cmd/simulation-test -route-file ./examples/linea-132.json
 ```
 
 Default local DB: `postgresql://postgres:postgres@localhost:5432/vialis`.
-Config is env-driven — see `internal/config/config.go` and the README for the
-full list of `DATABASE_*`, `HTTP_*`, and `SIMULATION_*` variables. Both `cmd/`
-binaries read the same `config.FromEnv()`, and `simulation-test` accepts
-`-database-url` to override it.
+Configuration is split by ownership. Only `DATABASE_URL` and `HTTP_ADDRESS` come
+from the environment (`internal/config/config.go`); everything else is a model
+parameter and is a constant in `internal/config/parameters.go` — access radius,
+accessibility method, revenue factors, travel-time policy, server timeouts. They
+are constants deliberately: changing one changes the engine's output, so it
+belongs in a reviewable commit rather than in a process's environment. Both
+`cmd/` binaries read the same `config.FromEnv()` and wire their estimators
+through `app.NewSimulationService`, so they cannot drift apart;
+`simulation-test` accepts `-database-url` to override the connection.
 
 ## Architecture
 
 ### Layering
 
 ```
-cmd/api, cmd/simulation-test        entry points; wire dependencies, no logic
+cmd/api, cmd/simulation-test        entry points; flags and transport, no logic
+internal/app                        composition root: NewSimulationService(),
+                                     NewLinesService()
 internal/httpapi                    HTTP handlers (/lines, /simulations,
                                      /comparisons); see docs/openapi.yaml
 internal/lines                      reads stored GTFS lines back out as routes
@@ -60,7 +67,7 @@ internal/simulation/{demand,traveltime,revenue}   estimators (pure domain logic)
 internal/simulation/route           shared Route/Position/LineString model + Validate()
 internal/database/postgres          repositories: DB-backed implementations of
                                      each estimator's Repository interface
-internal/config                     env parsing, defaults, policy construction
+internal/config                     model parameters (constants) + 2 env settings
 sql/                                DDL and ETL scripts (GTFS import, trip data, tariffs)
 ```
 
@@ -85,10 +92,11 @@ SQL against a real PostGIS+H3 instance.
    and whose direction isn't reversed. Nothing downstream runs on invalid
    input — no silent correction.
 2. **Demand** (`internal/simulation/demand`): stops are matched to nearby H3
-   resolution-8 cells (within `config.SimulationAccessRadiusMeters` = 800m);
+   resolution-8 cells (within `config.AccessRadiusMeters` = 800m);
    each cell is assigned exclusively to its closest stop (ties broken by stop
    order, then stop ID) to avoid double-counting. An `AccessibilityCalculator`
-   (`linear` or `quadratic`, chosen via `SIMULATION_ACCESSIBILITY_METHOD`)
+   (`config.AccessibilityCalculator()`, currently `demand.LinearAccessibility`;
+   `demand.QuadraticAccessibility` is the documented alternative)
    converts distance into a 0–1 weight. Gross demand comes from the
    origin-destination trip matrix between assigned cells for every stop pair
    `i < j` in route order; potential demand multiplies it by both stops'
@@ -106,17 +114,17 @@ SQL against a real PostGIS+H3 instance.
    route carries no `Jurisdiction` — GTFS does not record one and the engine
    never infers it, so the caller sets it before simulating. This is the only
    place `AlignStoredPathEndpoints` runs: it relaxes the 20m endpoint rule to
-   `LINES_ALIGNMENT_TOLERANCE_METERS` for the engine's *own* stored geometry,
-   never for caller input. Stored data that cannot form a valid route is
+   `config.LinesAlignmentToleranceMeters` for the engine's *own* stored
+   geometry, never for caller input. Stored data that cannot form a valid route is
    reported as `line_not_simulable` (422) rather than repaired; the monotone
    stop location in `transformar_gtfs.sql` means this should not happen on the
    current feed. User-designed lines are persisted by a different service;
    nothing here writes.
 4. **Revenue** (`internal/simulation/revenue`): for each demand stop pair,
    sums segment distances to look up a jurisdiction-specific tariff band
-   (`route.Jurisdiction`: `caba`/`province`/`national`), then applies
+   (`route.Jurisdiction`: `caba`/`province`/`national`), then applies the
    `CaptureFactor` and `RegisteredCardShare` policy knobs
-   (`SIMULATION_REVENUE_CAPTURE_FACTOR`, `SIMULATION_REGISTERED_CARD_SHARE`)
+   (`config.RevenueCaptureFactor`, `config.RegisteredCardShare`)
    to turn potential demand into potential revenue.
 
 ### Determinism

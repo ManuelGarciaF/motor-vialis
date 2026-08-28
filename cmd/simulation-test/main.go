@@ -11,20 +11,20 @@ import (
 	"os"
 	"time"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/app"
 	"github.com/ManuelGarciaF/vialis-motor/internal/config"
 	"github.com/ManuelGarciaF/vialis-motor/internal/database/postgres"
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/revenue"
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
 
+// runBudget bounds one CLI run end to end, connecting included. It is more
+// generous than the API's per-request timeout because a run here is interactive
+// and nothing else is waiting on the process.
+const runBudget = 30 * time.Second
+
 func main() {
-	cfg, err := config.FromEnv()
-	if err != nil {
-		log.Fatalf("load configuration: %v", err)
-	}
+	cfg := config.FromEnv()
 	databaseURL := flag.String(
 		"database-url",
 		cfg.DatabaseURL,
@@ -45,12 +45,12 @@ func main() {
 		log.Fatalf("open route file: %v", err)
 	}
 	defer inputFile.Close()
-	input, err := decodeRoute(inputFile, cfg.LinesPolicy.AlignmentToleranceMeters)
+	input, err := decodeRoute(inputFile, config.LinesAlignmentToleranceMeters)
 	if err != nil {
 		log.Fatalf("decode route file: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), runBudget)
 	defer cancel()
 
 	database, err := postgres.Open(ctx, *databaseURL)
@@ -59,23 +59,7 @@ func main() {
 	}
 	defer database.Close()
 
-	demandEstimator := demand.NewService(
-		postgres.NewDemandRepository(database),
-		config.SimulationAccessRadiusMeters,
-		cfg.SimulationAccessibilityCalculator,
-	)
-	travelTimeEstimator := traveltime.NewService(
-		postgres.NewTravelTimeRepository(database),
-		cfg.SimulationTravelTimePolicy,
-	)
-	revenueEstimator := revenue.NewService(
-		postgres.NewRevenueRepository(database),
-		revenue.Policy{
-			CaptureFactor:       cfg.SimulationRevenueCaptureFactor,
-			RegisteredCardShare: cfg.SimulationRegisteredCardShare,
-		},
-	)
-	service := simulation.NewService(demandEstimator, travelTimeEstimator, revenueEstimator)
+	service := app.NewSimulationService(database)
 	result, err := service.Simulate(ctx, input)
 	if err != nil {
 		log.Fatalf("simulate route: %v", err)

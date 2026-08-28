@@ -8,27 +8,21 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/app"
 	"github.com/ManuelGarciaF/vialis-motor/internal/config"
 	"github.com/ManuelGarciaF/vialis-motor/internal/database/postgres"
 	"github.com/ManuelGarciaF/vialis-motor/internal/httpapi"
-	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/revenue"
-	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	cfg, err := config.FromEnv()
-	if err != nil {
-		logger.Error("invalid configuration", "error", err)
-		os.Exit(1)
-	}
+	cfg := config.FromEnv()
 
-	connectContext, cancelConnect := context.WithTimeout(context.Background(), 10*time.Second)
+	connectContext, cancelConnect := context.WithTimeout(
+		context.Background(),
+		config.DatabaseConnectTimeout,
+	)
 	database, err := postgres.Open(connectContext, cfg.DatabaseURL)
 	cancelConnect()
 	if err != nil {
@@ -37,43 +31,24 @@ func main() {
 	}
 	defer database.Close()
 
-	demandEstimator := demand.NewService(
-		postgres.NewDemandRepository(database),
-		config.SimulationAccessRadiusMeters,
-		cfg.SimulationAccessibilityCalculator,
-	)
-	travelTimeEstimator := traveltime.NewService(
-		postgres.NewTravelTimeRepository(database),
-		cfg.SimulationTravelTimePolicy,
-	)
-	revenueEstimator := revenue.NewService(
-		postgres.NewRevenueRepository(database),
-		revenue.Policy{
-			CaptureFactor:       cfg.SimulationRevenueCaptureFactor,
-			RegisteredCardShare: cfg.SimulationRegisteredCardShare,
-		},
-	)
-	service := simulation.NewService(demandEstimator, travelTimeEstimator, revenueEstimator)
-	linesService := lines.NewService(
-		postgres.NewLinesRepository(database),
-		cfg.LinesPolicy,
-	)
+	service := app.NewSimulationService(database)
+	linesService := app.NewLinesService(database)
 
 	handler := httpapi.NewHandler(
 		logger,
 		service,
 		service,
 		linesService,
-		cfg.SimulationTimeout,
+		config.SimulationTimeout,
 	)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddress,
 		Handler:           handler.Routes(),
-		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
-		ReadTimeout:       cfg.ReadTimeout,
-		WriteTimeout:      cfg.WriteTimeout,
-		IdleTimeout:       cfg.IdleTimeout,
+		ReadHeaderTimeout: config.ReadHeaderTimeout,
+		ReadTimeout:       config.ReadTimeout,
+		WriteTimeout:      config.WriteTimeout,
+		IdleTimeout:       config.IdleTimeout,
 	}
 
 	shutdownSignal, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -95,7 +70,10 @@ func main() {
 		logger.Info("shutting down HTTP server")
 	}
 
-	shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownContext, cancel := context.WithTimeout(
+		context.Background(),
+		config.DatabaseConnectTimeout,
+	)
 	defer cancel()
 	if err := server.Shutdown(shutdownContext); err != nil {
 		logger.Error("could not gracefully stop HTTP server", "error", err)

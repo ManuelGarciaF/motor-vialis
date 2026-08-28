@@ -969,8 +969,8 @@ explícitamente en lugar de aplicar una tarifa aproximada.
 demanda captada = demanda potencial del par × factor de captación
 ```
 
-El factor de captación (`SIMULATION_REVENUE_CAPTURE_FACTOR`, entre 0 y 1,
-predeterminado 1) representa qué proporción de la demanda territorialmente
+El factor de captación (`config.RevenueCaptureFactor`, entre 0 y 1,
+actualmente 1) representa qué proporción de la demanda territorialmente
 accesible se asume que efectivamente paga un viaje en la línea. Es un
 supuesto de política configurable, no una estimación derivada de datos de
 elección modal.
@@ -983,8 +983,8 @@ tarifa ponderada =
   + tarifa sin registrar × (1 − proporción con tarjeta registrada)
 ```
 
-La proporción con tarjeta registrada (`SIMULATION_REGISTERED_CARD_SHARE`,
-entre 0 y 1, predeterminado 1) refleja que buena parte de los boletos de
+La proporción con tarjeta registrada (`config.RegisteredCardShare`,
+entre 0 y 1, actualmente 1) refleja que buena parte de los boletos de
 colectivo se paga con tarjeta registrada, a un valor distinto del de la
 tarifa sin registrar.
 

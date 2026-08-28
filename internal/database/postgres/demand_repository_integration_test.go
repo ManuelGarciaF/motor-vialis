@@ -86,12 +86,12 @@ func TestDemandRepositoryIntegration(t *testing.T) {
 	}
 	insertHexagon(0, 0)
 	insertHexagon(1, 400)
-	insertHexagon(2, config.SimulationAccessRadiusMeters+1)
+	insertHexagon(2, config.AccessRadiusMeters+1)
 
 	candidates, err := repository.FindCellCandidates(
 		ctx,
 		route.Route{Stops: stops},
-		config.SimulationAccessRadiusMeters,
+		config.AccessRadiusMeters,
 	)
 	if err != nil {
 		t.Fatalf("FindCellCandidates() error = %v", err)
