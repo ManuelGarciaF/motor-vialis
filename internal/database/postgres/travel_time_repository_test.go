@@ -32,7 +32,7 @@ func TestTravelTimeRepositoryFindSegmentReferences(t *testing.T) {
 		{Latitude: -34.60, Longitude: -58.38},
 		{Latitude: -34.61, Longitude: -58.39},
 	}}
-	policy := config.DefaultTravelTimePolicy()
+	policy := config.TravelTimePolicy()
 
 	actual, err := repository.FindSegmentReferences(
 		context.Background(),
@@ -97,7 +97,7 @@ func TestTravelTimeRepositoryKeepsSegmentWithoutReferences(t *testing.T) {
 				{Latitude: 0.01},
 			}},
 		}},
-		config.DefaultTravelTimePolicy(),
+		config.TravelTimePolicy(),
 		100,
 	)
 	if err != nil {
@@ -114,7 +114,7 @@ func TestTravelTimeRepositoryFindGlobalPaces(t *testing.T) {
 	}}}
 	actual, err := newTravelTimeRepository(query.execute).FindGlobalPaces(
 		context.Background(),
-		config.DefaultTravelTimePolicy(),
+		config.TravelTimePolicy(),
 	)
 	if err != nil {
 		t.Fatalf("FindGlobalPaces() error = %v", err)
@@ -140,7 +140,7 @@ func TestTravelTimeRepositoryReturnsEmptyGlobalPaces(t *testing.T) {
 	}}}
 	actual, err := newTravelTimeRepository(query.execute).FindGlobalPaces(
 		context.Background(),
-		config.DefaultTravelTimePolicy(),
+		config.TravelTimePolicy(),
 	)
 	if err != nil {
 		t.Fatalf("FindGlobalPaces() error = %v", err)
@@ -156,7 +156,7 @@ func TestTravelTimeRepositoryWrapsQueryErrors(t *testing.T) {
 	_, err := repository.FindSegmentReferences(
 		context.Background(),
 		nil,
-		config.DefaultTravelTimePolicy(),
+		config.TravelTimePolicy(),
 		100,
 	)
 	if !errors.Is(err, want) {

@@ -71,7 +71,7 @@ func TestTravelTimeRepositoryIntegration(t *testing.T) {
 		{Latitude: -40, Longitude: -50},
 		{Latitude: -40, Longitude: -49.99},
 	}}
-	policy := config.DefaultTravelTimePolicy()
+	policy := config.TravelTimePolicy()
 	for _, radiusMeters := range policy.ReferenceRadiiMeters {
 		measured, err := repository.FindSegmentReferences(
 			ctx,
@@ -124,7 +124,7 @@ func TestTravelTimeRepositoryIntegration(t *testing.T) {
 		}
 	}
 
-	global, err := repository.FindGlobalPaces(ctx, config.DefaultTravelTimePolicy())
+	global, err := repository.FindGlobalPaces(ctx, config.TravelTimePolicy())
 	if err != nil {
 		t.Fatalf("FindGlobalPaces() error = %v", err)
 	}

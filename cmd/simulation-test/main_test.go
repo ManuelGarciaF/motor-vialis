@@ -31,7 +31,7 @@ func TestDecodeRouteReadsGeoJSONPaths(t *testing.T) {
 		]
 	}`
 
-	actual, err := decodeRoute(strings.NewReader(input), config.DefaultLinesPolicy().AlignmentToleranceMeters)
+	actual, err := decodeRoute(strings.NewReader(input), config.LinesAlignmentToleranceMeters)
 	if err != nil {
 		t.Fatalf("decodeRoute() error = %v", err)
 	}
@@ -89,7 +89,7 @@ func TestDecodeRouteAlignsStoredGTFSPathEndpoints(t *testing.T) {
 		]
 	}`
 
-	actual, err := decodeRoute(strings.NewReader(input), config.DefaultLinesPolicy().AlignmentToleranceMeters)
+	actual, err := decodeRoute(strings.NewReader(input), config.LinesAlignmentToleranceMeters)
 	if err != nil {
 		t.Fatalf("decodeRoute() error = %v", err)
 	}
@@ -131,20 +131,20 @@ func TestDecodeRouteRejectsImplausibleEndpointAlignment(t *testing.T) {
 		]
 	}`
 
-	if _, err := decodeRoute(strings.NewReader(input), config.DefaultLinesPolicy().AlignmentToleranceMeters); err == nil {
+	if _, err := decodeRoute(strings.NewReader(input), config.LinesAlignmentToleranceMeters); err == nil {
 		t.Fatal("decodeRoute() error = nil")
 	}
 }
 
 func TestDecodeRouteRejectsUnknownFields(t *testing.T) {
-	_, err := decodeRoute(strings.NewReader(`{"stops":[],"unexpected":true}`), config.DefaultLinesPolicy().AlignmentToleranceMeters)
+	_, err := decodeRoute(strings.NewReader(`{"stops":[],"unexpected":true}`), config.LinesAlignmentToleranceMeters)
 	if err == nil {
 		t.Fatal("decodeRoute() error = nil")
 	}
 }
 
 func TestDecodeRouteRejectsMultipleValues(t *testing.T) {
-	_, err := decodeRoute(strings.NewReader(`{"stops":[]} {"stops":[]}`), config.DefaultLinesPolicy().AlignmentToleranceMeters)
+	_, err := decodeRoute(strings.NewReader(`{"stops":[]} {"stops":[]}`), config.LinesAlignmentToleranceMeters)
 	if err == nil {
 		t.Fatal("decodeRoute() error = nil")
 	}
@@ -159,7 +159,7 @@ func TestExampleRouteIsValid(t *testing.T) {
 
 	input, err := decodeRoute(
 		inputFile,
-		config.DefaultLinesPolicy().AlignmentToleranceMeters,
+		config.LinesAlignmentToleranceMeters,
 	)
 	if err != nil {
 		t.Fatalf("decode example route: %v", err)

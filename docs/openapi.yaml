@@ -49,7 +49,7 @@ paths:
           required: false
           description: >
             Cantidad de líneas por página. El valor predeterminado y el máximo
-            salen de `LINES_DEFAULT_PAGE_SIZE` y `LINES_MAXIMUM_PAGE_SIZE`; un
+            salen de `config.LinesDefaultPageSize` y `config.LinesMaximumPageSize`; un
             pedido más grande que el máximo se recorta y la respuesta informa el
             `limit` que realmente se aplicó.
           schema:
@@ -112,7 +112,7 @@ paths:
         un tramo es la proyección de la parada sobre el recorrido. Sobre el feed
         actual del AMBA esa proyección coincide con la parada y la corrección no
         mueve nada; existe para feeds cuyas paradas no caigan sobre el `shape`
-        (ver `LINES_ALIGNMENT_TOLERANCE_METERS`).
+        (ver `config.LinesAlignmentToleranceMeters`).
       tags: [lines]
       parameters:
         - name: id
@@ -218,7 +218,7 @@ paths:
                   field: route.jurisdiction
                   message: "must be caba, province, or national"
         "504":
-          description: La simulación superó `SIMULATION_TIMEOUT`.
+          description: La simulación superó `config.SimulationTimeout`.
           content:
             application/json:
               schema:
@@ -275,7 +275,7 @@ paths:
                   field: proposed.stops[3].id
                   message: "must be unique within the route"
         "504":
-          description: La comparación superó `SIMULATION_TIMEOUT`.
+          description: La comparación superó `config.SimulationTimeout`.
           content:
             application/json:
               schema:
