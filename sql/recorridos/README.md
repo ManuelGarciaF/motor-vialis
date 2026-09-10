@@ -54,6 +54,34 @@ elimina y recrea antes de cada carga completa. Los identificadores se almacenan
 como `TEXT`, aunque algunos parezcan números, porque GTFS los define como valores
 opacos.
 
+## Alcance territorial y exclusión de Junín
+
+El feed nacional contiene servicios que no pertenecen al área operativa de
+Vialis. La transformación excluye `agency_id=446`, correspondiente en el feed
+vigente a `TRANSPORTE 8 DE OCTUBRE S.A.`, porque sus servicios urbanos de Junín
+quedan completamente fuera del polígono versionado AMBA + 10 km de
+`sql/calles/amba-margen-10km.geojson`.
+
+La agencia contiene cuatro rutas GTFS:
+
+| `route_id` | Nombre | Recorridos por dirección |
+|------------|--------|---------------------------|
+| `6320` | `VERDE` | 2 |
+| `6351` | `ROJA` | 2 |
+| `6352` | `AZUL1` | 1 |
+| `6353` | `AZUL2` | 1 |
+
+En total se excluyen seis recorridos finales y sus paradas que no sean usadas
+por otro servicio elegible. Las filas raw se conservan sin cambios para mantener
+el feed importado íntegro y auditable; el filtro se aplica al construir los
+viajes canónicos en `transformar_gtfs.sql`.
+
+La exclusión se realiza por agencia, no por nombre visible ni por geometría
+calculada durante cada carga. Esto evita depender del nombre de las líneas y
+mantiene el pipeline determinista. Si el proveedor reasigna el identificador de
+la agencia, esta regla debe revisarse junto con la actualización del feed.
+
+
 ## Qué significa cada nombre GTFS
 
 ### `route_id`

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Clases transitables por colectivos para la primera versión de RF05. -->
+<configuration>
+  <tag_name name="highway" id="1">
+    <tag_value name="motorway"       id="101" priority="1.0" maxspeed="130" />
+    <tag_value name="motorway_link"  id="102" priority="1.0" maxspeed="80" />
+    <tag_value name="trunk"          id="103" priority="1.0" maxspeed="110" />
+    <tag_value name="trunk_link"     id="104" priority="1.0" maxspeed="80" />
+    <tag_value name="primary"        id="105" priority="1.0" maxspeed="80" />
+    <tag_value name="primary_link"   id="106" priority="1.0" maxspeed="60" />
+    <tag_value name="secondary"      id="107" priority="1.0" maxspeed="70" />
+    <tag_value name="secondary_link" id="108" priority="1.0" maxspeed="50" />
+    <tag_value name="tertiary"       id="109" priority="1.0" maxspeed="60" />
+    <tag_value name="tertiary_link"  id="110" priority="1.0" maxspeed="40" />
+    <tag_value name="unclassified"   id="111" priority="1.0" maxspeed="40" />
+    <tag_value name="residential"    id="112" priority="1.0" maxspeed="40" />
+    <tag_value name="living_street"  id="113" priority="1.0" maxspeed="20" />
+  </tag_name>
+</configuration>
