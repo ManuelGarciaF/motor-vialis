@@ -155,11 +155,7 @@ func parseBounds(raw string) (*lines.Bounds, *fieldError) {
 	return &bounds, nil
 }
 
-// writeLineError maps an error from the lines service to an HTTP response.
-//
-// It keeps the distinction the caller acts on: an unknown id is the caller's
-// mistake, while a line the stored geometry cannot describe is ours, and no
-// retry or correction on their side will change it.
+// writeLineError distinguishes missing lines from invalid stored geometry.
 func (handler *Handler) writeLineError(
 	writer http.ResponseWriter,
 	request *http.Request,

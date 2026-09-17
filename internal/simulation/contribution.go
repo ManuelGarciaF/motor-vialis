@@ -7,11 +7,7 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
 
-// stopResults collapses the per-pair and per-segment detail the estimators
-// produced into one entry per stop, in route order.
-//
-// Stops that contribute nothing are still listed: showing that a stop carries
-// no demand is exactly what makes removing it a defensible decision.
+// stopResults aggregates estimator detail by stop while preserving route order.
 func stopResults(
 	input route.Route,
 	demandResult demand.Result,
@@ -36,8 +32,6 @@ func stopResults(
 		}
 	}
 
-	// Revenue pairs carry stop identifiers but no order, so they are matched by
-	// identifier; route.Validate has already guaranteed those are unique.
 	for _, pair := range revenueResult.ByStopPair {
 		if origin, found := orderByStopID[pair.OriginStopID]; found {
 			results[origin].Revenue.OriginPotentialCents += pair.PotentialRevenueCents
@@ -48,8 +42,7 @@ func stopResults(
 		}
 	}
 
-	// The travel-time estimator answers one measurement per segment in route
-	// order, so segment i is the ride away from stop i.
+	// Segment order matches the originating stop order.
 	for index, segment := range travelTimeResult.BySegment {
 		if index >= len(results)-1 {
 			break

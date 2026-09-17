@@ -264,6 +264,14 @@ la calle pase junto a la parada.
 - **Qué revela un fallo:** si una zona entera queda lejos, el filtrado de D2
   dejó afuera calles por las que efectivamente circulan colectivos.
 
+La carga aceptada alcanza 99,86 %: 61 de 43.400 paradas quedan fuera de ese
+radio, concentradas principalmente en calles internas de terminales y Ciudad
+Universitaria. Se aceptan como excepciones informativas y no se agregan vías
+`service` sólo para cubrirlas. Los cortes de RF05 se dibujan sobre calles, por
+lo que normalmente no alcanzarán esas ubicaciones; si un corte afectara
+justamente su acceso, el desvío deberá revisarse como una limitación conocida
+del dato.
+
 ### 7.4. Ruteo contra recorridos conocidos
 
 La validación más fuerte disponible. El motor tiene la geometría real de unos

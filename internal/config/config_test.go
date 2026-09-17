@@ -5,6 +5,7 @@ import "testing"
 func TestFromEnvFallsBackToLocalDefaults(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("HTTP_ADDRESS", "")
+	t.Setenv("TOMTOM_API_KEY", "")
 
 	cfg := FromEnv()
 	if cfg.DatabaseURL != DefaultDatabaseURL {
@@ -13,15 +14,20 @@ func TestFromEnvFallsBackToLocalDefaults(t *testing.T) {
 	if cfg.HTTPAddress != DefaultHTTPAddress {
 		t.Fatalf("HTTPAddress = %q, want %q", cfg.HTTPAddress, DefaultHTTPAddress)
 	}
+	if cfg.TomTomAPIKey != "" {
+		t.Fatalf("TomTomAPIKey = %q, want empty", cfg.TomTomAPIKey)
+	}
 }
 
 func TestFromEnvReadsEnvironment(t *testing.T) {
 	const (
-		databaseURL = "postgresql://explicit:secret@server:5432/database"
-		httpAddress = "127.0.0.1:9090"
+		databaseURL  = "postgresql://explicit:secret@server:5432/database"
+		httpAddress  = "127.0.0.1:9090"
+		tomTomAPIKey = "test-tomtom-key"
 	)
 	t.Setenv("DATABASE_URL", databaseURL)
 	t.Setenv("HTTP_ADDRESS", httpAddress)
+	t.Setenv("TOMTOM_API_KEY", tomTomAPIKey)
 
 	cfg := FromEnv()
 	if cfg.DatabaseURL != databaseURL {
@@ -30,11 +36,12 @@ func TestFromEnvReadsEnvironment(t *testing.T) {
 	if cfg.HTTPAddress != httpAddress {
 		t.Fatalf("HTTPAddress = %q, want %q", cfg.HTTPAddress, httpAddress)
 	}
+	if cfg.TomTomAPIKey != tomTomAPIKey {
+		t.Fatalf("TomTomAPIKey = %q, want configured value", cfg.TomTomAPIKey)
+	}
 }
 
-// A default page larger than the maximum would silently return fewer lines than
-// configured. The parameters are constants now, so this is caught here rather
-// than at startup.
+// The configured default must fit within the maximum page size.
 func TestLinesPolicyIsCoherent(t *testing.T) {
 	policy := LinesPolicy()
 	if policy.DefaultPageSize > policy.MaximumPageSize {
@@ -49,9 +56,7 @@ func TestLinesPolicyIsCoherent(t *testing.T) {
 	}
 }
 
-// SimulationTimeout must stay below WriteTimeout so a slow simulation is
-// answered with a timeout status instead of having its connection closed
-// mid-response.
+// The handler needs time to report a simulation timeout before writes close.
 func TestSimulationTimeoutLeavesRoomToRespond(t *testing.T) {
 	if SimulationTimeout >= WriteTimeout {
 		t.Fatalf(

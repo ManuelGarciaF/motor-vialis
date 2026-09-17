@@ -43,11 +43,10 @@ func (comparator *fakeComparator) Compare(
 }
 
 type fakeLines struct {
-	page     lines.Page
-	detail   lines.Detail
-	err      error
-	received lines.Query
-	// requestedID records the id of the last Get call.
+	page        lines.Page
+	detail      lines.Detail
+	err         error
+	received    lines.Query
 	requestedID int64
 }
 

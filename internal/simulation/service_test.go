@@ -78,8 +78,7 @@ func TestServiceSimulateBuildsNestedResult(t *testing.T) {
 	}
 }
 
-// The per-pair and per-segment detail is an implementation concern of the
-// estimators, so it must not reach the encoded answer.
+// Internal estimator detail must not leak into the API result.
 func TestServiceResultOmitsPerPairDetail(t *testing.T) {
 	result, err := NewService(
 		&fakeDemandEstimator{result: demand.Result{

@@ -1,4 +1,4 @@
--- 1. Create table viajes_raw --
+-- Tabla transitoria para la importación del CSV de viajes.
 CREATE TABLE vialis.viajes_raw (
 
     id_tarjeta BIGINT,
@@ -26,12 +26,10 @@ CREATE TABLE vialis.viajes_raw (
     grupo_edad SMALLINT
 );
 
--- 2. Importar el CSV de viajes en la tabla viajes_raw --
-
--- 3. Actualizar estadísticas de la tabla viajes_raw --
+-- El CSV se carga externamente en viajes_raw antes de ejecutar lo siguiente.
 VACUUM ANALYZE vialis.viajes_raw;
 
--- 4. Insertar datos en la tabla viajes desde viajes_raw (para guardar puntos en vez de longitud y latitud) --
+-- Convierte las coordenadas de origen y destino en geometrías WGS 84.
 INSERT INTO vialis.viajes (
 
     id_tarjeta,
@@ -95,7 +93,6 @@ SELECT
 
 FROM vialis.viajes_raw;
 
--- 6. Crear índice espacial en la tabla viajes para geom_origen y geom_destino --
 CREATE INDEX idx_viajes_geom_origen
 ON vialis.viajes
 USING GIST (geom_origen);
@@ -104,10 +101,9 @@ CREATE INDEX idx_viajes_geom_destino
 ON vialis.viajes
 USING GIST (geom_destino);
 
--- 7. Actualizar estadísticas de la tabla viajes --
 VACUUM ANALYZE vialis.viajes;
 
--- 8. Agregar numeros de celda h3 a cada viaje
+-- Materializa las celdas H3 usadas por las consultas de demanda.
 UPDATE vialis.viajes
 SET h3_origen = h3_lat_lng_to_cell(geom_origen, 8),
     h3_destino = h3_lat_lng_to_cell(geom_destino, 8);

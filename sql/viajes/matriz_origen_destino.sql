@@ -1,4 +1,4 @@
--- 1. Insertar datos en la tabla de matriz de viajes --
+-- Agrega los factores de expansión por par de celdas H3.
 INSERT INTO vialis.matriz_origen_destino (
     h3_origen,
     h3_destino,
@@ -14,5 +14,3 @@ WHERE h3_origen IS NOT NULL
 GROUP BY
     h3_origen,
     h3_destino;
-
--- TODO: ver si es necesario crear índices --

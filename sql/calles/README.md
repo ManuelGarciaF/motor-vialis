@@ -102,8 +102,16 @@ psql -v ON_ERROR_STOP=1 "$DATABASE_URL" \
 
 El script bloquea costos, referencias o geometrías inválidas y reporta tamaño,
 proporción descartada y cobertura de paradas por una arista a 50 metros dentro
-del alcance de la carga. La comparación masiva contra segmentos GTFS se incorporará después
-de aprobar el extracto territorial definitivo.
+del alcance de la carga. La comparación masiva contra segmentos GTFS se
+incorporará después de aprobar el extracto territorial definitivo.
+
+La carga vigente cubre a esa distancia 43.339 de 43.400 paradas (99,86 %). Las
+61 restantes están principalmente dentro de terminales y Ciudad Universitaria,
+donde el punto GTFS se aleja del eje vial importado. Se decidió tratarlas como
+advertencias y no importar `highway=service` únicamente para hacerlas coincidir:
+los cortes de RF05 se declaran sobre calles y normalmente no alcanzarán esos
+puntos internos. Un desvío que afecte específicamente uno de esos accesos queda
+sujeto a revisión manual.
 
 ## Decisiones de v1
 

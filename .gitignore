@@ -24,8 +24,14 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
+# Local environment and secrets. Keep the empty template versioned.
 .env
+.env.*
+!.env.example
+
+# Local spike outputs, generated viewers, and database dumps
+.local/
+docker/*.dump
 
 # Editor/IDE
 .idea/

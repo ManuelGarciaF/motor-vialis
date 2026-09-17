@@ -12,24 +12,17 @@ import (
 // ErrNotFound reports a line id that is not stored.
 var ErrNotFound = errors.New("line not found")
 
-// Policy holds the tunable rules this package applies. Like traveltime.Policy
-// and revenue.Policy, the package declares the knobs it owns and internal/config
-// decides their values, so nothing here reads the environment.
+// Policy holds the configurable rules for exporting stored lines.
 type Policy struct {
-	// AlignmentToleranceMeters is the largest gap AlignStoredPathEndpoints
-	// closes between a stored path endpoint and the stop it belongs to.
+	// AlignmentToleranceMeters is the largest endpoint gap that may be closed.
 	AlignmentToleranceMeters float64
-	// DefaultPageSize is how many lines a listing returns when the caller does
-	// not ask for a size.
+	// DefaultPageSize applies when the caller omits a limit.
 	DefaultPageSize int
-	// MaximumPageSize caps what a caller may ask for, so one request cannot
-	// pull the whole table.
+	// MaximumPageSize caps a single listing request.
 	MaximumPageSize int
 }
 
-// Summary describes a stored line without any geometry. Listing every AMBA
-// line with its shape would run to megabytes, so geometry is only ever sent by
-// the detail lookup.
+// Summary describes a stored line without its geometry.
 type Summary struct {
 	ID             int64  `json:"id"`
 	Line           string `json:"line"`
@@ -42,11 +35,7 @@ type Summary struct {
 	StopCount      int    `json:"stopCount"`
 }
 
-// StopDescription names one stop of a stored line.
-//
-// It is kept beside the route rather than inside it because route.Stop is the
-// simulation input contract, and /simulations rejects unknown fields: adding a
-// name there would make the exported route impossible to send back.
+// StopDescription keeps display metadata outside the re-postable route contract.
 type StopDescription struct {
 	StopOrder int    `json:"stopOrder"`
 	StopID    string `json:"stopId"`
@@ -81,8 +70,7 @@ type Query struct {
 	Offset int
 }
 
-// Page is one window over the stored lines. Total counts everything the query
-// matched, not the window, so a caller can size its pager without walking it.
+// Page is one result window; Total counts all matching lines.
 type Page struct {
 	Lines  []Summary `json:"lines"`
 	Total  int       `json:"total"`
@@ -92,15 +80,13 @@ type Page struct {
 
 // StoredStop is one call of a stored line, as it comes out of the database.
 type StoredStop struct {
-	// StopNumber is the GTFS stop_sequence, which orders the calls but is not
-	// necessarily contiguous.
+	// StopNumber is the potentially non-contiguous GTFS stop_sequence.
 	StopNumber int
 	GTFSStopID string
 	Name       string
 	Code       string
 	Position   route.Position
-	// PathToNext is nil on the last stop, and on any stop the ETL could not
-	// project forward along the shape.
+	// PathToNext is nil when no following segment is stored.
 	PathToNext *route.LineString
 }
 
@@ -120,9 +106,7 @@ type Repository interface {
 	FindLine(ctx context.Context, id int64) (StoredLine, error)
 }
 
-// NotSimulableError reports a stored line whose geometry cannot produce a route
-// the engine would accept. It is a fact about the stored data, not about the
-// request, so it is reported apart from a validation error.
+// NotSimulableError reports invalid stored geometry, not invalid caller input.
 type NotSimulableError struct {
 	LineID int64
 	Reason string
@@ -177,12 +161,7 @@ func (service *Service) pageSize(requested int) int {
 	return requested
 }
 
-// Get returns one stored line as a route ready to be sent to /simulations.
-//
-// The exported route carries no jurisdiction. GTFS does not record which
-// tariff authority applies to a line and the engine refuses to infer one from
-// geometry, so choosing it belongs to whoever runs the simulation, not to a
-// lookup of stored data.
+// Get returns a stored line as a route. The caller must supply its jurisdiction.
 func (service *Service) Get(ctx context.Context, id int64) (Detail, error) {
 	stored, err := service.repository.FindLine(ctx, id)
 	if err != nil {
@@ -212,7 +191,6 @@ func (service *Service) Get(ctx context.Context, id int64) (Detail, error) {
 			Name:      stop.Name,
 			Code:      stop.Code,
 		}
-		// The last stop carries no path, whatever the ETL stored for it.
 		if index == len(stored.Stops)-1 {
 			continue
 		}
@@ -226,8 +204,7 @@ func (service *Service) Get(ctx context.Context, id int64) (Detail, error) {
 				),
 			}
 		}
-		// Copied because the alignment below rewrites the endpoints in place,
-		// and what the repository read is not this function's to change.
+		// Alignment mutates endpoints, so keep repository data unchanged.
 		exported.Stops[index].PathToNext = &route.LineString{
 			Positions: append(
 				make([]route.Position, 0, len(stop.PathToNext.Positions)),
@@ -242,14 +219,7 @@ func (service *Service) Get(ctx context.Context, id int64) (Detail, error) {
 	); err != nil {
 		return Detail{}, &NotSimulableError{LineID: id, Reason: err.Error()}
 	}
-	// Validating here keeps the promise the endpoint makes: what it returns can
-	// be sent straight back to /simulations once a jurisdiction is added.
-	// Without it a flaw in stored data would surface as a confusing 400 on a
-	// route the caller never wrote.
-	//
-	// The probe borrows a valid jurisdiction so the check reaches the geometry
-	// rules, which are the only ones this data can break. The exported route
-	// keeps its empty jurisdiction.
+	// Use a temporary jurisdiction to validate stored geometry before exporting it.
 	probe := exported
 	probe.Jurisdiction = route.JurisdictionCABA
 	if err := route.Validate(probe); err != nil {
@@ -262,13 +232,7 @@ func (service *Service) Get(ctx context.Context, id int64) (Detail, error) {
 	return Detail{Line: summary, Route: exported, Stops: descriptions}, nil
 }
 
-// uniqueStopIDs derives one route-unique id per call of the line.
-//
-// GTFS lets a line call at the same physical stop twice — a circular route ends
-// where it began — while route.Validate requires ids unique within a route.
-// The first call keeps the plain GTFS id so the common line stays recognisable;
-// a repeat is suffixed with its stop_sequence, which is unique per line by the
-// recorridos_paradas primary key.
+// uniqueStopIDs suffixes repeated GTFS stops with their unique stop_sequence.
 func uniqueStopIDs(stops []StoredStop) []string {
 	ids := make([]string, len(stops))
 	seen := make(map[string]struct{}, len(stops))

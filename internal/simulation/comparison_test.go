@@ -106,7 +106,6 @@ func TestCompareReportsWhichRouteIsInvalid(t *testing.T) {
 			wantField: "proposed.stops[0].pathToNext",
 		},
 		{
-			// Reporting the baseline first keeps the answer deterministic.
 			name:      "both invalid reports the baseline",
 			input:     ComparisonInput{Baseline: invalid, Proposed: invalid},
 			wantField: "baseline.stops[0].pathToNext",
@@ -167,8 +166,7 @@ func TestCompareRejectsDifferentJurisdictions(t *testing.T) {
 	}
 }
 
-// A failure on one route must stop the other, so a request that cannot answer
-// does not keep the database busy for the full duration of the survivor.
+// A failed simulation must cancel its concurrent peer.
 func TestCompareCancelsTheSurvivingSimulation(t *testing.T) {
 	blocked := make(chan struct{})
 	failure := errors.New("demand unavailable")
@@ -217,8 +215,7 @@ func TestComparisonDeltaAlwaysEncodesToJSON(t *testing.T) {
 	}
 }
 
-// The scripted estimators tell the two routes apart by their stop count, and
-// guard their counters because Compare calls them from separate goroutines.
+// scriptedComparisonServices is concurrency-safe because comparisons run in parallel.
 type scriptedDemandEstimator struct {
 	proposedPotential float64
 	failProposed      error
@@ -235,8 +232,6 @@ func (estimator *scriptedDemandEstimator) Estimate(
 	call := estimator.calls
 	estimator.mutex.Unlock()
 
-	// With two identical routes the only way to fail exactly one of them is to
-	// fail whichever the scheduler ran second.
 	if estimator.failProposed != nil && call > 1 {
 		return demand.Result{}, estimator.failProposed
 	}

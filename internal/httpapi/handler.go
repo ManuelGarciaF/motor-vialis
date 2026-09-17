@@ -11,15 +11,10 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
 )
 
-// maximumRequestBytes bounds a request body. A route of 140 stops exported
-// from stored GTFS geometry is around 45 KB, so this leaves ample room for two
-// of them while refusing anything that could only be an attempt to exhaust
-// memory.
+// maximumRequestBytes leaves ample room for two large routes without allowing unbounded bodies.
 const maximumRequestBytes = 4 << 20
 
-// Simulator runs a full simulation for one route. It is the same interface a
-// future message-queue worker would call: neither the HTTP handler nor the
-// worker owns simulation logic, they only adapt a transport to this call.
+// Simulator runs a full simulation for one route.
 type Simulator interface {
 	Simulate(ctx context.Context, input simulation.Route) (simulation.Result, error)
 }
@@ -32,8 +27,7 @@ type Comparator interface {
 	) (simulation.Comparison, error)
 }
 
-// Lines reads the stored GTFS lines the engine already knows, so a client can
-// pick one as the starting point of a proposal.
+// Lines reads stored GTFS lines that can serve as proposal baselines.
 type Lines interface {
 	List(ctx context.Context, query lines.Query) (lines.Page, error)
 	Get(ctx context.Context, id int64) (lines.Detail, error)
@@ -73,12 +67,7 @@ func (handler *Handler) Routes() http.Handler {
 	return handler.recoverPanic(handler.logRequest(mux))
 }
 
-// withTimeout bounds the work a single request may start.
-//
-// The server's write timeout closes the connection but leaves the handler
-// running, so without this an abandoned request would keep querying the
-// database for as long as it liked. Deriving the deadline from the request
-// context also preserves cancellation when the client hangs up.
+// withTimeout bounds backend work and preserves client cancellation.
 func (handler *Handler) withTimeout(
 	request *http.Request,
 ) (context.Context, context.CancelFunc) {

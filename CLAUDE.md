@@ -41,8 +41,9 @@ go run ./cmd/simulation-test -route-file ./examples/linea-132.json
 ```
 
 Default local DB: `postgresql://postgres:postgres@localhost:5432/vialis`.
-Configuration is split by ownership. Only `DATABASE_URL` and `HTTP_ADDRESS` come
-from the environment (`internal/config/config.go`); everything else is a model
+Configuration is split by ownership. `DATABASE_URL`, `HTTP_ADDRESS`, and secret
+provider credentials such as `TOMTOM_API_KEY` come from the environment
+(`internal/config/config.go`); everything else is a model
 parameter and is a constant in `internal/config/parameters.go` — access radius,
 accessibility method, revenue factors, travel-time policy, server timeouts. They
 are constants deliberately: changing one changes the engine's output, so it

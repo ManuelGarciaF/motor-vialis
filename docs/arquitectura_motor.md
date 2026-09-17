@@ -1383,60 +1383,63 @@ Además:
 > **Estado:** diseño aprobado, todavía no implementado. Esta sección describe
 > cómo debe funcionar el análisis de desvíos; el resto del documento describe
 > funcionamiento vigente. La nota se retira cuando el cálculo esté disponible.
+> El orden de trabajo está en [`plan_rf05_desvios.md`](plan_rf05_desvios.md).
 
 Una calle cortada no cambia el diseño de una línea, pero le impide recorrerla.
 Cuando eso ocurre la pregunta deja de ser "¿conviene esta ruta?" y pasa a ser
 "¿por dónde puede circular mientras dure el corte, y qué cuesta el rodeo?".
 
-Para responderla el motor recibe la ruta y las zonas cortadas, traza una
-variante que las evita y la evalúa contra la ruta original.
+Para responderla el motor recibe la ruta y un corte lineal, traza una variante
+que lo evita y la evalúa contra la ruta original.
 
 ```mermaid
 flowchart TD
-    IN["Ruta + cortes"] --> HIT["1. Determinar qué tramos<br/>y paradas quedan bloqueados"]
+    IN["Ruta + corte"] --> HIT["1. Determinar qué tramos<br/>y paradas quedan afectados"]
     HIT --> NONE{"¿Hay bloqueo?"}
     NONE -- no --> SAME["Se informa que el corte<br/>no afecta la ruta"]
-    NONE -- sí --> REROUTE["2. Redibujar cada tramo bloqueado<br/>sobre la red vial, evitando los cortes"]
-    REROUTE --> DROP["3. Quitar las paradas que<br/>ningún desvío alcanza"]
+    NONE -- sí --> REROUTE["2. Buscar caminos dentro de 1 km<br/>sobre la red vial, evitando el corte"]
+    REROUTE --> DROP["3. Elegir las paradas opcionales<br/>según el criterio"]
     DROP --> VARIANT["4. Armar la variante<br/>y validarla"]
     VARIANT --> COMPARE["5. Comparar variante<br/>contra ruta original"]
 ```
 
 ### 13.1. Qué es un corte
 
-Un corte es una porción del espacio que la línea no puede atravesar. Se declara
-por su geometría y admite tres formas:
+El MVP recibe exactamente un corte como `LineString` GeoJSON: una cuadra o una
+sucesión de cuadras que la línea no puede atravesar. Normalmente proviene de un
+path OSRM y por eso sigue calles OSM, aunque el motor tolera diferencias entre
+las versiones de ambos grafos. Los puntos y polígonos, igual que múltiples
+cortes en un pedido, quedan fuera del MVP.
 
-| Forma | Geometría | Caso típico |
-|---|---|---|
-| Intersección | Punto | Un cruce cerrado. |
-| Tramo | LineString | Una cuadra o una sucesión de cuadras cerradas. |
-| Área | Polígono | Un perímetro cerrado por una obra o un evento. |
-
-Los cortes los aporta quien consulta, marcados sobre el mapa. El motor no los
-descubre ni los guarda: viajan en el pedido, igual que la ruta. Un corte que
-dejó de existir sencillamente no se envía.
+El corte lo aporta quien consulta, marcado sobre el mapa. El motor no lo
+descubre ni lo guarda: viaja en el pedido, igual que la ruta. Un corte que dejó
+de existir sencillamente no se envía.
 
 **Un corte no tiene vigencia.** El motor no interpreta fechas ni horarios:
-evalúa el escenario en el que todos los cortes recibidos rigen a la vez.
-Decidir qué cortes están vigentes para la consulta que se está haciendo es de
-quien consulta, por la misma razón que la jurisdicción (sección 16.10): una
-vigencia inferida aplicaría restricciones que nadie pidió sin que quede en
-evidencia.
+evalúa el escenario en el que el corte recibido rige. Decidir si está vigente
+es responsabilidad de quien consulta, por la misma razón que la jurisdicción
+(sección 16.10): una vigencia inferida aplicaría restricciones que nadie pidió
+sin que quede en evidencia.
 
 **Un corte tampoco tiene sentido de circulación.** Una simulación representa un
-solo sentido (sección 16.2), así que un corte que sólo bloquea una mano se
-envía en la consulta del sentido afectado y se omite en la otra. Todo corte
-recibido bloquea.
+solo sentido (sección 16.2), así que un corte que sólo bloquea una mano se envía
+en la consulta del sentido afectado y se omite en la otra. Todo corte recibido
+bloquea.
 
 ### 13.2. Qué parte de la ruta queda bloqueada
 
 Un tramo queda bloqueado cuando su recorrido toca un corte. "Tocar" requiere
 una tolerancia: un punto nunca cae exactamente sobre una línea, y dos
 geometrías dibujadas por separado casi nunca se intersecan de forma exacta. Por
-eso el contacto se evalúa contra un radio configurable, del mismo modo que la
-validación admite 20 metros entre una parada y el extremo de su tramo
-(sección 5.2).
+eso el contacto se evalúa contra un corredor configurable, inicialmente de 5
+metros, del mismo modo que la validación admite una tolerancia entre una parada
+y el extremo de su tramo (sección 5.2).
+
+El `LineString` es una barrera que no se puede atravesar, no la identificación
+de una calle cerrada. Toda arista que ingresa en ese corredor se excluye sin
+importar su orientación: si una calle perpendicular cruza el corte, tampoco se
+puede circular por ella. Una calle paralela que permanece completamente fuera
+del corredor sigue disponible.
 
 El bloqueo produce dos efectos distintos, y conviene no confundirlos:
 
@@ -1462,80 +1465,90 @@ La variante se construye con el cambio mínimo:
 - Los tramos que el corte no alcanza se conservan exactamente como llegaron.
 - Sólo se reemplaza el recorrido de los tramos bloqueados.
 
-Cada tramo bloqueado se vuelve a trazar entre sus dos paradas sobre la red vial
-(sección 2.5), descartando las calles que algún corte alcanza. De los caminos
-que quedan se elige el más corto, así que el desvío es el rodeo más ajustado
-que la red permite, y no una ruta nueva entre esas dos paradas.
+Alrededor del corte se construye un área de búsqueda de 1 km. La geometría
+original que queda fuera de esa área se conserva exactamente; dentro de ella se
+buscan caminos sobre la red vial, descartando las calles que el corte alcanza.
+El camino no puede salir del área de búsqueda: un rodeo mayor ya no se considera
+un desvío local aceptable para el MVP.
+
+Cuando el límite corta un `PathToNext` por la mitad, se conservan su prefijo y
+su sufijo originales y sólo se reemplaza la porción interior. Los puntos donde
+la ruta cruza el límite actúan como anclas del camino nuevo.
 
 Esa distinción es la que mantiene interpretable el resultado: como todo lo demás
 queda igual, la diferencia entre la variante y la ruta original es atribuible al
 corte y nada más.
 
-### 13.4. Paradas que ningún desvío alcanza
+### 13.4. Paradas forzadas y opcionales
 
-Si el corte alcanza la ubicación de una parada, no hay trazado que la recupere:
-el vehículo no puede detenerse donde no puede entrar. Esa parada se quita de la
-variante y el recorrido pasa directamente de la anterior a la siguiente, con el
-tramo que une a esas dos.
+Si una parada queda a 20 metros o menos del corte, se considera alcanzada: el
+vehículo no puede detenerse donde no puede entrar. Esa parada se quita de todas
+las variantes posibles.
 
-Quitarla no es una decisión de diseño encubierta: es la consecuencia forzada de
-que su ubicación sea inalcanzable. El motor informa cuáles quitó y cuánta
-demanda y recaudación se pierde con cada una (sección 13.7), justamente para que
-esa consecuencia sea visible y no un silencio en el resultado.
+Además, una parada cuya distancia geográfica mínima al `LineString` del corte
+sea de hasta 500 metros es **opcional**. El criterio de decisión puede
+saltearla para evitar que el vehículo vuelva hacia la zona afectada. Las paradas
+a más de 500 metros no pueden eliminarse: si no existe un camino que las
+conserve dentro del área de búsqueda, el corte no tiene variante resoluble.
+Ambos radios son parámetros versionados del modelo: 500 metros para omisión de
+paradas y 1 km para búsqueda vial.
 
-**El motor no propone una parada de reemplazo.** Correr una parada dos cuadras
-para esquivar un corte es plausible, y es exactamente la clase de decisión que
-la sección 16.1 mantiene fuera: elegir dónde va una parada expresa una intención
-—qué se quiere cubrir, a qué distancia caminable, sobre qué vereda— que el corte
-no determina.
+El orden de las paradas conservadas nunca cambia. Cuando se omite una, el motor
+rutea directamente entre las paradas o anclas conservadas que quedan a ambos
+lados. Informa cuáles quitó y el efecto real que la simulación de la variante
+produce sobre demanda y recaudación (sección 13.7).
 
-Si el corte alcanza la primera o la última parada, la línea pierde ese extremo y
-la variante arranca o termina antes. Se informa como cualquier otra parada no
-cubierta, pero conviene leerlo con atención: acortar una punta cambia qué es la
-línea, no sólo por dónde pasa.
+**El motor no propone una parada de reemplazo.** Correr una parada para esquivar
+un corte expresaría una decisión de diseño que el corte no determina.
 
-### 13.5. La red dice por dónde, GTFS dice cuánto tarda
+Si se pierde la primera o la última parada, la variante arranca o termina antes.
+Se informa como cualquier otra parada no cubierta, pero conviene leerlo con
+atención: acortar una punta cambia qué es la línea, no sólo por dónde pasa.
 
-La red vial se usa únicamente para elegir el camino. Una vez armada, la variante
-se evalúa con exactamente el mismo cálculo que cualquier otra ruta: demanda
-(sección 6), distancia (sección 7), tiempo (sección 8) y recaudación
-(sección 10). El tiempo del desvío sigue saliendo de las referencias GTFS
-cercanas, no de una velocidad asignada a las calles.
+### 13.5. El tráfico elige el camino; GTFS evalúa la variante
 
-Hay dos razones.
+La selección del camino y la simulación responden preguntas distintas.
 
-La primera es que un costo de ruteo no es un tiempo de colectivo. Usarlo como
-tal metería un segundo modelo de tiempo, sin calibrar y en competencia con el
-que el motor ya construyó a partir de recorridos reales.
+Para elegir el desvío más rápido, el motor consulta tiles vectoriales de tráfico
+TomTom que cubran el área de búsqueda de 1 km, asocia sus segmentos con las
+aristas de `vialis.calles` y calcula costos en segundos a partir de la velocidad
+actual. Cuando una arista no tiene observación directa, puede usar la mediana de
+entre 3 y 5 segmentos de la misma categoría vial situados a hasta 300 metros.
+La respuesta distingue `tomtom_direct` de `tomtom_nearby_estimate`; si no hay
+muestras suficientes, la arista no recibe una velocidad inventada. Esos costos
+sólo ordenan las alternativas del corte y no reemplazan el modelo de tiempo de
+la simulación.
 
-La segunda es que así la confianza se sostiene sola. Un desvío que sale a calles
-sin servicio comparable no encuentra referencias locales y cae a un corredor más
-amplio o al respaldo global, con lo cual su confianza baja (sección 9). Esa
-caída no es una molestia: es la información de que el rodeo pasa por donde no
-hay con qué compararlo, y aparece sin que haya que agregar nada al modelo.
+Una vez armada, la variante se evalúa con exactamente el mismo cálculo que
+cualquier otra ruta: demanda (sección 6), distancia (sección 7), tiempo GTFS
+(sección 8) y recaudación (sección 10). Esto mantiene comparables `baseline` y
+`proposed`: el tráfico responde qué alternativa conviene ahora, mientras que
+GTFS describe cómo se comportaría operacionalmente bajo la metodología estable
+del motor.
 
-### 13.6. Criterios de optimización
+Los tiles se consultan una vez por coordenada de tesela y se reutilizan por
+hasta 30 minutos mediante una caché por tile; el spike comparativo adoptó zoom
+14 porque z15 y z16 no mejoraron la cobertura de matching. Nunca se
+consulta TomTom una vez por calle. La respuesta debe registrar la fuente y
+antigüedad del tráfico utilizado.
 
-Cuando el corte deja alternativas, cuál conviene depende de qué se quiera
-proteger, y los objetivos pueden estar enfrentados: el desvío más corto puede
-saltear una parada que uno más largo conservaría.
+### 13.6. Criterios de optimización del MVP
 
-El criterio se declara en la consulta:
+El criterio se declara en la consulta y se aplica sólo a las paradas opcionales
+de la sección 13.4:
 
-| Criterio | Qué minimiza |
-|---|---|
-| Menor tiempo | El tiempo típico agregado respecto de la ruta original. |
-| Mayor cobertura | La demanda potencial que se pierde con las paradas no cubiertas. |
-| Menor desvío | Los metros agregados respecto de la ruta original. |
+| Criterio | Prioridad | Desempate |
+|---|---|---|
+| Menor tiempo | Menor tiempo según tráfico actual; puede omitir paradas a hasta 500 m del corte. | Menor cantidad de paradas perdidas. |
+| Menor cantidad de paradas perdidas | Mayor cantidad de paradas conservadas. | Menor tiempo según tráfico actual. |
 
-Los tres se miden sobre el `delta` de la sección 12.4, así que el criterio no
-introduce métricas nuevas: elige cuál de las que ya existen se minimiza.
+Las prioridades son lexicográficas: el desempate nunca puede empeorar el
+objetivo principal. Para comparar alternativas no hace falta calcular todas las
+combinaciones de paradas; como su orden no cambia, puede resolverse como un
+camino sobre estados ordenados de paradas conservadas y omitidas.
 
-**La cobertura se optimiza por demanda perdida, no por cantidad de paradas.**
-Se informan las dos cosas, pero contar paradas trata como equivalentes a una
-cabecera y a una parada intermedia de bajo movimiento, y el motor ya sabe cuánto
-aporta cada una (sección 11.3). Minimizar el conteo podría sacrificar la parada
-que sostiene la línea para conservar dos que casi no mueven demanda.
+`MENOR_DESVIO` queda fuera del MVP. La distancia continúa informándose en la
+simulación y en el `delta`, pero no elige la variante.
 
 ### 13.7. Qué se informa
 
@@ -1553,8 +1566,10 @@ una ruta propuesta como cualquier otra, y comparar contra la ruta original es lo
 que responde "cuánto cuesta el corte".
 
 `uncovered` lista cada parada perdida con el aporte que tenía en la ruta
-original, tomado de su `byStop` (sección 11.3). Sin eso, una variante con menos
-paradas parecería simplemente más corta y más rápida.
+original, tomado de su `byStop` (sección 11.3). Ese aporte da contexto, pero no
+se presenta como pérdida atribuible individual: las zonas H3 se reasignan al
+simular la variante. La pérdida efectiva total está en el `delta` entre
+`baseline` y `proposed`.
 
 **La variante se devuelve como una ruta completa**, con sus paradas, la
 geometría de cada tramo y la jurisdicción declarada en la consulta, en el mismo
@@ -1573,11 +1588,11 @@ lugar de aproximar:
 
 - **Ningún tramo ni parada bloqueado.** El corte no toca la ruta. No se inventa
   un cambio: se informa que la ruta sigue siendo transitable.
-- **El corte aísla el tramo.** Si en la red vial no existe ningún camino entre
-  dos paradas consecutivas que evite todos los cortes, no se devuelve ni una
-  recta entre ellas ni un rodeo que atraviese el corte. El tramo se informa como
-  no resoluble, con el mismo criterio que la sección 16.9: una geometría
-  inventada evaluaría una ruta que nadie podría operar.
+- **El corte aísla el tramo.** Si dentro del área de búsqueda de 1 km no existe
+  ningún camino entre las anclas o paradas obligatorias que evite todos los
+  cortes, no se amplía el radio ni se devuelve una recta. El tramo se informa
+  como no resoluble: una geometría fuera del límite aceptado evaluaría una
+  variante distinta de la solicitada.
 - **Quedan menos de dos paradas cubiertas.** La ruta deja de existir como
   recorrido y no hay nada que evaluar.
 
@@ -1594,6 +1609,13 @@ lugar de aproximar:
   imposible, y quien consulta debería revisarlo antes de adoptarlo.
 - **El desvío se resuelve tramo por tramo.** No se evalúa una reorganización
   global de la ruta que podría ser mejor que la suma de los rodeos locales.
+- **Las paradas alejadas de la red no bloquean RF05.** En la carga vigente, 61
+  de 43.400 paradas dentro del área quedan a más de 50 metros de una arista,
+  principalmente dentro de terminales y Ciudad Universitaria. No se incorporan
+  calles internas `service` sólo para acercarlas ni se rechaza el grafo por
+  esos casos. Si una modificación necesita rutear hasta una de esas paradas, la
+  calidad del enganche queda limitada por la red disponible; el criterio puede
+  omitirla únicamente cuando esté dentro de los 500 metros habilitados.
 - **No se reubican paradas** (sección 13.4).
 - **Un solo sentido**, como toda simulación (sección 16.2).
 - **No se persiste** (sección 17.10): cada análisis se calcula en el momento.
@@ -1790,8 +1812,8 @@ A diferencia de los otros tres flujos, este no afecta demanda, tiempo ni
 recaudación de una simulación común: sólo interviene cuando hay un corte que
 esquivar.
 
-La obtención y el almacenamiento de esta red todavía no están definidos
-(sección 15.7).
+La obtención, transformación y validación de esta red están versionadas en
+`sql/calles/`; su estado operativo se resume en la sección 15.7.
 
 ### 15.5. Naturaleza de las actualizaciones
 
@@ -1825,9 +1847,10 @@ carga de archivos se realizan externamente.
 
 Además:
 
-- La red vial no está cargada: no existe todavía su proceso de obtención ni su
-  esquema de almacenamiento, así que el análisis de desvíos (sección 13) no
-  puede ejecutarse.
+- La red vial AMBA + 10 km está cargada y su pipeline se encuentra en
+  `sql/calles/`. El análisis de desvíos todavía no puede ejecutarse porque falta
+  implementar la asociación del tráfico TomTom con sus aristas y la lógica de
+  generación de variantes.
 - La importación de etapas individuales no está implementada.
 - Algunos procesos de viajes requieren limpieza antes de repetirse.
 - El cuadro tarifario no se versiona automáticamente; reemplazarlo requiere
@@ -2055,8 +2078,9 @@ comparación de dos rutas. El contrato está documentado en `docs/openapi.yaml`.
 También existe una herramienta de línea de comandos que simula una ruta desde un
 archivo JSON.
 
-Todavía no se expone el análisis de desvíos por cortes (sección 13): falta la
-red vial sobre la que se traza el rodeo (sección 15.7).
+Todavía no se expone el análisis de desvíos por cortes (sección 13): la red
+vial ya está preparada, pero falta implementar el ruteo con cortes, la selección
+por tráfico y el contrato HTTP.
 
 ### 17.12. Cálculo sincrónico
 
@@ -2149,7 +2173,7 @@ También conviene separar:
 | Demanda bruta | Viajes de la matriz entre zonas cubiertas, antes de ponderar accesibilidad. |
 | Demanda captada | Demanda potencial de un par de paradas multiplicada por el factor de captación. |
 | Demanda potencial | Demanda bruta ponderada por accesibilidad en origen y destino. |
-| Corte | Porción del espacio —punto, tramo o área— que la línea no puede atravesar, declarada por quien consulta. |
+| Corte | Barrera `LineString` que la línea no puede atravesar, declarada por quien consulta. |
 | Delta | Diferencia entre la ruta propuesta y la ruta base, con su valor absoluto y su fracción relativa. |
 | Desvío | Variante de una ruta que esquiva los cortes redibujando sólo los tramos que quedaron intransitables. |
 | Factor de captación | Proporción configurable de la demanda potencial que se asume paga un viaje en la línea. |

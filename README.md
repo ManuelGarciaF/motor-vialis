@@ -8,15 +8,86 @@ La configuración está separada en dos según a quién pertenece cada valor.
 
 ### Entorno: lo que define el despliegue
 
-Solo dos variables, ambas opcionales:
+La conexión y dirección HTTP son opcionales; la credencial TomTom será
+obligatoria únicamente para el spike y RF05:
 
 | Variable | Predeterminado | Descripción |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/vialis` | Conexión a PostgreSQL. |
 | `HTTP_ADDRESS` | `:8080` | Dirección de escucha del servicio. |
+| `TOMTOM_API_KEY` | — | Credencial secreta para Traffic Flow; no afecta endpoints existentes. |
 
-Sin ninguna de las dos, el motor corre contra la base local que crea
+Sin las dos primeras, el motor corre contra la base local que crea
 `sql/init_db.sql`.
+
+### Secretos locales para herramientas
+
+El repositorio no administra secretos. Para el spike de tráfico se usa
+`TOMTOM_API_KEY` desde el entorno. Hay una plantilla versionada y el archivo
+local está ignorado por Git:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+# Editar .env sin compartir su contenido.
+```
+
+Go no carga `.env` automáticamente. Hay dos formas simples de exportarlo:
+
+```bash
+# Opción sin herramientas adicionales, sólo para la terminal actual.
+set -a; source .env; set +a
+
+# Opción cómoda: instalar direnv una vez y habilitar el .envrc versionado.
+direnv allow
+```
+
+`.gitignore` excluye `.env` y cualquier `.env.*`, salvo `.env.example`. No se
+debe imprimir la key en logs, comandos, URLs de diagnóstico ni fixtures.
+
+El ejecutable temporal del spike consulta un radio de 1 km alrededor del
+Obelisco en zooms 14, 15 y 16, y escribe un resumen JSON sin incluir la key:
+
+```bash
+go run ./cmd/tomtom-spike
+```
+
+Se puede cambiar el caso y usar un directorio externo como caché read-through
+de respuestas PBF. Si un tile ya existe allí, no vuelve a consultar TomTom:
+
+```bash
+go run ./cmd/tomtom-spike \
+  -lat -34.6037 -lon -58.3816 -radius 1000 \
+  -zooms 14,15,16 -output-dir /tmp/tomtom-spike
+```
+
+También puede barrer sólo los tiles que intersectan una jurisdicción del
+GeoJSON versionado. El barrido completo de CABA en z14 requiere 68 tiles:
+
+```bash
+go run ./cmd/tomtom-spike \
+  -area-file sql/calles/amba-jurisdicciones.geojson \
+  -area-id 02 -zooms 14 -max-tiles 100 \
+  -output-dir /tmp/tomtom-spike
+```
+
+Para generar el visor comparativo usando esos tiles cacheados:
+
+```bash
+go run ./cmd/tomtom-spike \
+  -area-file sql/calles/amba-jurisdicciones.geojson \
+  -area-id 02 -zooms 14 -max-tiles 100 \
+  -output-dir /tmp/tomtom-spike-tiles \
+  -viewer-dir .local/tomtom-caba-viewer
+
+go run ./cmd/tomtom-spike-viewer \
+  -dir .local/tomtom-caba-viewer -address :8090
+```
+
+Luego se abre `http://localhost:8090`. El mapa superpone TomTom en azul,
+`vialis.calles` con match directo en verde, con velocidad vecina estimada en
+amarillo y sin ninguna cobertura en rojo. Los GeoJSON y el visor
+son generados, pueden ser grandes y quedan bajo `.local/`, ignorado por Git.
 
 ### Código: los parámetros del modelo
 

@@ -1,7 +1,4 @@
-// Package app is the composition root shared by the binaries in cmd/. It is the
-// single place where the model parameters in internal/config meet the
-// PostgreSQL repositories, so cmd/api and cmd/simulation-test cannot drift into
-// simulating with different assumptions.
+// Package app is the shared composition root for command binaries.
 package app
 
 import (
@@ -16,8 +13,7 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
 
-// NewSimulationService wires the three estimators against database and returns
-// the orchestrator that runs them in order.
+// NewSimulationService wires the simulation estimators to PostgreSQL.
 func NewSimulationService(database *pgxpool.Pool) *simulation.Service {
 	return simulation.NewService(
 		demand.NewService(
@@ -36,8 +32,7 @@ func NewSimulationService(database *pgxpool.Pool) *simulation.Service {
 	)
 }
 
-// NewLinesService wires the reader that exports stored GTFS lines as routes a
-// caller can modify and resubmit.
+// NewLinesService wires stored-line export to PostgreSQL.
 func NewLinesService(database *pgxpool.Pool) *lines.Service {
 	return lines.NewService(
 		postgres.NewLinesRepository(database),

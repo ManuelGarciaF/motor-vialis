@@ -318,8 +318,7 @@ type fakeRepository struct {
 	answerVerbatim  bool
 }
 
-// FindSegmentReferences answers only for the requested segments, the way the
-// PostgreSQL repository does, so the tests exercise the narrowing search.
+// FindSegmentReferences mirrors the repository's request-scoped results.
 func (repository *fakeRepository) FindSegmentReferences(
 	_ context.Context,
 	segments []Segment,

@@ -7,8 +7,6 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 )
 
-// testToleranceMeters mirrors the production default in internal/config; the
-// alignment rules are the same whatever value is configured.
 const testToleranceMeters = 250.0
 
 func TestAlignStoredPathEndpointsProducesAValidRoute(t *testing.T) {
@@ -96,8 +94,7 @@ func TestAlignStoredPathEndpointsRejectsImplausibleGap(t *testing.T) {
 	}
 }
 
-// A reversed path must reach route.Validate untouched: aligning its endpoints
-// would silently turn a direction mistake into a plausible-looking route.
+// Alignment must not conceal reversed paths from validation.
 func TestAlignStoredPathEndpointsLeavesReversedPathsUntouched(t *testing.T) {
 	origin := route.Position{Latitude: -34.6, Longitude: -58.38}
 	destination := route.Position{Latitude: -34.61, Longitude: -58.39}
@@ -154,8 +151,7 @@ func TestAlignStoredPathEndpointsIgnoresPathsItCannotAlign(t *testing.T) {
 	}
 }
 
-// storedRoute mirrors an export whose segment boundaries were projected onto
-// the GTFS shape and therefore land near, but not on, each stop.
+// storedRoute has GTFS-projected endpoints near, but not on, each stop.
 func storedRoute() route.Route {
 	return route.Route{
 		Jurisdiction: route.JurisdictionCABA,
