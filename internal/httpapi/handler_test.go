@@ -45,10 +45,13 @@ func (comparator *fakeComparator) Compare(
 type fakeLines struct {
 	page     lines.Page
 	detail   lines.Detail
+	similar  lines.Similarities
 	err      error
 	received lines.Query
 	// requestedID records the id of the last Get call.
 	requestedID int64
+	// receivedSimilarity records the last corridor search.
+	receivedSimilarity lines.SimilarityRequest
 }
 
 func (stored *fakeLines) List(
@@ -62,6 +65,14 @@ func (stored *fakeLines) List(
 func (stored *fakeLines) Get(_ context.Context, id int64) (lines.Detail, error) {
 	stored.requestedID = id
 	return stored.detail, stored.err
+}
+
+func (stored *fakeLines) FindSimilar(
+	_ context.Context,
+	request lines.SimilarityRequest,
+) (lines.Similarities, error) {
+	stored.receivedSimilarity = request
+	return stored.similar, stored.err
 }
 
 func newTestRouter(simulator httpapi.Simulator) http.Handler {

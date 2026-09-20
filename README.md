@@ -42,6 +42,30 @@ Entre ellos, la exportación de las líneas GTFS almacenadas usa:
   página de `GET /lines` cuando no se pide uno, y tope de lo que puede pedirse.
   `TestLinesPolicyIsCoherent` verifica que el predeterminado no supere al máximo.
 
+La búsqueda de corredores de `POST /lines/similar` agrega otros cuatro:
+
+- `SimilarityCorridorToleranceMeters` (`200`): a qué distancia puede correr una
+  línea almacenada de la ruta dibujada y seguir contando como el mismo corredor.
+  Es aproximadamente una cuadra de la trama del AMBA: una línea que baja por la
+  calle paralela sigue siendo el mismo corredor para quien viaja, porque camina
+  hasta la esquina, mientras que una a dos cuadras ya es otro servicio. Está
+  cerca de `LinesAlignmentToleranceMeters` (`250`) por coincidencia y no por
+  parentesco: aquella decide si el extremo de un tramo almacenado es el mismo
+  *lugar* que su parada, y ésta si dos líneas enteras sirven el mismo
+  *corredor*. Mover una por lo que le pase a la otra cambiaría una pregunta que
+  nadie quiso hacer.
+- `SimilarityMinimumCoverage` (`0.20`): qué proporción de una de las dos líneas
+  tiene que caer dentro del corredor de la otra para que el par se informe.
+  Por debajo de eso sólo se tocan: cualquier línea que cruza una avenida junta
+  unos puntos de solape, y devolverlas taparía las pocas que efectivamente
+  acompañan la propuesta.
+- `SimilarityDefaultResultCount` (`10`) y `SimilarityMaximumResultCount` (`50`):
+  cuántas coincidencias devuelve la búsqueda cuando no se pide un número, y tope
+  de lo que puede pedirse. Son mucho más chicos que los tamaños de página de
+  arriba porque el resultado es una lista corta para elegir una baseline, no un
+  listado que se recorre. `TestSimilarityPolicyIsCoherent` verifica que el
+  predeterminado entre en el máximo y que la cobertura mínima quede en `(0, 1]`.
+
 Una sola constante del modelo vive junto al código que la aplica, para que los
 paquetes de dominio no dependan de `config`: `endpointToleranceMeters` (20 m, en
 `internal/simulation/route`).
@@ -72,6 +96,17 @@ El contrato completo está en `docs/openapi.yaml`.
   /comparisons`. No incluye `jurisdiction`: GTFS no registra qué autoridad
   tarifaria rige una línea y el motor no la deduce de la geometría, así que la
   agrega quien simula.
+- `POST /lines/similar`: dada una ruta dibujada, devuelve las líneas GTFS
+  almacenadas que corren por el mismo corredor, ordenadas y sin simular nada.
+  La similitud es solape geométrico medido como cobertura mutua de corredores:
+  se informa qué parte de la ruta dibujada corre dentro del corredor de la línea
+  almacenada y qué parte de la línea almacenada corre dentro del de la ruta.
+  Los dos números van siempre por separado, porque `1.00 / 0.07` significa "lo
+  que dibujaste es un fragmento de esa línea" y promediarlos borraría justamente
+  esa distinción. El orden va por la menor de las dos coberturas: una candidata
+  sólo se parece de verdad cuando se parece en ambos sentidos. La ruta no lleva
+  `jurisdiction` —no se calcula ninguna tarifa— y cada parada puede omitir su
+  `pathToNext`, en cuyo caso se toma el segmento recto hasta la siguiente.
 - `POST /simulations`: simula una ruta propuesta.
 - `POST /comparisons`: simula dos rutas y devuelve la diferencia entre ambas.
 

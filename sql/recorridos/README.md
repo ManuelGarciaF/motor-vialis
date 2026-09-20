@@ -250,6 +250,11 @@ el modelo final.
 En una base creada antes de incorporar los tiempos por tramo, ejecutar primero
 `migrar_tiempos_tramos.sql` y luego volver a ejecutar `transformar_gtfs.sql`.
 
+En una base creada antes de `POST /lines/similar`, ejecutar
+`migrar_indice_geografia_recorridos.sql`. Sólo agrega el índice GIST sobre
+`geom::geography` que necesita el prefiltro en metros de la búsqueda de
+corredores: no recalcula nada, así que no hace falta volver a transformar.
+
 ## Datos que no provienen de GTFS
 
 Los campos `caudal_pasajeros` e `ingreso_economico` permanecen en `NULL`. GTFS

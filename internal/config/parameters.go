@@ -94,12 +94,52 @@ const (
 	LinesMaximumPageSize = 200
 )
 
-// LinesPolicy returns the rules applied when exporting stored lines.
+// Finding the stored lines that share a corridor with a route someone drew,
+// for POST /lines/similar.
+const (
+	// SimilarityCorridorToleranceMeters is how far a stored line may run from
+	// the drawn route and still count as the same corridor. Roughly one block
+	// of the AMBA grid: a line coming down the parallel street is still
+	// recognisably the same corridor to a passenger, who walks to the corner,
+	// while one two blocks away is a different service.
+	//
+	// It is close to LinesAlignmentToleranceMeters (250 m) by coincidence, not
+	// by kinship, and the two must move independently. That one asks whether a
+	// stored path endpoint is the same *place* as its stop; this one asks
+	// whether two whole lines serve the same *corridor*. Widening this one
+	// because the feed's geometry got sloppier — or the other because a wider
+	// corridor seemed useful — would change a question nobody meant to ask.
+	SimilarityCorridorToleranceMeters = 200.0
+
+	// SimilarityMinimumCoverage is the share of one of the two lines that has
+	// to fall inside the other's corridor before the pair is reported at all.
+	// Below it the two merely touch: every line crossing an avenue picks up a
+	// few percent of overlap, and reporting those would bury the handful of
+	// lines that actually run alongside the proposal.
+	SimilarityMinimumCoverage = 0.20
+
+	// SimilarityDefaultResultCount is how many matches a corridor search
+	// returns when the caller does not ask for a number, and
+	// SimilarityMaximumResultCount caps what it may ask for. The search is a
+	// shortlist to choose a baseline from, not a listing to page through, so
+	// both are far smaller than the page sizes above.
+	// TestSimilarityPolicyIsCoherent enforces that the default fits under the
+	// maximum.
+	SimilarityDefaultResultCount = 10
+	SimilarityMaximumResultCount = 50
+)
+
+// LinesPolicy returns the rules applied when exporting stored lines and when
+// matching a drawn route against them.
 func LinesPolicy() lines.Policy {
 	return lines.Policy{
-		AlignmentToleranceMeters: LinesAlignmentToleranceMeters,
-		DefaultPageSize:          LinesDefaultPageSize,
-		MaximumPageSize:          LinesMaximumPageSize,
+		AlignmentToleranceMeters:          LinesAlignmentToleranceMeters,
+		DefaultPageSize:                   LinesDefaultPageSize,
+		MaximumPageSize:                   LinesMaximumPageSize,
+		SimilarityCorridorToleranceMeters: SimilarityCorridorToleranceMeters,
+		SimilarityMinimumCoverage:         SimilarityMinimumCoverage,
+		SimilarityDefaultResultCount:      SimilarityDefaultResultCount,
+		SimilarityMaximumResultCount:      SimilarityMaximumResultCount,
 	}
 }
 

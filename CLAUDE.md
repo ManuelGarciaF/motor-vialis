@@ -59,8 +59,9 @@ through `app.NewSimulationService`, so they cannot drift apart;
 cmd/api, cmd/simulation-test        entry points; flags and transport, no logic
 internal/app                        composition root: NewSimulationService(),
                                      NewLinesService()
-internal/httpapi                    HTTP handlers (/lines, /simulations,
-                                     /comparisons); see docs/openapi.yaml
+internal/httpapi                    HTTP handlers (/lines, /lines/similar,
+                                     /simulations, /comparisons); see
+                                     docs/openapi.yaml
 internal/lines                      reads stored GTFS lines back out as routes
 internal/simulation                 orchestrator: Service.Simulate()
 internal/simulation/{demand,traveltime,revenue}   estimators (pure domain logic)
@@ -120,6 +121,15 @@ SQL against a real PostGIS+H3 instance.
    stop location in `transformar_gtfs.sql` means this should not happen on the
    current feed. User-designed lines are persisted by a different service;
    nothing here writes.
+
+   `POST /lines/similar` answers what comes before picking a baseline: which
+   stored lines run along the corridor someone just drew. It is pure geometry —
+   mutual buffer coverage within `config.SimilarityCorridorToleranceMeters`,
+   ranked in SQL by the weaker of the two coverages — and runs no estimator.
+   The two coverages are never collapsed into one score; `lines.Similarity`
+   says why. Its validation is deliberately looser than `route.Validate`: no
+   jurisdiction and an optional `pathToNext`, because a corridor search reads
+   neither.
 4. **Revenue** (`internal/simulation/revenue`): for each demand stop pair,
    sums segment distances to look up a jurisdiction-specific tariff band
    (`route.Jurisdiction`: `caba`/`province`/`national`), then applies the

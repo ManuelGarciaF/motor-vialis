@@ -37,6 +37,10 @@ type Comparator interface {
 type Lines interface {
 	List(ctx context.Context, query lines.Query) (lines.Page, error)
 	Get(ctx context.Context, id int64) (lines.Detail, error)
+	FindSimilar(
+		ctx context.Context,
+		request lines.SimilarityRequest,
+	) (lines.Similarities, error)
 }
 
 // Handler exposes the service's endpoints over HTTP.
@@ -67,7 +71,16 @@ func NewHandler(
 func (handler *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /lines", handler.listLines)
+	// "POST /lines/similar" and "GET /lines/{id}" do not compete: a pattern
+	// with a method only matches that method, so no POST ever reaches the
+	// detail lookup and "similar" can never arrive there as an id. A GET of
+	// /lines/similar does land on the detail lookup, which answers that "id"
+	// must be a positive integer — the honest reply to a search asked with the
+	// wrong verb. Registering the literal path before the wildcard would not
+	// change any of this; ServeMux prefers the more specific pattern whatever
+	// the order.
 	mux.HandleFunc("GET /lines/{id}", handler.getLine)
+	mux.HandleFunc("POST /lines/similar", handler.findSimilarLines)
 	mux.HandleFunc("POST /simulations", handler.createSimulation)
 	mux.HandleFunc("POST /comparisons", handler.createComparison)
 	return handler.recoverPanic(handler.logRequest(mux))

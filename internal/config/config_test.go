@@ -49,6 +49,40 @@ func TestLinesPolicyIsCoherent(t *testing.T) {
 	}
 }
 
+// The corridor search shares lines.Policy but answers a different question,
+// so its knobs get their own coherence check.
+func TestSimilarityPolicyIsCoherent(t *testing.T) {
+	policy := LinesPolicy()
+	if policy.SimilarityDefaultResultCount > policy.SimilarityMaximumResultCount {
+		t.Fatalf(
+			"SimilarityDefaultResultCount = %d, must not exceed "+
+				"SimilarityMaximumResultCount = %d",
+			policy.SimilarityDefaultResultCount,
+			policy.SimilarityMaximumResultCount,
+		)
+	}
+	if policy.SimilarityDefaultResultCount <= 0 {
+		t.Fatalf(
+			"SimilarityDefaultResultCount = %d, must be positive",
+			policy.SimilarityDefaultResultCount,
+		)
+	}
+	// A minimum of zero would report every line that so much as touches the
+	// route, and one above 1 would report none: neither is a threshold.
+	if policy.SimilarityMinimumCoverage <= 0 || policy.SimilarityMinimumCoverage > 1 {
+		t.Fatalf(
+			"SimilarityMinimumCoverage = %v, must be within (0, 1]",
+			policy.SimilarityMinimumCoverage,
+		)
+	}
+	if policy.SimilarityCorridorToleranceMeters <= 0 {
+		t.Fatalf(
+			"SimilarityCorridorToleranceMeters = %v, must be positive",
+			policy.SimilarityCorridorToleranceMeters,
+		)
+	}
+}
+
 // SimulationTimeout must stay below WriteTimeout so a slow simulation is
 // answered with a timeout status instead of having its connection closed
 // mid-response.

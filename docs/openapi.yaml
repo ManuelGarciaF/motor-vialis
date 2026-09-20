@@ -168,6 +168,90 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /lines/similar:
+    post:
+      operationId: findSimilarLines
+      summary: Busca las líneas almacenadas que comparten corredor con una ruta dibujada
+      description: >
+        Responde "qué líneas existentes ya pasan por donde dibujé esto" sin
+        simular nada. Es el paso previo a `POST /comparisons`: señala la línea o
+        dos que vale la pena usar como baseline, y recién ahí conviene pagar el
+        costo de una simulación.
+
+
+        La similitud es solape de corredores medido como cobertura mutua, no
+        como intersección: dos trazados sobre la misma avenida, uno dibujado a
+        mano y otro venido de un `shape` GTFS, prácticamente nunca se cruzan en
+        un punto exacto. Cada línea se mide contra un corredor de
+        `config.SimilarityCorridorToleranceMeters` alrededor de la otra, y se
+        devuelven los dos números.
+
+
+        Las dos coberturas nunca se promedian en un único puntaje. Una ruta de
+        3 km apoyada entera sobre una línea de 40 km da 1.00 y 0.07, que
+        significa "lo que dibujaste es un fragmento de esa línea": un hallazgo
+        distinto del de dos líneas que se cubren 0.85 y 0.80, y que un solo
+        número borraría.
+
+
+        El orden va por la menor de las dos coberturas, así que una candidata
+        queda arriba sólo cuando se parece en ambos sentidos; los empates se
+        resuelven por la cobertura mayor y después por el id de la línea. Las
+        candidatas cuya cobertura mayor no alcanza
+        `config.SimilarityMinimumCoverage` quedan afuera: por debajo de eso las
+        dos líneas apenas se cruzan.
+
+
+        `route` no lleva `jurisdiction`, a diferencia de `POST /simulations`:
+        acá no se calcula ninguna tarifa, así que exigir una autoridad tarifaria
+        sólo forzaría un valor sin sentido dentro de una pregunta sobre
+        geometría. Una parada también puede omitir su `pathToNext`, que
+        `/simulations` exige: en ese caso se toma el segmento recto hasta la
+        siguiente, una aproximación razonable del corredor aunque sería una mala
+        descripción de un itinerario.
+      tags: [lines]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimilarLinesRequest"
+      responses:
+        "200":
+          description: >
+            La lista corta y ordenada. Una lista vacía es una respuesta y no una
+            falla: ninguna línea almacenada corre por ese corredor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Similarities"
+        "400":
+          description: >
+            Falta la ruta, está malformada o tiene menos de dos paradas, o
+            `limit` no es positivo. El `field` indica qué corregir, con las
+            mismas rutas de campo que usa `/simulations`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: validation_error
+                  field: route.stops
+                  message: "must contain at least two stops"
+        "504":
+          description: La búsqueda superó `config.SimulationTimeout`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Error de infraestructura.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /simulations:
     post:
       operationId: createSimulation
@@ -484,6 +568,136 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/LineStopDescription"
+
+    DrawnRoute:
+      type: object
+      description: >
+        Una ruta dibujada para contrastar contra las líneas almacenadas. Es un
+        `Route` con dos reglas relajadas, porque una búsqueda de corredores lee
+        menos que una simulación: no lleva `jurisdiction`, ya que no se calcula
+        ninguna tarifa, y `pathToNext` es opcional, porque una parada sin él se
+        une a la siguiente por el segmento recto entre ambas.
+      required: [stops]
+      properties:
+        stops:
+          type: array
+          minItems: 2
+          items:
+            $ref: "#/components/schemas/Stop"
+
+    SimilarLinesRequest:
+      type: object
+      required: [route]
+      properties:
+        route:
+          $ref: "#/components/schemas/DrawnRoute"
+        limit:
+          type: integer
+          minimum: 1
+          description: >
+            Cuántas coincidencias devolver. Si no se envía, vale
+            `config.SimilarityDefaultResultCount`; un pedido mayor se recorta a
+            `config.SimilarityMaximumResultCount` y la respuesta informa el
+            límite que realmente se aplicó. El cero y los negativos se rechazan
+            en vez de leerse como "usá el predeterminado", porque sólo pueden
+            ser un cliente calculando mal un tamaño.
+
+    StoredMetrics:
+      type: object
+      description: >
+        Lo que la ETL midió para la línea, tal como está guardado. Salvo la
+        distancia, todos los campos son opcionales, porque las columnas son
+        nulables y el proyecto no tiene esos datos para todas las líneas. Una
+        medición que falta se omite en vez de informarse como cero: "nadie lo
+        midió" y "vale cero" no son la misma afirmación.
+      required: [distanceMeters]
+      properties:
+        distanceMeters:
+          type: integer
+          description: Repite `line.distanceMeters`, para que la medición se lea junta.
+        totalMinutes:
+          type: integer
+          description: Tiempo total de recorrido de la línea.
+        passengerFlow:
+          type: integer
+          description: >
+            Caudal de pasajeros registrado. La ETL no documenta un período, así
+            que se pasa tal como está guardado, sin convertirlo en una tasa.
+        revenue:
+          type: integer
+          format: int64
+          description: >
+            `recorridos.ingreso_economico`, sin transformar. No se nombra en
+            centavos porque, a diferencia del cuadro tarifario, esa columna no
+            declara su unidad.
+
+    Similarity:
+      type: object
+      description: >
+        Una línea almacenada que comparte corredor con la ruta dibujada. Las dos
+        coberturas se informan por separado y nunca se promedian: responden
+        preguntas distintas, y un solo número borraría justamente la distinción
+        entre "lo que dibujaste es un fragmento de esa línea" y "son dos
+        versiones de la misma línea".
+      required:
+        - line
+        - coverageOfProposed
+        - coverageOfStored
+        - originDistanceMeters
+        - destinationDistanceMeters
+        - metrics
+      properties:
+        line:
+          $ref: "#/components/schemas/LineSummary"
+        coverageOfProposed:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: >
+            Fracción del largo de la ruta dibujada que corre dentro del corredor
+            de la línea almacenada.
+        coverageOfStored:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: >
+            Fracción del largo de la línea almacenada que corre dentro del
+            corredor de la ruta dibujada.
+        originDistanceMeters:
+          type: number
+          format: double
+          description: >
+            Distancia entre la primera parada de la ruta dibujada y la primera
+            de la línea almacenada. Es una señal secundaria: dos líneas pueden
+            compartir corredor casi todo su largo y aun así empezar en barrios
+            distintos.
+        destinationDistanceMeters:
+          type: number
+          format: double
+          description: Lo mismo entre las últimas paradas de cada una.
+        metrics:
+          $ref: "#/components/schemas/StoredMetrics"
+
+    Similarities:
+      type: object
+      description: >
+        A diferencia de `LinePage`, no trae `total` ni `offset`: es una lista
+        corta y ordenada para elegir una baseline, no una ventana que el cliente
+        recorre. Pedir más resultados ensancha la misma lista en vez de avanzar
+        sobre ella.
+      required: [lines, limit]
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/Similarity"
+        limit:
+          type: integer
+          description: >
+            El límite que se aplicó, ya recortado al máximo configurado, para
+            poder distinguir una lista corta de una truncada.
 
     DemandTotals:
       type: object

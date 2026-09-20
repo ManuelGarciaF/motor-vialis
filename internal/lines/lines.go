@@ -25,6 +25,17 @@ type Policy struct {
 	// MaximumPageSize caps what a caller may ask for, so one request cannot
 	// pull the whole table.
 	MaximumPageSize int
+	// SimilarityCorridorToleranceMeters is how far a stored line may run from
+	// the drawn route and still be counted as the same corridor.
+	SimilarityCorridorToleranceMeters float64
+	// SimilarityMinimumCoverage is the smallest coverage, in either direction,
+	// that makes a candidate worth reporting at all.
+	SimilarityMinimumCoverage float64
+	// SimilarityDefaultResultCount is how many matches a corridor search
+	// returns when the caller does not ask for a number.
+	SimilarityDefaultResultCount int
+	// SimilarityMaximumResultCount caps what a caller may ask for.
+	SimilarityMaximumResultCount int
 }
 
 // Summary describes a stored line without any geometry. Listing every AMBA
@@ -118,6 +129,11 @@ type Repository interface {
 	ListSummaries(ctx context.Context, query Query) ([]Summary, int, error)
 	// FindLine returns one line with its stops, or ErrNotFound.
 	FindLine(ctx context.Context, id int64) (StoredLine, error)
+	// FindSimilar returns the stored lines sharing a corridor with the drawn
+	// path, already filtered by the query's minimum coverage, ranked, and cut
+	// to its limit. An empty result is not an error: drawing a route where no
+	// line runs is a legitimate answer, and the one a proposal is looking for.
+	FindSimilar(ctx context.Context, query SimilarityQuery) ([]Similarity, error)
 }
 
 // NotSimulableError reports a stored line whose geometry cannot produce a route
