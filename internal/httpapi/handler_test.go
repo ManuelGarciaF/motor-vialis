@@ -91,12 +91,27 @@ func newTestRouterWithAll(
 	comparator httpapi.Comparator,
 	storedLines httpapi.Lines,
 ) http.Handler {
+	return newTestRouterWithTransfers(
+		simulator,
+		comparator,
+		storedLines,
+		&fakeTransfers{},
+	)
+}
+
+func newTestRouterWithTransfers(
+	simulator httpapi.Simulator,
+	comparator httpapi.Comparator,
+	storedLines httpapi.Lines,
+	transfers httpapi.Transfers,
+) http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return httpapi.NewHandler(
 		logger,
 		simulator,
 		comparator,
 		storedLines,
+		transfers,
 		5*time.Second,
 	).Routes()
 }

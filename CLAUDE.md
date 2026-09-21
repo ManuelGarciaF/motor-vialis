@@ -33,6 +33,10 @@ go test ./internal/simulation/demand/...   # single package
 # unless TEST_DATABASE_URL is set:
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/vialis go test ./internal/database/postgres/...
 
+# Build the database from nothing (container first, then the whole pipeline)
+docker compose up -d --build
+go run ./cmd/initdb            # --reset rebuilds a populated one; --data-dir moves the CSVs
+
 # Run the API service (checks DB connectivity on startup, then serves)
 go run ./cmd/api
 
@@ -40,7 +44,9 @@ go run ./cmd/api
 go run ./cmd/simulation-test -route-file ./examples/linea-132.json
 ```
 
-Default local DB: `postgresql://postgres:postgres@localhost:5432/vialis`.
+Default local DB: `postgresql://postgres:postgres@localhost:5432/vialis`. The
+container in `docker-compose.yml` publishes 5433 instead, so running against it
+means setting `DATABASE_URL`; `cmd/initdb` already defaults to 5433.
 Configuration is split by ownership. Only `DATABASE_URL` and `HTTP_ADDRESS` come
 from the environment (`internal/config/config.go`); everything else is a model
 parameter and is a constant in `internal/config/parameters.go` — access radius,
@@ -58,11 +64,14 @@ through `app.NewSimulationService`, so they cannot drift apart;
 ```
 cmd/api, cmd/simulation-test        entry points; flags and transport, no logic
 internal/app                        composition root: NewSimulationService(),
-                                     NewLinesService()
+                                     NewLinesService(),
+                                     NewCombinacionesService()
 internal/httpapi                    HTTP handlers (/lines, /lines/similar,
-                                     /simulations, /comparisons); see
-                                     docs/openapi.yaml
+                                     /transfers, /simulations, /comparisons);
+                                     see docs/openapi.yaml
 internal/lines                      reads stored GTFS lines back out as routes
+internal/combinaciones              reads the precomputed ranking of line pairs
+                                     people appear to be combining
 internal/simulation                 orchestrator: Service.Simulate()
 internal/simulation/{demand,traveltime,revenue}   estimators (pure domain logic)
 internal/simulation/route           shared Route/Position/LineString model + Validate()
@@ -159,6 +168,27 @@ a README:
   (`vialis.tarifas_colectivo`).
 - `sql/ddl.sql` — final table definitions; `sql/init_db.sql` bootstraps a new
   database.
+
+`sql/viajes/combinaciones_lineas.sql` is the only script that joins the two
+data domains, and it is where the honesty of `GET /transfers` is decided. The
+survey records no line identifier, so the ranking splits every
+origin-destination flow equally among the combinations that could have served
+it, discards the cell pairs one line already covers end to end, and refuses to
+attribute a flow the network leaves more than ten ways of making. Its two
+radii (400 m from a cell to a stop, 300 m to walk between buses) live in SQL
+and not in `internal/config` because the aggregation is batch: changing one
+means rebuilding the aggregate, not restarting the process. `sql/viajes/README.md`
+explains each choice and what the resulting numbers may and may not be read as.
+
+`internal/database/bootstrap` is the single source of truth for the order those
+scripts run in, and `cmd/initdb` is the only supported way to build a database
+from nothing (`docker compose up -d --build` then `go run ./cmd/initdb`). It also
+owns the two CSV loads, which no script can do because `COPY` reads from the
+client. When a script is added, split, renamed or reordered, change `steps()` in
+that package and then the READMEs — not the other way round; the READMEs explain
+what each script does, `steps()` is what actually runs them. `sql/sql.go` embeds
+only the pipeline scripts: the `migrar_*.sql` files upgrade databases that
+already exist and must never run on a fresh one.
 
 Data preparation is an external, administered process — it does not run
 inside a simulation request. When changing repository queries, keep in mind

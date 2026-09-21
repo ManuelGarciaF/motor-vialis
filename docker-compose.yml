@@ -1,0 +1,34 @@
+# Base de datos local de Vialis. Junto con `go run ./cmd/initdb` reconstruye la
+# base completa desde cero en un clon nuevo.
+#
+# Se publica en 5433 y no en 5432 para no chocar con un PostgreSQL instalado en
+# la máquina, que es lo habitual en los equipos del proyecto.
+services:
+  db:
+    build: .
+    image: vialis-motor-db:local
+    container_name: vialis-motor-db
+    environment:
+      POSTGRES_DB: vialis
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    # Docker le da 64 MB de /dev/shm a un contenedor, y PostgreSQL usa memoria
+    # compartida para coordinar sus workers paralelos. La transformacion de
+    # viajes ordena varios millones de filas en paralelo y revienta contra ese
+    # techo con "could not resize shared memory segment ... No space left on
+    # device" (SQLSTATE 53100), que no es falta de disco aunque lo parezca.
+    shm_size: "1gb"
+    volumes:
+      - vialis-db-data:/var/lib/postgresql/data
+    # El inicializador espera a que este chequeo pase antes de cargar nada.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vialis"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  vialis-db-data:

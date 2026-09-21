@@ -222,6 +222,49 @@ Los escenarios representan variabilidad de horarios GTFS programados. No son
 mediciones de tránsito en tiempo real ni garantizan que un viaje haya ocurrido
 con esa duración.
 
+### `vialis.conexiones_recorridos`
+
+Es el grafo de trasbordos: qué pares de recorridos permiten cambiar de colectivo,
+y dónde. Lo consume `GET /transfers` para armar los itinerarios factibles de una
+combinación origen-destino.
+
+| Columna                     | Significado                                          |
+|-----------------------------|------------------------------------------------------|
+| `id_recorrido_origen`       | Recorrido en el que se viene viajando                |
+| `id_recorrido_destino`      | Recorrido que se toma después                        |
+| `id_parada_bajada`          | Parada del primer recorrido donde se baja            |
+| `id_parada_subida`          | Parada del segundo recorrido donde se sube           |
+| `distancia_caminata_metros` | Distancia entre ambas paradas; 0 si son la misma     |
+
+El par es **ordenado**. La factibilidad de un itinerario depende del sentido: el
+trasbordo tiene que caer después de donde la persona subió al primer recorrido y
+antes de donde baja del segundo, y esa pregunta no es simétrica.
+
+Dos recorridos se consideran conectados cuando alguna parada de uno queda a
+**300 metros o menos** de alguna parada del otro. No se exige la misma parada
+física porque el feed del AMBA le da un `stop_id` propio a cada línea aunque
+paren en la misma esquina: exigirla perdería la mayoría de las combinaciones
+reales. El caso de la parada compartida queda incluido, con distancia 0.
+
+Ese radio es el del ETL y no debe confundirse con
+`config.TransfersAccessRadiusMeters`, que mide de una celda H3 a una parada para
+decidir qué recorridos sirven esa celda. Son preguntas distintas y se mueven por
+separado.
+
+#### Un único punto de trasbordo por par
+
+La tabla guarda solo el punto de menor caminata de cada par. Guardarlos todos
+multiplicaría las filas por la cantidad de esquinas que dos recorridos comparten,
+que en el AMBA son decenas.
+
+La consecuencia hay que tenerla presente: un par puede descartarse por orden
+—porque ese punto en particular cae antes de donde la persona sube, o después de
+donde baja— aunque otro punto de trasbordo del mismo par sí lo respetara. El
+resultado subestima itinerarios; nunca inventa uno que no exista.
+
+El desempate entre puntos a igual distancia es determinista, por identificador de
+parada, para que dos corridas sobre los mismos datos den lo mismo.
+
 ## Flujo de transformación
 
 ```mermaid
@@ -233,19 +276,34 @@ flowchart LR
     CANONICO --> PARADAS["paradas"]
     RECORRIDOS --> UNION["recorridos_paradas"]
     PARADAS --> UNION
+    UNION --> CONEXIONES["conexiones_recorridos"]
 ```
 
 Los scripts se ejecutan en este orden:
 
 1. `crear_gtfs_raw.sql`: recrea las tablas staging.
-2. `importar_gtfs_raw.ps1`: ejecuta el DDL raw e importa los siete CSV mediante
-   `psql \copy`.
+2. Importación de los siete archivos de `colectivos-gtfs/` en sus tablas raw.
 3. `transformar_gtfs.sql`: crea índices, valida el feed y reemplaza los datos de
    las tablas finales.
+4. `conexiones_recorridos.sql`: calcula entre qué pares de recorridos se puede
+   trasbordar. Necesita `recorridos`, `paradas` y `recorridos_paradas` ya
+   pobladas, así que va después del paso 3.
 
-El importador ejecuta automáticamente el primer paso. La transformación se
-ejecuta por separado para permitir inspeccionar las tablas raw antes de reemplazar
-el modelo final.
+Los cuatro pasos los ejecuta el inicializador, que arma la base entera:
+
+```bash
+docker compose up -d --build
+go run ./cmd/initdb
+```
+
+La importación del paso 2 la hace `internal/database/bootstrap`, que copia cada
+archivo con `COPY` en la tabla que le asigna la tabla de correspondencias de más
+arriba,
+respetando el orden de columnas de `crear_gtfs_raw.sql`. No hay un script
+`psql \copy` aparte: el orden del pipeline vive en un solo lugar.
+
+Para inspeccionar las tablas raw antes de reemplazar el modelo final, se puede
+ejecutar `transformar_gtfs.sql` a mano con `psql` después de una corrida.
 
 En una base creada antes de incorporar los tiempos por tramo, ejecutar primero
 `migrar_tiempos_tramos.sql` y luego volver a ejecutar `transformar_gtfs.sql`.

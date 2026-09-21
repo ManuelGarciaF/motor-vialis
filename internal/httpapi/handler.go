@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/combinaciones"
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
 )
@@ -43,12 +44,22 @@ type Lines interface {
 	) (lines.Similarities, error)
 }
 
+// Transfers ranks the pairs of lines people appear to be combining, so a
+// client can see where the network forces a change of bus.
+type Transfers interface {
+	FindRanking(
+		ctx context.Context,
+		request combinaciones.Request,
+	) (combinaciones.Page, error)
+}
+
 // Handler exposes the service's endpoints over HTTP.
 type Handler struct {
 	logger     *slog.Logger
 	simulator  Simulator
 	comparator Comparator
 	lines      Lines
+	transfers  Transfers
 	timeout    time.Duration
 }
 
@@ -57,6 +68,7 @@ func NewHandler(
 	simulator Simulator,
 	comparator Comparator,
 	storedLines Lines,
+	transfers Transfers,
 	timeout time.Duration,
 ) *Handler {
 	return &Handler{
@@ -64,6 +76,7 @@ func NewHandler(
 		simulator:  simulator,
 		comparator: comparator,
 		lines:      storedLines,
+		transfers:  transfers,
 		timeout:    timeout,
 	}
 }
@@ -81,6 +94,7 @@ func (handler *Handler) Routes() http.Handler {
 	// the order.
 	mux.HandleFunc("GET /lines/{id}", handler.getLine)
 	mux.HandleFunc("POST /lines/similar", handler.findSimilarLines)
+	mux.HandleFunc("GET /transfers", handler.listCombinationRanking)
 	mux.HandleFunc("POST /simulations", handler.createSimulation)
 	mux.HandleFunc("POST /comparisons", handler.createComparison)
 	return handler.recoverPanic(handler.logRequest(mux))

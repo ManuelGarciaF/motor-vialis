@@ -2,6 +2,54 @@
 
 Servicio REST en Go para el motor de simulación de Vialis.
 
+## Levantar la base de datos
+
+Un clon nuevo arma la base completa con dos comandos:
+
+```bash
+docker compose up -d --build   # PostgreSQL + PostGIS + H3 en localhost:5433
+go run ./cmd/initdb            # esquema, tablas y toda la carga de datos
+```
+
+El primero construye la imagen de `Dockerfile` y levanta el contenedor
+`vialis-motor-db` con la base `vialis`, usuario y contraseña `postgres`. La
+imagen es propia porque `postgis/postgis:15-3.3` no incluye la extensión H3, sin
+la cual el modelo de demanda no funciona; instalarla a mano dentro de un
+contenedor en ejecución la deja en su capa de escritura y se pierde al
+recrearlo.
+
+El segundo ejecuta el pipeline completo, en el único orden que produce una base
+consultable: extensiones, tablas finales, staging GTFS, importación de los siete
+archivos de `colectivos-gtfs/`, transformación de recorridos y paradas,
+importación del CSV de viajes, puntos PostGIS, celdas H3, hexágonos, matriz
+origen-destino y cuadro tarifario. El orden vive en
+`internal/database/bootstrap`, que es la referencia frente a cualquier README.
+
+Mueve cerca de 2,5 GB de CSV, así que tarda varios minutos e informa por stderr
+cada paso, su duración y el avance de las dos importaciones grandes.
+
+| Opción | Predeterminado | Para qué |
+| --- | --- | --- |
+| `--data-dir` | `.` | Directorio con `viajes_BAdata_20241016.csv` y `colectivos-gtfs/`. |
+| `--reset` | `false` | Borra el esquema `vialis` y lo vuelve a crear. |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5433/vialis` | Base a inicializar. |
+
+Sin `--reset`, el inicializador se niega a correr sobre una base que ya tiene el
+esquema `vialis`: rehacer la carga cuesta varios minutos y no es lo que quiere
+quien ejecutó el comando por segunda vez sin pensarlo.
+
+Los archivos de datos no están en el repositorio. Se esperan en la raíz:
+`viajes_BAdata_20241016.csv` y el directorio `colectivos-gtfs/` con `agency.txt`,
+`routes.txt`, `trips.txt`, `stops.txt`, `stop_times.txt`, `shapes.txt` y
+`calendar_dates.txt`.
+
+El servicio apunta por omisión al puerto 5432, así que contra el contenedor se
+lo ejecuta con la variable de entorno:
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/vialis go run ./cmd/api
+```
+
 ## Configuración
 
 La configuración está separada en dos según a quién pertenece cada valor.
@@ -15,8 +63,9 @@ Solo dos variables, ambas opcionales:
 | `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/vialis` | Conexión a PostgreSQL. |
 | `HTTP_ADDRESS` | `:8080` | Dirección de escucha del servicio. |
 
-Sin ninguna de las dos, el motor corre contra la base local que crea
-`sql/init_db.sql`.
+Sin ninguna de las dos, el motor busca una base local en el puerto 5432. El
+contenedor de `docker-compose.yml` publica el 5433, así que contra él hay que
+pasar `DATABASE_URL`.
 
 ### Código: los parámetros del modelo
 

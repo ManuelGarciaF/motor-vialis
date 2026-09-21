@@ -33,12 +33,14 @@ func main() {
 
 	service := app.NewSimulationService(database)
 	linesService := app.NewLinesService(database)
+	transfersService := app.NewCombinacionesService(database)
 
 	handler := httpapi.NewHandler(
 		logger,
 		service,
 		service,
 		linesService,
+		transfersService,
 		config.SimulationTimeout,
 	)
 

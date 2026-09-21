@@ -95,3 +95,45 @@ func TestSimulationTimeoutLeavesRoomToRespond(t *testing.T) {
 		)
 	}
 }
+
+func TestTransfersPolicyIsCoherent(t *testing.T) {
+	policy := CombinacionesPolicy()
+
+	if policy.DefaultPageSize <= 0 {
+		t.Fatalf("DefaultPageSize = %d, must be positive", policy.DefaultPageSize)
+	}
+	if policy.DefaultPageSize > policy.MaximumPageSize {
+		t.Fatalf(
+			"DefaultPageSize = %d, must not exceed MaximumPageSize = %d",
+			policy.DefaultPageSize,
+			policy.MaximumPageSize,
+		)
+	}
+	// A threshold at or below 1 would warn about every combination, including
+	// the ones a flow had no alternative to, which is the strongest claim the
+	// ranking can make.
+	if policy.WeakEvidenceAlternatives <= 1 {
+		t.Fatalf(
+			"WeakEvidenceAlternatives = %v, must be greater than 1",
+			policy.WeakEvidenceAlternatives,
+		)
+	}
+	// And one at or above the ETL's ceiling could never fire, because no
+	// combination above it survives the aggregation. Both ends turn the mark
+	// into decoration, so the constant is pinned inside the surviving range.
+	if policy.WeakEvidenceAlternatives >= etlAlternativesCeiling {
+		t.Fatalf(
+			"WeakEvidenceAlternatives = %v, must stay below the %v feasible "+
+				"combinations sql/viajes/combinaciones_lineas.sql allows, or "+
+				"it can never fire",
+			policy.WeakEvidenceAlternatives,
+			etlAlternativesCeiling,
+		)
+	}
+}
+
+// etlAlternativesCeiling mirrors the HAVING in
+// sql/viajes/combinaciones_lineas.sql. It is repeated here rather than shared
+// because the two live in different languages; the test above is what keeps
+// them from drifting apart silently.
+const etlAlternativesCeiling = 10.0
