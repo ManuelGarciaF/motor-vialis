@@ -50,6 +50,25 @@ lo ejecuta con la variable de entorno:
 DATABASE_URL=postgresql://postgres:postgres@localhost:5433/vialis go run ./cmd/api
 ```
 
+## Datos de entrada
+
+Dos de los archivos que carga el inicializador **no están en el repositorio**:
+
+| Archivo | Peso | De dónde sale |
+|---------|------|----------------|
+| `viajes_BAdata_20241016.csv` | 854 MB | [Viajes y etapas en transporte público del AMBA](https://data.buenosaires.gob.ar/dataset/viajes-etapas-transporte-publico), en BA Data |
+| `colectivos-gtfs/stop_times.txt` | 1,3 GB | El mismo paquete GTFS del que salieron los otros seis `.txt` de esa carpeta |
+
+No se versionan porque los dos pasan el límite de 100 MB por archivo de GitHub:
+con ellos adentro el repositorio no se puede ni clonar cómodo ni publicar. Los
+otros seis archivos del feed (`agency`, `calendar_dates`, `routes`, `shapes`,
+`stops`, `trips`) sí están versionados, así que sólo hay que conseguir esos dos
+y dejarlos en las rutas de la tabla.
+
+`go run ./cmd/initdb` verifica que estén **antes** de crear nada en la base, y
+si falta alguno lo dice por nombre: enterarse de que falta `stop_times.txt`
+después de cargar el CSV de viajes cuesta varios minutos de trabajo tirado.
+
 ## Configuración
 
 La configuración está separada en dos según a quién pertenece cada valor.

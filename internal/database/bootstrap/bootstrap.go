@@ -237,7 +237,15 @@ func (e *executor) checkFiles() error {
 	}
 	for _, path := range paths {
 		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("falta un archivo de datos: %w", err)
+			// Los dos archivos pesados no se versionan —pasan el límite de
+			// 100 MB de GitHub—, así que en un clon nuevo faltan y el error
+			// tiene que decir qué hacer en vez de un "no such file" pelado.
+			return fmt.Errorf(
+				"falta un archivo de datos (%w). "+
+					"Los archivos que no se versionan se consiguen aparte: "+
+					"ver \"Datos de entrada\" en el README",
+				err,
+			)
 		}
 	}
 	return nil
