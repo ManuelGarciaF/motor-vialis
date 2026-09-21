@@ -43,28 +43,49 @@ func AccessibilityCalculator() demand.AccessibilityCalculator {
 
 // Detour model limits determine which route variants are operable.
 const (
-	DetourForbiddenCorridorMeters  = 5.0
-	DetourForcedStopRadiusMeters   = 20.0
-	DetourOptionalStopRadiusMeters = 500.0
-	DetourSearchRadiusMeters       = 1000.0
-	DetourMaximumCutPositions      = 10_000
-	DetourMaximumCutLengthMeters   = 20_000.0
-	DetourMaximumTrafficTiles      = 32
-	DetourTrafficZoom              = 14
+	DetourForbiddenCorridorMeters          = 5.0
+	DetourForcedStopRadiusMeters           = 20.0
+	DetourOptionalStopRadiusMeters         = 500.0
+	DetourSearchRadiusMeters               = 1000.0
+	DetourMaximumCutPositions              = 10_000
+	DetourMaximumCutLengthMeters           = 20_000.0
+	DetourMaximumTrafficTiles              = 32
+	DetourTrafficZoom                      = 14
+	DetourTrafficMatchRadiusMeters         = 15.0
+	DetourTrafficDirectionToleranceDegrees = 45.0
+	DetourTrafficEstimateRadiusMeters      = 300.0
+	DetourTrafficEstimateMinimumSamples    = 3
+	DetourTrafficEstimateMaximumSamples    = 5
+	DetourPointDirectionToleranceDegrees   = 60.0
+
+	TomTomTrafficTTL          = 30 * time.Minute
+	TomTomRequestTimeout      = 10 * time.Second
+	TomTomRequestsPerSecond   = 10
+	TomTomCacheEntries        = 256
+	TomTomCacheBytes          = 16 << 20
+	TomTomMaximumTileBytes    = 20 << 20
+	TomTomMaximumTileFeatures = 100_000
+	TomTomTileMargin          = 0.1
 )
 
 // DetourPolicy returns the geographic thresholds and defensive limits used by
 // RF05.
 func DetourPolicy() detour.Policy {
 	return detour.Policy{
-		ForbiddenCorridorMeters:  DetourForbiddenCorridorMeters,
-		ForcedStopRadiusMeters:   DetourForcedStopRadiusMeters,
-		OptionalStopRadiusMeters: DetourOptionalStopRadiusMeters,
-		SearchRadiusMeters:       DetourSearchRadiusMeters,
-		MaximumCutPositions:      DetourMaximumCutPositions,
-		MaximumCutLengthMeters:   DetourMaximumCutLengthMeters,
-		MaximumTrafficTiles:      DetourMaximumTrafficTiles,
-		TrafficZoom:              DetourTrafficZoom,
+		ForbiddenCorridorMeters:          DetourForbiddenCorridorMeters,
+		ForcedStopRadiusMeters:           DetourForcedStopRadiusMeters,
+		OptionalStopRadiusMeters:         DetourOptionalStopRadiusMeters,
+		SearchRadiusMeters:               DetourSearchRadiusMeters,
+		MaximumCutPositions:              DetourMaximumCutPositions,
+		MaximumCutLengthMeters:           DetourMaximumCutLengthMeters,
+		MaximumTrafficTiles:              DetourMaximumTrafficTiles,
+		TrafficZoom:                      DetourTrafficZoom,
+		TrafficMatchRadiusMeters:         DetourTrafficMatchRadiusMeters,
+		TrafficDirectionToleranceDegrees: DetourTrafficDirectionToleranceDegrees,
+		TrafficEstimateRadiusMeters:      DetourTrafficEstimateRadiusMeters,
+		TrafficEstimateMinimumSamples:    DetourTrafficEstimateMinimumSamples,
+		TrafficEstimateMaximumSamples:    DetourTrafficEstimateMaximumSamples,
+		PointDirectionToleranceDegrees:   DetourPointDirectionToleranceDegrees,
 	}
 }
 

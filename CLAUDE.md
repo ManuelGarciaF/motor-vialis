@@ -61,10 +61,11 @@ cmd/api, cmd/simulation-test        entry points; flags and transport, no logic
 internal/app                        composition root: NewSimulationService(),
                                      NewLinesService()
 internal/httpapi                    HTTP handlers (/lines, /simulations,
-                                     /comparisons); see docs/openapi.yaml
+                                     /comparisons, /detours); see docs/openapi.yaml
 internal/lines                      reads stored GTFS lines back out as routes
 internal/simulation                 orchestrator: Service.Simulate()
 internal/simulation/{demand,traveltime,revenue}   estimators (pure domain logic)
+internal/simulation/detour          RF05 cut analysis, selection, reconstruction
 internal/simulation/route           shared Route/Position/LineString model + Validate()
 internal/database/postgres          repositories: DB-backed implementations of
                                      each estimator's Repository interface

@@ -1380,10 +1380,10 @@ Además:
 
 ## 13. Desvíos por cortes
 
-> **Estado:** diseño aprobado, todavía no implementado. Esta sección describe
-> cómo debe funcionar el análisis de desvíos; el resto del documento describe
-> funcionamiento vigente. La nota se retira cuando el cálculo esté disponible.
-> El orden de trabajo está en [`plan_rf05_desvios.md`](plan_rf05_desvios.md).
+> **Estado:** dominio, proveedor de tráfico, repositorio pgRouting, servicio Go y
+> `POST /detours` implementados. Los casos reales, la demo y las mediciones
+> operativas corresponden a la fase 6 de
+> [`plan_rf05_desvios.md`](plan_rf05_desvios.md).
 
 Una calle cortada no cambia el diseño de una línea, pero le impide recorrerla.
 Cuando eso ocurre la pregunta deja de ser "¿conviene esta ruta?" y pasa a ser
@@ -1473,7 +1473,11 @@ un desvío local aceptable para el MVP.
 
 Cuando el límite corta un `PathToNext` por la mitad, se conservan su prefijo y
 su sufijo originales y sólo se reemplaza la porción interior. Los puntos donde
-la ruta cruza el límite actúan como anclas del camino nuevo.
+la ruta cruza el límite actúan como anclas del camino nuevo. Al proyectar una
+parada o ancla sobre la red puede aparecer una separación por las distintas
+versiones de OSM. La geometría incluye explícitamente ese conector y sólo lo
+acepta si permanece dentro del área de búsqueda y no cruza el corredor
+prohibido; no deja un salto implícito al coser ambos trazados.
 
 Esa distinción es la que mantiene interpretable el resultado: como todo lo demás
 queda igual, la diferencia entre la variante y la ruta original es atribuible al
@@ -1595,6 +1599,10 @@ lugar de aproximar:
   variante distinta de la solicitada.
 - **Quedan menos de dos paradas cubiertas.** La ruta deja de existir como
   recorrido y no hay nada que evaluar.
+- **La topología conecta pero el tráfico no.** Se puede consultar el mismo
+  subgrafo con sus costos OSM sólo para distinguir este caso de un aislamiento
+  real. Se informa cobertura de tráfico insuficiente; ese camino diagnóstico
+  nunca se devuelve ni participa de la selección.
 
 ### 13.9. Limitaciones
 

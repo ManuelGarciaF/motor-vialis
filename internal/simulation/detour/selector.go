@@ -7,6 +7,11 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 )
 
+// pgrouting can split the same physical path at a virtual stop, changing the
+// order of floating-point additions. Differences below one nanosecond are
+// numerical noise, not a meaningful traffic-time advantage.
+const travelTimeTieToleranceSeconds = 1e-9
+
 type selectionState struct {
 	kept        []int
 	connections []Connection
@@ -177,8 +182,10 @@ func statePrecedes(
 ) bool {
 	candidateOmitted := consideredStops - len(candidate.kept)
 	currentOmitted := consideredStops - len(current.kept)
+	secondsDiffer := math.Abs(candidate.seconds-current.seconds) >
+		travelTimeTieToleranceSeconds
 	if criterion == CriterionShortestTime {
-		if candidate.seconds != current.seconds {
+		if secondsDiffer {
 			return candidate.seconds < current.seconds
 		}
 		if candidateOmitted != currentOmitted {
@@ -188,7 +195,7 @@ func statePrecedes(
 		if candidateOmitted != currentOmitted {
 			return candidateOmitted < currentOmitted
 		}
-		if candidate.seconds != current.seconds {
+		if secondsDiffer {
 			return candidate.seconds < current.seconds
 		}
 	}

@@ -79,6 +79,23 @@ func TestSelectAllowsOptionalTerminalStopsToBeOmitted(t *testing.T) {
 	}
 }
 
+func TestSelectTreatsFloatingPointAdditionNoiseAsATie(t *testing.T) {
+	stops := classified(StopRequired, StopOptional, StopRequired)
+	connections := []Connection{
+		connection(0, 1, 0.1, 1),
+		connection(1, 2, 0.2, 2),
+		connection(0, 2, 0.3, 1, 2),
+	}
+
+	got, err := Select(stops, connections, CriterionShortestTime)
+	if err != nil {
+		t.Fatalf("Select returned error: %v", err)
+	}
+	if !reflect.DeepEqual(got.KeptStopOrders, []int{0, 1, 2}) {
+		t.Fatalf("kept = %v, want all stops for numerically equal paths", got.KeptStopOrders)
+	}
+}
+
 func TestSelectUsesStableEdgeIDTieBreak(t *testing.T) {
 	stops := classified(StopRequired, StopRequired)
 	connections := []Connection{

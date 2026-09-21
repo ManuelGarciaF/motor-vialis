@@ -116,14 +116,20 @@ func TestDistanceToSegmentUsesEndpointOutsideArc(t *testing.T) {
 
 func testPolicy() Policy {
 	return Policy{
-		ForbiddenCorridorMeters:  5,
-		ForcedStopRadiusMeters:   20,
-		OptionalStopRadiusMeters: 500,
-		SearchRadiusMeters:       1000,
-		MaximumCutPositions:      10_000,
-		MaximumCutLengthMeters:   20_000,
-		MaximumTrafficTiles:      32,
-		TrafficZoom:              14,
+		ForbiddenCorridorMeters:          5,
+		ForcedStopRadiusMeters:           20,
+		OptionalStopRadiusMeters:         500,
+		SearchRadiusMeters:               1000,
+		MaximumCutPositions:              10_000,
+		MaximumCutLengthMeters:           20_000,
+		MaximumTrafficTiles:              32,
+		TrafficZoom:                      14,
+		TrafficMatchRadiusMeters:         15,
+		TrafficDirectionToleranceDegrees: 45,
+		TrafficEstimateRadiusMeters:      300,
+		TrafficEstimateMinimumSamples:    3,
+		TrafficEstimateMaximumSamples:    5,
+		PointDirectionToleranceDegrees:   60,
 	}
 }
 

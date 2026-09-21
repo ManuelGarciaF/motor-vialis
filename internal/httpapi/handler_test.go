@@ -10,6 +10,7 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/httpapi"
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/detour"
 )
 
 type fakeSimulator struct {
@@ -40,6 +41,22 @@ func (comparator *fakeComparator) Compare(
 	comparator.calls++
 	comparator.received = input
 	return comparator.result, comparator.err
+}
+
+type fakeDetourPlanner struct {
+	result   detour.Result
+	err      error
+	received detour.Input
+	calls    int
+}
+
+func (planner *fakeDetourPlanner) Plan(
+	_ context.Context,
+	input detour.Input,
+) (detour.Result, error) {
+	planner.calls++
+	planner.received = input
+	return planner.result, planner.err
 }
 
 type fakeLines struct {
@@ -79,11 +96,21 @@ func newTestRouterWithAll(
 	comparator httpapi.Comparator,
 	storedLines httpapi.Lines,
 ) http.Handler {
+	return newTestRouterWithDetours(simulator, comparator, &fakeDetourPlanner{}, storedLines)
+}
+
+func newTestRouterWithDetours(
+	simulator httpapi.Simulator,
+	comparator httpapi.Comparator,
+	detours httpapi.DetourPlanner,
+	storedLines httpapi.Lines,
+) http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return httpapi.NewHandler(
 		logger,
 		simulator,
 		comparator,
+		detours,
 		storedLines,
 		5*time.Second,
 	).Routes()

@@ -55,13 +55,6 @@ type Connection struct {
 	Path          route.LineString
 }
 
-// RoutingInput is the domain request passed to the road-network repository.
-type RoutingInput struct {
-	Route route.Route
-	Cut   Cut
-	Stops []ClassifiedStop
-}
-
 // Selection is the winning path through the ordered stop DAG.
 type Selection struct {
 	KeptStopOrders    []int
@@ -70,14 +63,9 @@ type Selection struct {
 	Connections       []Connection
 }
 
-// Plan contains the stop classification and selected path for one request.
-type Plan struct {
-	Stops     []ClassifiedStop
-	Selection Selection
-}
-
-// Repository supplies road-graph coverage and paths between ordered stops.
+// Repository analyzes a cut against the active graph and calculates local
+// paths using current traffic costs.
 type Repository interface {
-	CutIntersectsGraph(ctx context.Context, cut Cut) (bool, error)
-	FindConnections(ctx context.Context, input RoutingInput) ([]Connection, error)
+	Analyze(context.Context, route.Route, Cut, Policy) (Analysis, error)
+	Route(context.Context, RoutingRequest, Policy) (RoutingResult, error)
 }

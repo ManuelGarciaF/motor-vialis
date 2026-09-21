@@ -3,15 +3,18 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/detour"
 )
 
-// maximumRequestBytes leaves ample room for two large routes without allowing unbounded bodies.
+// maximumRequestBytes leaves ample room for route calculations without allowing unbounded bodies.
 const maximumRequestBytes = 4 << 20
 
 // Simulator runs a full simulation for one route.
@@ -27,6 +30,11 @@ type Comparator interface {
 	) (simulation.Comparison, error)
 }
 
+// DetourPlanner builds and evaluates a temporary route around one road cut.
+type DetourPlanner interface {
+	Plan(ctx context.Context, input detour.Input) (detour.Result, error)
+}
+
 // Lines reads stored GTFS lines that can serve as proposal baselines.
 type Lines interface {
 	List(ctx context.Context, query lines.Query) (lines.Page, error)
@@ -38,6 +46,7 @@ type Handler struct {
 	logger     *slog.Logger
 	simulator  Simulator
 	comparator Comparator
+	detours    DetourPlanner
 	lines      Lines
 	timeout    time.Duration
 }
@@ -46,6 +55,7 @@ func NewHandler(
 	logger *slog.Logger,
 	simulator Simulator,
 	comparator Comparator,
+	detours DetourPlanner,
 	storedLines Lines,
 	timeout time.Duration,
 ) *Handler {
@@ -53,6 +63,7 @@ func NewHandler(
 		logger:     logger,
 		simulator:  simulator,
 		comparator: comparator,
+		detours:    detours,
 		lines:      storedLines,
 		timeout:    timeout,
 	}
@@ -64,6 +75,7 @@ func (handler *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /lines/{id}", handler.getLine)
 	mux.HandleFunc("POST /simulations", handler.createSimulation)
 	mux.HandleFunc("POST /comparisons", handler.createComparison)
+	mux.HandleFunc("POST /detours", handler.createDetour)
 	return handler.recoverPanic(handler.logRequest(mux))
 }
 
@@ -80,7 +92,17 @@ func (handler *Handler) withTimeout(
 func decodeBody(request *http.Request, target any) error {
 	decoder := json.NewDecoder(http.MaxBytesReader(nil, request.Body, maximumRequestBytes))
 	decoder.DisallowUnknownFields()
-	return decoder.Decode(target)
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("body must contain exactly one JSON value")
+		}
+		return err
+	}
+	return nil
 }
 
 func (handler *Handler) logRequest(next http.Handler) http.Handler {

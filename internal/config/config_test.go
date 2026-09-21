@@ -56,6 +56,16 @@ func TestLinesPolicyIsCoherent(t *testing.T) {
 	}
 }
 
+func TestTomTomPolicyIsCoherent(t *testing.T) {
+	if TomTomTrafficTTL <= 0 || TomTomRequestTimeout <= 0 ||
+		TomTomCacheEntries <= 0 || TomTomCacheBytes <= 0 ||
+		TomTomMaximumTileBytes <= 0 || TomTomRequestsPerSecond <= 0 ||
+		TomTomMaximumTileFeatures <= 0 ||
+		TomTomTileMargin < 0 || TomTomTileMargin > 0.1 {
+		t.Fatalf("invalid TomTom policy")
+	}
+}
+
 // The handler needs time to report a simulation timeout before writes close.
 func TestSimulationTimeoutLeavesRoomToRespond(t *testing.T) {
 	if SimulationTimeout >= WriteTimeout {

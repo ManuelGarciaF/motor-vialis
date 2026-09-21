@@ -8,14 +8,14 @@ La configuración está separada en dos según a quién pertenece cada valor.
 
 ### Entorno: lo que define el despliegue
 
-La conexión y dirección HTTP son opcionales; la credencial TomTom será
-obligatoria únicamente para el spike y RF05:
+La conexión y dirección HTTP son opcionales. La API exige la credencial TomTom
+en el arranque porque expone RF05 junto con los demás endpoints:
 
 | Variable | Predeterminado | Descripción |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/vialis` | Conexión a PostgreSQL. |
 | `HTTP_ADDRESS` | `:8080` | Dirección de escucha del servicio. |
-| `TOMTOM_API_KEY` | — | Credencial secreta para Traffic Flow; no afecta endpoints existentes. |
+| `TOMTOM_API_KEY` | — | Credencial secreta obligatoria para iniciar la API y consultar Traffic Flow en RF05. |
 
 Sin las dos primeras, el motor corre contra la base local que crea
 `sql/init_db.sql`.
@@ -127,8 +127,9 @@ simular con supuestos distintos.
 go run ./cmd/api
 ```
 
-Al iniciar, el proceso crea un pool de conexiones y comprueba que PostgreSQL esté
-disponible. Si no puede conectarse, finaliza con error.
+Al iniciar, el proceso exige `TOMTOM_API_KEY`, crea el cliente/cache de tráfico,
+abre un pool de conexiones y comprueba que PostgreSQL esté disponible. Si falta
+la key o la base no responde, finaliza con error.
 
 ## Endpoints
 
@@ -145,6 +146,9 @@ El contrato completo está en `docs/openapi.yaml`.
   agrega quien simula.
 - `POST /simulations`: simula una ruta propuesta.
 - `POST /comparisons`: simula dos rutas y devuelve la diferencia entre ambas.
+- `POST /detours`: recibe `route`, un único `cut` GeoJSON `LineString` y
+  `criterion` (`MENOR_TIEMPO` o `MENOR_PARADAS_PERDIDAS`); devuelve la variante,
+  sus paradas no cubiertas, la comparación y la trazabilidad de tráfico/grafo.
 
 Las líneas propias de un usuario las persiste otro servicio: acá sólo se leen
 las que cargó la ETL de GTFS.

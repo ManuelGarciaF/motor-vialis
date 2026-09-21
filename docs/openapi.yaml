@@ -5,7 +5,7 @@ info:
     Simula una línea de transporte propuesta: demanda potencial, distancia,
     tiempo de viaje y recaudación potencial. Ver `docs/arquitectura_motor.md`
     para la semántica de cada cálculo.
-  version: "1.0.0"
+  version: "1.1.0"
 servers:
   - url: http://localhost:8080
     description: Local
@@ -287,6 +287,90 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /detours:
+    post:
+      operationId: createDetour
+      summary: Genera y evalúa un desvío temporal
+      description: >
+        Recibe una ruta completa, un único corte GeoJSON LineString y un
+        criterio lexicográfico. Busca caminos dentro de un kilómetro del corte
+        con tráfico TomTom actual, reconstruye una variante válida y la compara
+        con la ruta original mediante el modelo estable de simulación.
+
+
+        El tiempo de tráfico sólo decide la variante. Los tiempos contenidos en
+        `comparison` siguen siendo estimaciones comerciales GTFS.
+      tags: [detours]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DetourRequest"
+            example:
+              route:
+                jurisdiction: caba
+                stops:
+                  - id: A
+                    position: {latitude: -34.6000, longitude: -58.3800}
+                    pathToNext:
+                      type: LineString
+                      coordinates:
+                        - [-58.3800, -34.6000]
+                        - [-58.3810, -34.6010]
+                  - id: B
+                    position: {latitude: -34.6010, longitude: -58.3810}
+              cut:
+                type: LineString
+                coordinates:
+                  - [-58.3804, -34.6004]
+                  - [-58.3806, -34.6006]
+              criterion: MENOR_TIEMPO
+      responses:
+        "200":
+          description: Variante completa, paradas no cubiertas, comparación y trazabilidad.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetourResponse"
+        "400":
+          description: >
+            JSON, ruta, corte o criterio inválido; corte fuera del alcance del
+            grafo; o límite defensivo de tiles excedido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: >
+            El pedido es válido pero el corte no afecta la ruta, no coincide
+            con una calle, no permite conservar una parada obligatoria o no
+            existe un desvío dentro del área local.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: >
+            TomTom no está disponible, el snapshot está vencido o su cobertura
+            no alcanza para construir un camino con costos actuales.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "504":
+          description: El cálculo superó `config.SimulationTimeout`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Error interno de infraestructura o variante generada inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 components:
   schemas:
     Error:
@@ -305,6 +389,17 @@ components:
                   not_found,
                   line_not_simulable,
                   timeout,
+                  invalid_cut,
+                  cut_outside_graph,
+                  cut_not_matched,
+                  route_not_affected,
+                  anchor_not_matched,
+                  required_stop_not_matched,
+                  no_detour_within_search_area,
+                  traffic_unavailable,
+                  traffic_stale,
+                  traffic_coverage_insufficient,
+                  traffic_tile_limit_exceeded,
                   internal_error,
                 ]
             field:
@@ -767,3 +862,163 @@ components:
           $ref: "#/components/schemas/SimulationResult"
         delta:
           $ref: "#/components/schemas/Delta"
+
+    DetourCriterion:
+      type: string
+      enum: [MENOR_TIEMPO, MENOR_PARADAS_PERDIDAS]
+      description: >
+        Objetivo lexicográfico. MENOR_TIEMPO desempata por menos paradas
+        perdidas; MENOR_PARADAS_PERDIDAS desempata por menor tiempo de tráfico.
+
+    DetourRequest:
+      type: object
+      required: [route, cut, criterion]
+      additionalProperties: false
+      properties:
+        route:
+          $ref: "#/components/schemas/Route"
+        cut:
+          allOf:
+            - $ref: "#/components/schemas/LineString"
+          description: >
+            Único corte vigente para esta consulta. No expresa sentido,
+            horarios ni fechas y se interpreta como una barrera.
+        criterion:
+          $ref: "#/components/schemas/DetourCriterion"
+
+    UncoveredStopReason:
+      type: string
+      enum: [cut_reached, criterion_omission]
+
+    UncoveredStop:
+      type: object
+      required: [stopOrder, stopId, reason, distanceToCutMeters, baseline]
+      properties:
+        stopOrder:
+          type: integer
+          description: Orden de la parada en la ruta original, desde cero.
+        stopId:
+          type: string
+        reason:
+          allOf:
+            - $ref: "#/components/schemas/UncoveredStopReason"
+          description: >
+            cut_reached indica que la parada estaba a 20 m o menos del corte y
+            era forzosamente inaccesible. criterion_omission indica que estaba
+            dentro del radio opcional y el criterio decidió saltearla.
+        distanceToCutMeters:
+          type: number
+          format: double
+        baseline:
+          allOf:
+            - $ref: "#/components/schemas/StopResult"
+          description: >
+            Aporte que la parada tenía en la simulación original. No es una
+            pérdida individual atribuible: la pérdida efectiva está en
+            comparison.delta porque la demanda se reasigna en la variante.
+
+    DetourDecisionTrace:
+      type: object
+      required: [criterion, trafficTravelSeconds]
+      properties:
+        criterion:
+          $ref: "#/components/schemas/DetourCriterion"
+        trafficTravelSeconds:
+          type: number
+          format: double
+          description: >
+            Tiempo TomTom usado para elegir los caminos locales. No es el tiempo
+            comercial GTFS informado por comparison.
+
+    DetourTrafficTrace:
+      type: object
+      required: [fetchedAt, trafficAgeSeconds, zoom, tileCount, cacheHits]
+      properties:
+        fetchedAt:
+          type: string
+          format: date-time
+        trafficAgeSeconds:
+          type: number
+          format: double
+          minimum: 0
+        zoom:
+          type: integer
+        tileCount:
+          type: integer
+          minimum: 1
+        cacheHits:
+          type: integer
+          minimum: 0
+
+    DetourGraphTrace:
+      type: object
+      required:
+        [candidateEdges, blockedEdges, forwardDirectEdges, reverseDirectEdges,
+         forwardEstimatedEdges, reverseEstimatedEdges]
+      properties:
+        candidateEdges:
+          type: integer
+        blockedEdges:
+          type: integer
+        forwardDirectEdges:
+          type: integer
+        reverseDirectEdges:
+          type: integer
+        forwardEstimatedEdges:
+          type: integer
+        reverseEstimatedEdges:
+          type: integer
+
+    DetourStopTrace:
+      type: object
+      required: [forced, optional, omitted]
+      properties:
+        forced:
+          type: integer
+        optional:
+          type: integer
+        omitted:
+          type: integer
+
+    DetourTrace:
+      type: object
+      required:
+        [decision, graphLoadId, blockedStreetIds, selectedEdgeIds, traffic,
+         graph, stops]
+      properties:
+        decision:
+          $ref: "#/components/schemas/DetourDecisionTrace"
+        graphLoadId:
+          type: integer
+          format: int64
+        blockedStreetIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+        selectedEdgeIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+        traffic:
+          $ref: "#/components/schemas/DetourTrafficTrace"
+        graph:
+          $ref: "#/components/schemas/DetourGraphTrace"
+        stops:
+          $ref: "#/components/schemas/DetourStopTrace"
+
+    DetourResponse:
+      type: object
+      required: [variant, uncoveredStops, comparison, trace]
+      properties:
+        variant:
+          $ref: "#/components/schemas/Route"
+        uncoveredStops:
+          type: array
+          items:
+            $ref: "#/components/schemas/UncoveredStop"
+        comparison:
+          $ref: "#/components/schemas/Comparison"
+        trace:
+          $ref: "#/components/schemas/DetourTrace"
