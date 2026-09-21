@@ -19,6 +19,9 @@ var listLinesSQL string
 //go:embed find_line.sql
 var findLineSQL string
 
+//go:embed find_similar_lines.sql
+var findSimilarLinesSQL string
+
 // LinesRepository reads the stored GTFS lines.
 type LinesRepository struct {
 	query queryFunc
@@ -194,6 +197,94 @@ func (repository *LinesRepository) FindLine(
 
 	stored.Summary.StopCount = len(stored.Stops)
 	return stored, nil
+}
+
+// FindSimilar returns the stored lines sharing a corridor with the drawn path,
+// ranked and cut to the query's limit by the database.
+//
+// The ranking and the limit stay in SQL rather than being applied to whatever
+// the database happened to return: the limit only means anything once the rows
+// are ordered, and ordering a truncated set is not the same list.
+func (repository *LinesRepository) FindSimilar(
+	ctx context.Context,
+	query lines.SimilarityQuery,
+) ([]lines.Similarity, error) {
+	encodedPath, err := json.Marshal(query.Path)
+	if err != nil {
+		return nil, fmt.Errorf("encode drawn path: %w", err)
+	}
+
+	rows, err := repository.query(
+		ctx,
+		findSimilarLinesSQL,
+		string(encodedPath),
+		query.Origin.Longitude,
+		query.Origin.Latitude,
+		query.Destination.Longitude,
+		query.Destination.Latitude,
+		query.CorridorToleranceMeters,
+		query.MinimumCoverage,
+		query.Limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query similar stored lines: %w", err)
+	}
+	defer rows.Close()
+
+	var similarities []lines.Similarity
+	for rows.Next() {
+		var (
+			similarity   lines.Similarity
+			totalMinutes sql.NullInt64
+			flow         sql.NullInt64
+			revenue      sql.NullInt64
+		)
+		if err := rows.Scan(
+			&similarity.Line.ID,
+			&similarity.Line.Line,
+			&similarity.Line.Branch,
+			&similarity.Line.PublicName,
+			&similarity.Line.DirectionID,
+			&similarity.Line.Destination,
+			&similarity.Line.Description,
+			&similarity.Line.DistanceMeters,
+			&similarity.Line.StopCount,
+			&similarity.CoverageOfProposed,
+			&similarity.CoverageOfStored,
+			&similarity.OriginDistanceMeters,
+			&similarity.DestinationDistanceMeters,
+			&totalMinutes,
+			&flow,
+			&revenue,
+		); err != nil {
+			return nil, fmt.Errorf("scan similar stored line: %w", err)
+		}
+
+		// A NULL metric stays absent all the way up. The columns are nullable
+		// because the pipeline does not have a ridership or a revenue figure
+		// for every line, and turning "nobody measured this" into 0 would let
+		// it be read as "this line carries nobody".
+		similarity.Metrics = lines.StoredMetrics{
+			DistanceMeters: similarity.Line.DistanceMeters,
+		}
+		if totalMinutes.Valid {
+			minutes := int(totalMinutes.Int64)
+			similarity.Metrics.TotalMinutes = &minutes
+		}
+		if flow.Valid {
+			passengers := int(flow.Int64)
+			similarity.Metrics.PassengerFlow = &passengers
+		}
+		if revenue.Valid {
+			amount := revenue.Int64
+			similarity.Metrics.Revenue = &amount
+		}
+		similarities = append(similarities, similarity)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate similar stored lines: %w", err)
+	}
+	return similarities, nil
 }
 
 // escapeLikePattern neutralises the wildcards ILIKE would otherwise read in

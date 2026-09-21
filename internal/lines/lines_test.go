@@ -11,9 +11,13 @@ import (
 
 func testPolicy() lines.Policy {
 	return lines.Policy{
-		AlignmentToleranceMeters: 250,
-		DefaultPageSize:          50,
-		MaximumPageSize:          200,
+		AlignmentToleranceMeters:          250,
+		DefaultPageSize:                   50,
+		MaximumPageSize:                   200,
+		SimilarityCorridorToleranceMeters: 200,
+		SimilarityMinimumCoverage:         0.20,
+		SimilarityDefaultResultCount:      10,
+		SimilarityMaximumResultCount:      50,
 	}
 }
 
@@ -21,8 +25,12 @@ type fakeRepository struct {
 	summaries []lines.Summary
 	total     int
 	stored    lines.StoredLine
+	similar   []lines.Similarity
 	err       error
 	received  lines.Query
+	// receivedSimilarity records what the service asked the corridor search
+	// for, which is the part of the drawn route it decided to send.
+	receivedSimilarity lines.SimilarityQuery
 }
 
 func (repository *fakeRepository) ListSummaries(
@@ -38,6 +46,14 @@ func (repository *fakeRepository) FindLine(
 	_ int64,
 ) (lines.StoredLine, error) {
 	return repository.stored, repository.err
+}
+
+func (repository *fakeRepository) FindSimilar(
+	_ context.Context,
+	query lines.SimilarityQuery,
+) ([]lines.Similarity, error) {
+	repository.receivedSimilarity = query
+	return repository.similar, repository.err
 }
 
 func TestListAppliesTheDefaultPageSize(t *testing.T) {

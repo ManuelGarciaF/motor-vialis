@@ -168,6 +168,193 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /lines/similar:
+    post:
+      operationId: findSimilarLines
+      summary: Busca las líneas almacenadas que comparten corredor con una ruta dibujada
+      description: >
+        Responde "qué líneas existentes ya pasan por donde dibujé esto" sin
+        simular nada. Es el paso previo a `POST /comparisons`: señala la línea o
+        dos que vale la pena usar como baseline, y recién ahí conviene pagar el
+        costo de una simulación.
+
+
+        La similitud es solape de corredores medido como cobertura mutua, no
+        como intersección: dos trazados sobre la misma avenida, uno dibujado a
+        mano y otro venido de un `shape` GTFS, prácticamente nunca se cruzan en
+        un punto exacto. Cada línea se mide contra un corredor de
+        `config.SimilarityCorridorToleranceMeters` alrededor de la otra, y se
+        devuelven los dos números.
+
+
+        Las dos coberturas nunca se promedian en un único puntaje. Una ruta de
+        3 km apoyada entera sobre una línea de 40 km da 1.00 y 0.07, que
+        significa "lo que dibujaste es un fragmento de esa línea": un hallazgo
+        distinto del de dos líneas que se cubren 0.85 y 0.80, y que un solo
+        número borraría.
+
+
+        El orden va por la menor de las dos coberturas, así que una candidata
+        queda arriba sólo cuando se parece en ambos sentidos; los empates se
+        resuelven por la cobertura mayor y después por el id de la línea. Las
+        candidatas cuya cobertura mayor no alcanza
+        `config.SimilarityMinimumCoverage` quedan afuera: por debajo de eso las
+        dos líneas apenas se cruzan.
+
+
+        `route` no lleva `jurisdiction`, a diferencia de `POST /simulations`:
+        acá no se calcula ninguna tarifa, así que exigir una autoridad tarifaria
+        sólo forzaría un valor sin sentido dentro de una pregunta sobre
+        geometría. Una parada también puede omitir su `pathToNext`, que
+        `/simulations` exige: en ese caso se toma el segmento recto hasta la
+        siguiente, una aproximación razonable del corredor aunque sería una mala
+        descripción de un itinerario.
+      tags: [lines]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimilarLinesRequest"
+      responses:
+        "200":
+          description: >
+            La lista corta y ordenada. Una lista vacía es una respuesta y no una
+            falla: ninguna línea almacenada corre por ese corredor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Similarities"
+        "400":
+          description: >
+            Falta la ruta, está malformada o tiene menos de dos paradas, o
+            `limit` no es positivo. El `field` indica qué corregir, con las
+            mismas rutas de campo que usa `/simulations`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: validation_error
+                  field: route.stops
+                  message: "must contain at least two stops"
+        "504":
+          description: La búsqueda superó `config.SimulationTimeout`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Error de infraestructura.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /transfers:
+    get:
+      operationId: listCombinationRanking
+      summary: Lista las combinaciones de líneas más frecuentes
+      description: >
+        Responde qué pares de colectivos parece estar combinando la gente, y
+        cuántos viajes se le atribuyen a cada par. Es el paso previo a proponer
+        una línea directa sobre ese flujo.
+
+
+        Lo que la encuesta SUBE registra acota lo que este endpoint puede
+        afirmar. Un viaje es una fila con origen, destino, hora y cantidad de
+        etapas: no hay tabla de etapas, ni punto de trasbordo, ni identificador
+        de línea. Por eso "este viaje necesitó combinar" se sabe —tuvo más de
+        una etapa— y "estas dos líneas lo llevaron" no.
+
+
+        El ranking salva esa distancia con un supuesto declarado y no con una
+        medición: cada flujo origen-destino se reparte en partes iguales entre
+        las combinaciones que podrían haberlo servido. Un flujo de 4.000 viajes
+        con 4 combinaciones factibles aporta 1.000 a cada una. Por eso
+        `averageAlternatives` viaja al lado de cada número y existe
+        `weakEvidence`: el mismo valor repartido entre dos candidatos es una
+        afirmación fuerte y repartido entre treinta es una conjetura, y nada
+        más en la respuesta los distingue.
+
+
+        Se descarta todo par de celdas que una sola línea ya cubra de punta a
+        punta, en el sentido correcto. Si una línea llega del origen al
+        destino, ese trasbordo no era obligatorio y el flujo no habla de un
+        hueco de red: hablará de frecuencia o de tiempo, que son otras
+        preguntas.
+
+
+        El cálculo entero —el reparto, el descarte y el conteo de
+        alternativas— ocurre en `sql/viajes/combinaciones_lineas.sql`, fuera
+        del request. Esto es una lectura barata sobre un agregado que ya
+        existe, y por eso puede paginar con un total exacto.
+      tags: [transfers]
+      parameters:
+        - name: hour
+          in: query
+          required: false
+          description: >
+            Banda horaria, como la informa `vialis.viajes.rango_horario`: la
+            hora del día del viaje. Ausente significa el día entero, que es la
+            vista por defecto del ranking y una respuesta legítima, no un
+            fallback. Un valor presente pero inutilizable se rechaza en vez de
+            ensancharse al día, porque un cliente que calcula mal la hora
+            recibiría si no una respuesta plausible a la pregunta equivocada.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 23
+          example: 9
+        - name: limit
+          in: query
+          required: false
+          description: >
+            Filas por página. Ausente, se usa
+            `config.TransfersDefaultPageSize`; por encima de
+            `config.TransfersMaximumPageSize` se recorta a ese máximo.
+          schema:
+            type: integer
+            minimum: 1
+          example: 10
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: Una página del ranking, de la combinación más grande a la más chica.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransferRanking"
+        "400":
+          description: Parámetro inválido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: validation_error
+                  field: hour
+                  message: "must be an integer between 0 and 23"
+        "504":
+          description: La consulta superó `config.SimulationTimeout`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Error de infraestructura.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /simulations:
     post:
       operationId: createSimulation
@@ -373,6 +560,180 @@ paths:
 
 components:
   schemas:
+    TransferRanking:
+      type: object
+      description: >
+        Una ventana sobre el ranking de combinaciones. A diferencia de
+        `Similarities` y como `LinePage`, trae total y offset: el ranking es una
+        tabla que se recorre, y precalcularlo es justamente lo que hace que
+        contarlo no cueste nada.
+      required: [combinations, total, limit, offset, maximumEstimatedTrips]
+      properties:
+        combinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Combination"
+        hour:
+          type: integer
+          minimum: 0
+          maximum: 23
+          description: >
+            La banda horaria que describe esta página. Se omite cuando la
+            página es del día entero.
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+        maximumEstimatedTrips:
+          type: number
+          format: double
+          description: >
+            La estimación más grande del ranking completo, no de esta página.
+            Es contra lo que un cliente mide la gravedad de cada fila; leerla de
+            la página haría que la segunda se pintara contra su propia primera
+            fila.
+
+    Combination:
+      type: object
+      description: Un par de líneas rankeado.
+      required:
+        [first, second, estimatedTrips, averageAlternatives, weakEvidence,
+         peakHour, transfer, topFlows]
+      properties:
+        first:
+          $ref: "#/components/schemas/TransferLeg"
+        second:
+          $ref: "#/components/schemas/TransferLeg"
+        estimatedTrips:
+          type: number
+          format: double
+          description: >
+            Volumen atribuido, sumado sobre todos los flujos que esta
+            combinación podría servir. Es una estimación bajo el reparto
+            descrito arriba, nunca una medición.
+        averageAlternatives:
+          type: number
+          format: double
+          description: >
+            Entre cuántas combinaciones factibles se repartieron los flujos de
+            los que salió ese número, ponderado por volumen. Lo que importa no
+            es cuántos flujos aportaron sino cuánta gente.
+        weakEvidence:
+          type: boolean
+          description: >
+            Marca una estimación repartida entre tantos candidatos que el par no
+            debería leerse como una afirmación. El umbral es
+            `config.TransfersWeakEvidenceAlternatives`, y vive en el motor para
+            que todos los clientes coincidan en cuándo el motor está dispuesto a
+            afirmar algo.
+        peakHour:
+          type: integer
+          minimum: 0
+          maximum: 23
+        transfer:
+          $ref: "#/components/schemas/TransferStop"
+        topFlows:
+          type: array
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/TransferFlow"
+
+    TransferLeg:
+      type: object
+      description: Uno de los dos colectivos de la combinación.
+      required: [lineId, line, publicName, directionId]
+      properties:
+        lineId:
+          type: integer
+          format: int64
+          description: >
+            `recorridos.id_recorrido`, el mismo id que aceptan `GET /lines/{id}`
+            y las comparaciones.
+        line:
+          type: string
+        branch:
+          type: string
+          description: Se omite cuando la línea no tiene ramal.
+        publicName:
+          type: string
+        directionId:
+          type: integer
+          enum: [0, 1]
+
+    TransferStop:
+      type: object
+      description: >
+        Dónde la combinación cambia de colectivo. Cuando las dos líneas paran en
+        la misma parada física, los dos nombres coinciden y `walkMeters` es 0.
+      required: [alightingStopName, boardingStopName, walkMeters, longitude, latitude]
+      properties:
+        alightingStopName:
+          type: string
+        boardingStopName:
+          type: string
+        walkMeters:
+          type: integer
+          minimum: 0
+        longitude:
+          type: number
+          format: double
+          description: Posición de la parada donde se toma el segundo colectivo.
+        latitude:
+          type: number
+          format: double
+
+    TransferFlow:
+      type: object
+      description: >
+        Un movimiento origen-destino atribuido a la combinación. Dice de dónde
+        sale la demanda que hay detrás del par de líneas.
+      required: [origin, destination, hour, estimatedTrips, alternatives]
+      properties:
+        origin:
+          $ref: "#/components/schemas/TransferCell"
+        destination:
+          $ref: "#/components/schemas/TransferCell"
+        hour:
+          type: integer
+          minimum: 0
+          maximum: 23
+        estimatedTrips:
+          type: number
+          format: double
+          description: >
+            La parte de este flujo que le tocó a la combinación después del
+            reparto, no el volumen entero del flujo: el resto fue a las otras
+            combinaciones factibles.
+        alternatives:
+          type: integer
+          minimum: 1
+          description: >
+            Entre cuántas combinaciones se repartió este flujo. Uno significa
+            que la red no dejaba otra forma de hacer ese viaje.
+
+    TransferCell:
+      type: object
+      description: >
+        Celda H3 de resolución 8. No se manda el polígono: un cliente puede
+        derivarlo del índice, y repetir siete coordenadas por celda dominaría la
+        respuesta.
+      required: [h3Index, longitude, latitude]
+      properties:
+        h3Index:
+          type: string
+        longitude:
+          type: number
+          format: double
+          description: >
+            `hexagonos_viajes.punto_maxima_concurrencia`, que es donde la gente
+            de esa celda realmente empieza o termina viajes, no el centro
+            geométrico del hexágono.
+        latitude:
+          type: number
+          format: double
+
     Error:
       type: object
       required: [error]
@@ -579,6 +940,136 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/LineStopDescription"
+
+    DrawnRoute:
+      type: object
+      description: >
+        Una ruta dibujada para contrastar contra las líneas almacenadas. Es un
+        `Route` con dos reglas relajadas, porque una búsqueda de corredores lee
+        menos que una simulación: no lleva `jurisdiction`, ya que no se calcula
+        ninguna tarifa, y `pathToNext` es opcional, porque una parada sin él se
+        une a la siguiente por el segmento recto entre ambas.
+      required: [stops]
+      properties:
+        stops:
+          type: array
+          minItems: 2
+          items:
+            $ref: "#/components/schemas/Stop"
+
+    SimilarLinesRequest:
+      type: object
+      required: [route]
+      properties:
+        route:
+          $ref: "#/components/schemas/DrawnRoute"
+        limit:
+          type: integer
+          minimum: 1
+          description: >
+            Cuántas coincidencias devolver. Si no se envía, vale
+            `config.SimilarityDefaultResultCount`; un pedido mayor se recorta a
+            `config.SimilarityMaximumResultCount` y la respuesta informa el
+            límite que realmente se aplicó. El cero y los negativos se rechazan
+            en vez de leerse como "usá el predeterminado", porque sólo pueden
+            ser un cliente calculando mal un tamaño.
+
+    StoredMetrics:
+      type: object
+      description: >
+        Lo que la ETL midió para la línea, tal como está guardado. Salvo la
+        distancia, todos los campos son opcionales, porque las columnas son
+        nulables y el proyecto no tiene esos datos para todas las líneas. Una
+        medición que falta se omite en vez de informarse como cero: "nadie lo
+        midió" y "vale cero" no son la misma afirmación.
+      required: [distanceMeters]
+      properties:
+        distanceMeters:
+          type: integer
+          description: Repite `line.distanceMeters`, para que la medición se lea junta.
+        totalMinutes:
+          type: integer
+          description: Tiempo total de recorrido de la línea.
+        passengerFlow:
+          type: integer
+          description: >
+            Caudal de pasajeros registrado. La ETL no documenta un período, así
+            que se pasa tal como está guardado, sin convertirlo en una tasa.
+        revenue:
+          type: integer
+          format: int64
+          description: >
+            `recorridos.ingreso_economico`, sin transformar. No se nombra en
+            centavos porque, a diferencia del cuadro tarifario, esa columna no
+            declara su unidad.
+
+    Similarity:
+      type: object
+      description: >
+        Una línea almacenada que comparte corredor con la ruta dibujada. Las dos
+        coberturas se informan por separado y nunca se promedian: responden
+        preguntas distintas, y un solo número borraría justamente la distinción
+        entre "lo que dibujaste es un fragmento de esa línea" y "son dos
+        versiones de la misma línea".
+      required:
+        - line
+        - coverageOfProposed
+        - coverageOfStored
+        - originDistanceMeters
+        - destinationDistanceMeters
+        - metrics
+      properties:
+        line:
+          $ref: "#/components/schemas/LineSummary"
+        coverageOfProposed:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: >
+            Fracción del largo de la ruta dibujada que corre dentro del corredor
+            de la línea almacenada.
+        coverageOfStored:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: >
+            Fracción del largo de la línea almacenada que corre dentro del
+            corredor de la ruta dibujada.
+        originDistanceMeters:
+          type: number
+          format: double
+          description: >
+            Distancia entre la primera parada de la ruta dibujada y la primera
+            de la línea almacenada. Es una señal secundaria: dos líneas pueden
+            compartir corredor casi todo su largo y aun así empezar en barrios
+            distintos.
+        destinationDistanceMeters:
+          type: number
+          format: double
+          description: Lo mismo entre las últimas paradas de cada una.
+        metrics:
+          $ref: "#/components/schemas/StoredMetrics"
+
+    Similarities:
+      type: object
+      description: >
+        A diferencia de `LinePage`, no trae `total` ni `offset`: es una lista
+        corta y ordenada para elegir una baseline, no una ventana que el cliente
+        recorre. Pedir más resultados ensancha la misma lista en vez de avanzar
+        sobre ella.
+      required: [lines, limit]
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/Similarity"
+        limit:
+          type: integer
+          description: >
+            El límite que se aplicó, ya recortado al máximo configurado, para
+            poder distinguir una lista corta de una truncada.
 
     DemandTotals:
       type: object

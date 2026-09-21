@@ -60,11 +60,13 @@ func (planner *fakeDetourPlanner) Plan(
 }
 
 type fakeLines struct {
-	page        lines.Page
-	detail      lines.Detail
-	err         error
-	received    lines.Query
-	requestedID int64
+	page               lines.Page
+	detail             lines.Detail
+	similar            lines.Similarities
+	err                error
+	received           lines.Query
+	requestedID        int64
+	receivedSimilarity lines.SimilarityRequest
 }
 
 func (stored *fakeLines) List(
@@ -78,6 +80,14 @@ func (stored *fakeLines) List(
 func (stored *fakeLines) Get(_ context.Context, id int64) (lines.Detail, error) {
 	stored.requestedID = id
 	return stored.detail, stored.err
+}
+
+func (stored *fakeLines) FindSimilar(
+	_ context.Context,
+	request lines.SimilarityRequest,
+) (lines.Similarities, error) {
+	stored.receivedSimilarity = request
+	return stored.similar, stored.err
 }
 
 func newTestRouter(simulator httpapi.Simulator) http.Handler {
@@ -105,6 +115,37 @@ func newTestRouterWithDetours(
 	detours httpapi.DetourPlanner,
 	storedLines httpapi.Lines,
 ) http.Handler {
+	return newTestRouterWithDetoursAndTransfers(
+		simulator,
+		comparator,
+		detours,
+		storedLines,
+		&fakeTransfers{},
+	)
+}
+
+func newTestRouterWithTransfers(
+	simulator httpapi.Simulator,
+	comparator httpapi.Comparator,
+	storedLines httpapi.Lines,
+	transfers httpapi.Transfers,
+) http.Handler {
+	return newTestRouterWithDetoursAndTransfers(
+		simulator,
+		comparator,
+		&fakeDetourPlanner{},
+		storedLines,
+		transfers,
+	)
+}
+
+func newTestRouterWithDetoursAndTransfers(
+	simulator httpapi.Simulator,
+	comparator httpapi.Comparator,
+	detours httpapi.DetourPlanner,
+	storedLines httpapi.Lines,
+	transfers httpapi.Transfers,
+) http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return httpapi.NewHandler(
 		logger,
@@ -112,6 +153,7 @@ func newTestRouterWithDetours(
 		comparator,
 		detours,
 		storedLines,
+		transfers,
 		5*time.Second,
 	).Routes()
 }

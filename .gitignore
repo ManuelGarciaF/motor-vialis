@@ -37,3 +37,14 @@ docker/*.dump
 .idea/
 .vscode/
 .agents/
+# Datos de entrada del pipeline.
+#
+# No se versionan: los tres pasan el límite de 100 MB de GitHub y entre los
+# tres son 2,4 GB, así que estaban volviendo impracticables el clon y el push.
+# Se bajan de sus fuentes públicas; ver "Datos de entrada" en el README.
+viajes_BAdata_20241016.csv
+colectivos-gtfs.zip
+colectivos-gtfs/stop_times.txt
+
+# Basura del Finder.
+.DS_Store

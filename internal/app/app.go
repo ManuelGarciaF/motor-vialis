@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/combinaciones"
 	"github.com/ManuelGarciaF/vialis-motor/internal/config"
 	"github.com/ManuelGarciaF/vialis-motor/internal/database/postgres"
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
@@ -81,5 +82,14 @@ func NewLinesService(database *pgxpool.Pool) *lines.Service {
 	return lines.NewService(
 		postgres.NewLinesRepository(database),
 		config.LinesPolicy(),
+	)
+}
+
+// NewCombinacionesService wires the reader that reports which origin-destination
+// flows people cover by combining two buses.
+func NewCombinacionesService(database *pgxpool.Pool) *combinaciones.Service {
+	return combinaciones.NewService(
+		postgres.NewCombinacionesRepository(database),
+		config.CombinacionesPolicy(),
 	)
 }

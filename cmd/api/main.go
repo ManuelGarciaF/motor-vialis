@@ -43,6 +43,7 @@ func main() {
 		os.Exit(1)
 	}
 	linesService := app.NewLinesService(database)
+	transfersService := app.NewCombinacionesService(database)
 
 	handler := httpapi.NewHandler(
 		logger,
@@ -50,6 +51,7 @@ func main() {
 		service,
 		detourService,
 		linesService,
+		transfersService,
 		config.SimulationTimeout,
 	)
 

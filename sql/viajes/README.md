@@ -177,6 +177,117 @@ El cast directo `indice_h3::geometry` representa el centro de la celda,
 no su contorno. Para visualizar el área se debe usar
 `h3_cell_to_boundary_geometry`.
 
+## `vialis.combinaciones_od`
+
+Contiene una fila por par de celdas y banda horaria, contando únicamente los
+viajes que necesitaron combinar. Es la tabla que lee `GET /transfers`.
+
+| Columna            | Significado                                                            |
+|--------------------|------------------------------------------------------------------------|
+| `h3_origen`        | Celda H3 de resolución 8 donde empezó el viaje                         |
+| `h3_destino`       | Celda H3 de resolución 8 donde terminó                                 |
+| `rango_horario`    | Hora del viaje, tal como la informa la fuente                          |
+| `viajes_estimados` | Suma de factores de expansión de los viajes con trasbordo de ese grupo |
+
+### Qué cuenta como combinación
+
+`cantidad_etapas > 1`. La fuente no tiene tabla de etapas ni marca de trasbordo:
+el único indicio de que la persona tuvo que combinar es que su viaje se compuso
+de más de una etapa.
+
+El filtro `etapas_colectivo = cantidad_etapas` deja solamente los viajes hechos
+íntegramente en colectivo. El feed GTFS cargado es exclusivamente de colectivos,
+de modo que un viaje que combinó colectivo con subte o tren produciría
+itinerarios de colectivo para un trasbordo que nunca ocurrió entre colectivos.
+
+### Lo que esta tabla no dice
+
+No dice qué líneas se usaron ni dónde se hizo el trasbordo, porque la fuente no
+lo registra en ninguna columna. `viajes_estimados` pertenece al par de celdas:
+repartirlo entre las combinaciones de líneas que podrían haber servido el flujo
+sería inventar un dato que la encuesta nunca tomó. Los itinerarios los deriva
+`GET /transfers` cruzando esta tabla con `vialis.conexiones_recorridos`, y son
+combinaciones posibles, no la que se usó.
+
+A diferencia de `matriz_origen_destino`, esta tabla sí agrupa por
+`rango_horario`: la pregunta que responde es de qué hora se trata.
+
+## `vialis.combinaciones_lineas` y `vialis.combinaciones_lineas_flujos`
+
+El ranking que lee `GET /transfers`: qué pares de líneas parece estar
+combinando la gente, y cuántos viajes se le atribuyen a cada par.
+
+### El reparto
+
+La fuente no dice qué líneas usó nadie. `combinaciones_lineas.sql` reparte cada
+flujo origen-destino en partes iguales entre las combinaciones factibles que
+podrían haberlo servido: un flujo de 4.000 viajes con 4 combinaciones aporta
+1.000 a cada una.
+
+Eso es un supuesto declarado, no una medición, y la tabla lo dice de dos
+maneras. `alternativas_promedio` guarda entre cuántas combinaciones se repartió
+el volumen, ponderado por viajes: un par cuyo número salió de repartos entre dos
+candidatos es una afirmación fuerte, y el mismo número repartido entre treinta es
+una conjetura. `vialis.combinaciones_lineas_flujos` guarda los tres flujos más
+grandes detrás de cada par, con su propio conteo de alternativas, para que la
+afirmación se pueda auditar hasta el dato de origen.
+
+### Qué se descarta
+
+Un par de celdas que una sola línea ya cubre de punta a punta, **en el sentido
+correcto**, no entra. Si una línea llega del origen al destino, ese trasbordo no
+era obligatorio y el flujo no habla de un hueco de la red. Se exige el sentido
+porque un recorrido que toca las dos celdas pero pasa primero por el destino no
+lleva a nadie del origen al destino: el que sirve es el de la dirección opuesta,
+que es otra fila de `vialis.recorridos` y se evalúa por su cuenta.
+
+Tampoco entra un par de celdas sin ninguna combinación factible. La combinación
+ocurrió, pero el feed GTFS —que es exclusivamente de colectivos— no puede
+explicarla con dos colectivos.
+
+### La banda horaria
+
+`rango_horario` NULL es la fila del día entero y las 24 filas con hora son el
+desglose. Se precalculan las dos cosas porque agrupar el desglose en cada
+consulta para responder "todo el día" es justamente el trabajo que esta tabla
+existe para evitar.
+
+### Radios
+
+Dos radios distintos intervienen y conviene no confundirlos:
+
+| Radio | Dónde vive | Qué pregunta responde |
+|-------|------------|------------------------|
+| 400 m | `combinaciones_lineas.sql` | ¿Qué recorridos sirven esta celda? |
+| 300 m | `sql/recorridos/conexiones_recorridos.sql` | ¿Se puede caminar de esta parada a esta otra? |
+| 800 m | `internal/config` (`AccessRadiusMeters`) | ¿Podría alguien caminar hasta esa parada? (modelo de demanda) |
+
+Los dos primeros viven en el ETL y no en `internal/config` porque la agregación
+es batch: al momento de la consulta ya están decididos. Cambiar uno significa
+reconstruir el agregado, no reiniciar el proceso.
+
+El de 400 m es deliberadamente la mitad del que usa el modelo de demanda, y no
+un descuido. Aquel pregunta si alguien *podría* caminar hasta una parada; este
+pregunta qué línea *tomó*. Con 800 metros el AMBA devuelve una docena de líneas
+por punta y el producto da **145 combinaciones factibles por par de celdas**,
+medido sobre el dataset completo. Repartir un flujo entre 145 candidatos no
+atribuye nada.
+
+### Techo de alternativas
+
+Un par de celdas con más de **10** combinaciones factibles no entra en el
+ranking. La red le deja tantas opciones que atribuir sus viajes a un par sería
+presentar un reparto como una observación.
+
+La consecuencia hay que tenerla presente: **la suma de `viajes_estimados` no
+reconstruye el total de viajes con trasbordo de la ciudad**, porque los flujos
+por encima del techo quedan afuera a propósito. El ranking responde "qué
+combinaciones fuerza la red", no "cuántos trasbordos hay".
+
+`config.TransfersWeakEvidenceAlternatives` (5) marca la mitad superior de ese
+rango como evidencia floja, y `TestTransfersPolicyIsCoherent` impide que el
+umbral se vaya por encima de este techo, donde no podría dispararse nunca.
+
 ## Flujo de carga
 
 ```mermaid
@@ -186,16 +297,40 @@ flowchart LR
     PUNTOS --> H3["Asignar H3 resolución 8"]
     H3 --> HEXAGONOS["vialis.hexagonos_viajes"]
     H3 --> MATRIZ["vialis.matriz_origen_destino"]
+    HEXAGONOS --> COMBINACIONES["vialis.combinaciones_od"]
+    H3 --> COMBINACIONES
+    COMBINACIONES --> RANKING["vialis.combinaciones_lineas"]
+    CONEXIONES["vialis.conexiones_recorridos"] --> RANKING
 ```
 
 Los scripts se utilizan en este orden:
 
 1. `ddl.sql` crea las tablas finales.
-2. `importar_viajes.sql` crea `viajes_raw`, transforma las coordenadas en puntos,
-   crea los índices espaciales y asigna las celdas H3.
-3. `hexagonos_viajes.sql` calcula el punto de mayor peso de cada celda.
-4. `matriz_origen_destino.sql` agrega los factores por par de celdas de origen y
+2. `crear_viajes_raw.sql` crea la tabla de staging `viajes_raw`.
+3. El inicializador copia `viajes_BAdata_20241016.csv` en `viajes_raw`.
+4. `transformar_viajes.sql` actualiza las estadísticas, transforma las
+   coordenadas en puntos, crea los índices espaciales y asigna las celdas H3.
+5. `hexagonos_viajes.sql` calcula el punto de mayor peso de cada celda.
+6. `matriz_origen_destino.sql` agrega los factores por par de celdas de origen y
    destino.
+7. `combinaciones_od.sql` agrega los factores de los viajes que necesitaron
+   trasbordo, por par de celdas y banda horaria. Va después de
+   `hexagonos_viajes.sql` porque su clave foránea apunta a los hexágonos.
+8. `combinaciones_lineas.sql` reparte esos flujos entre los pares de líneas que
+   podrían haberlos servido. Es el único script que cruza los dos dominios de
+   datos, así que necesita además `vialis.conexiones_recorridos` ya poblada
+   (ver `sql/recorridos/README.md`).
 
-La importación efectiva del CSV en `viajes_raw` es un paso externo indicado,
-pero no implementado, dentro de `importar_viajes.sql`.
+La carga entera la ejecuta el inicializador, que es también quien intercala el
+paso 3 entre los dos scripts:
+
+```bash
+docker compose up -d --build
+go run ./cmd/initdb
+```
+
+La importación del CSV está entre dos scripts y no dentro de uno porque `COPY`
+lee del cliente, no del servidor: `internal/database/bootstrap` abre el archivo,
+lo transmite fila por fila y recién entonces ejecuta la transformación. Por eso
+`importar_viajes.sql` se dividió en `crear_viajes_raw.sql` y
+`transformar_viajes.sql`.

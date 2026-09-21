@@ -254,7 +254,16 @@ FROM (
 CREATE UNIQUE INDEX idx_gtfs_shape_geometries_shape_id
 ON gtfs_shape_geometries (shape_id);
 
+-- conexiones_recorridos entra en el mismo TRUNCATE porque referencia recorridos
+-- y paradas: Postgres rechaza truncar una tabla referenciada si la que la
+-- referencia no viaja en la misma sentencia. Vaciarla ademas es lo correcto y no
+-- un tramite, porque el grafo de trasbordos se calculo sobre los recorridos que
+-- esta transformacion esta por reemplazar. Lo vuelve a poblar
+-- conexiones_recorridos.sql, que el inicializador corre inmediatamente despues.
 TRUNCATE TABLE
+    vialis.combinaciones_lineas_flujos,
+    vialis.combinaciones_lineas,
+    vialis.conexiones_recorridos,
     vialis.recorridos_paradas,
     vialis.recorridos,
     vialis.paradas

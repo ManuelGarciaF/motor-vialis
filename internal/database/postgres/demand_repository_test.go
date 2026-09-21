@@ -187,6 +187,12 @@ func assign(destination, value any) error {
 		*target = value.(string)
 	case *float64:
 		*target = value.(float64)
+	case *[]byte:
+		if value == nil {
+			*target = nil
+		} else {
+			*target = []byte(value.(string))
+		}
 	case *demand.CellID:
 		*target = demand.CellID(value.(string))
 	case *sql.NullInt64:
