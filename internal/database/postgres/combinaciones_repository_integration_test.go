@@ -104,6 +104,9 @@ func TestCombinacionesRankingIntegration(t *testing.T) {
 		if found[0].TopFlows[0].Alternatives != 2 {
 			t.Errorf("flow alternatives = %d, want 2", found[0].TopFlows[0].Alternatives)
 		}
+		if found[0].TopFlows[0].Origin.Name != "Ranking origen" {
+			t.Errorf("flow origin name = %q", found[0].TopFlows[0].Origin.Name)
+		}
 		if found[0].Transfer.WalkMeters < 0 {
 			t.Errorf("transfer = %#v", found[0].Transfer)
 		}
@@ -224,12 +227,13 @@ func insertRankingFixture(ctx context.Context, t *testing.T, tx pgx.Tx) {
 	execFixture(ctx, t, tx, `
 		INSERT INTO vialis.combinaciones_lineas_flujos (
 			id_recorrido_primero, id_recorrido_segundo, posicion,
-			h3_origen, h3_destino, rango_horario, viajes_estimados, alternativas
+			h3_origen, h3_destino, rango_horario, viajes_estimados, alternativas,
+			nombre_origen, nombre_destino
 		)
 		SELECT $1, $2, 1,
 			h3_lat_lng_to_cell(ST_SetSRID(ST_MakePoint($3, $5), 4326), 8),
 			h3_lat_lng_to_cell(ST_SetSRID(ST_MakePoint($4, $5), 4326), 8),
-			$6, $7, 2`,
+			$6, $7, 2, 'Ranking origen', 'Ranking destino'`,
 		rankingFirstLineID, rankingSecondLineID,
 		rankingLongitude, rankingLongitude+0.1, rankingLatitude,
 		rankingHour, rankingVolume,

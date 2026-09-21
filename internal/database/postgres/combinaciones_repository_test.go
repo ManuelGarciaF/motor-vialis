@@ -34,7 +34,8 @@ func combinationRow(
 
 const unFlujo = `[{"h3Origen":"88a","lonOrigen":-58.45,"latOrigen":-34.65,` +
 	`"h3Destino":"88b","lonDestino":-58.37,"latDestino":-34.62,` +
-	`"hora":9,"viajes":1900.5,"alternativas":3}]`
+	`"hora":9,"viajes":1900.5,"alternativas":3,` +
+	`"nombreOrigen":"AV. RIVADAVIA 1200","nombreDestino":"CALLE 1149"}]`
 
 func testRankingQuery() combinaciones.Query {
 	return combinaciones.Query{Limit: 10, Offset: 0}
@@ -106,6 +107,11 @@ func TestCombinacionesRepositoryDecodesTheTopFlows(t *testing.T) {
 	}
 	if flow.Hour != 9 || flow.EstimatedTrips != 1900.5 || flow.Alternatives != 3 {
 		t.Errorf("flow numbers = %#v", flow)
+	}
+	// Sin los nombres, dos flujos con el mismo volumen y la misma hora son
+	// indistinguibles en pantalla.
+	if flow.Origin.Name != "AV. RIVADAVIA 1200" || flow.Destination.Name != "CALLE 1149" {
+		t.Errorf("flow names = %q -> %q", flow.Origin.Name, flow.Destination.Name)
 	}
 }
 
@@ -203,6 +209,8 @@ func TestFindFrequentTransfersSQLKeepsTheSelectionInTheDatabase(t *testing.T) {
 	required := []string{
 		"vialis.combinaciones_lineas",
 		"vialis.combinaciones_lineas_flujos",
+		"nombre_origen",
+		"nombre_destino",
 		"vialis.conexiones_recorridos",
 		"IS NOT DISTINCT FROM $1",
 		"COUNT(*) OVER ()",

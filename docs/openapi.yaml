@@ -635,10 +635,17 @@ components:
         Celda H3 de resolución 8. No se manda el polígono: un cliente puede
         derivarlo del índice, y repetir siete coordenadas por celda dominaría la
         respuesta.
-      required: [h3Index, longitude, latitude]
+      required: [h3Index, name, longitude, latitude]
       properties:
         h3Index:
           type: string
+        name:
+          type: string
+          description: >
+            La parada más cercana a la celda, del catálogo GTFS. Un índice H3 y
+            un par de coordenadas no nombran nada para una persona: sin esto,
+            dos flujos que coinciden en volumen y hora se leen como la misma
+            fila repetida cuando son lugares distintos.
         longitude:
           type: number
           format: double

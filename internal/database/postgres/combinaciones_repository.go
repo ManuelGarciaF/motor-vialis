@@ -49,6 +49,8 @@ type storedFlow struct {
 	Hour            int     `json:"hora"`
 	EstimatedTrips  float64 `json:"viajes"`
 	Alternatives    int     `json:"alternativas"`
+	OriginName      string  `json:"nombreOrigen"`
+	DestinationName string  `json:"nombreDestino"`
 }
 
 // FindRanking returns one window over the ranking, its total and the largest
@@ -147,11 +149,13 @@ func decodeFlows(raw []byte) ([]combinaciones.Flow, error) {
 		flows[index] = combinaciones.Flow{
 			Origin: combinaciones.Cell{
 				H3Index:   flow.H3Origin,
+				Name:      flow.OriginName,
 				Longitude: flow.LongitudeOrigin,
 				Latitude:  flow.LatitudeOrigin,
 			},
 			Destination: combinaciones.Cell{
 				H3Index:   flow.H3Destination,
+				Name:      flow.DestinationName,
 				Longitude: flow.LongitudeDest,
 				Latitude:  flow.LatitudeDest,
 			},

@@ -78,7 +78,9 @@ SELECT
                 'latDestino',  ST_Y(hexagono_destino.punto_maxima_concurrencia),
                 'hora',        flujo.rango_horario,
                 'viajes',      flujo.viajes_estimados,
-                'alternativas', flujo.alternativas
+                'alternativas', flujo.alternativas,
+                'nombreOrigen',  flujo.nombre_origen,
+                'nombreDestino', flujo.nombre_destino
             )
             ORDER BY flujo.posicion
         )

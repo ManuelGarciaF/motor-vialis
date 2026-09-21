@@ -93,9 +93,35 @@ CREATE TABLE IF NOT EXISTS vialis.combinaciones_lineas_flujos (
         CHECK (rango_horario BETWEEN 0 AND 23),
     viajes_estimados      DOUBLE PRECISION NOT NULL,
     alternativas          INTEGER NOT NULL CHECK (alternativas >= 1),
+    -- Nombre de la parada mas cercana a cada celda. Un indice H3 y un par de
+    -- coordenadas no le dicen nada a nadie: sin esto, dos flujos que coinciden
+    -- en volumen y hora se leen como la misma fila repetida cuando son lugares
+    -- distintos. Sale del mismo catalogo GTFS que nombra el punto de
+    -- trasbordo, asi que la pantalla habla siempre el mismo idioma.
+    nombre_origen         TEXT NOT NULL,
+    nombre_destino        TEXT NOT NULL,
     PRIMARY KEY (id_recorrido_primero, id_recorrido_segundo, posicion),
     FOREIGN KEY (id_recorrido_primero)
         REFERENCES vialis.recorridos(id_recorrido) ON DELETE CASCADE,
     FOREIGN KEY (id_recorrido_segundo)
         REFERENCES vialis.recorridos(id_recorrido) ON DELETE CASCADE
 );
+
+-- Para una base que ya corrio una version anterior de esta migracion y tiene
+-- la tabla sin los nombres. Vacia el agregado: los nombres se llenan al
+-- repoblarlo con sql/viajes/combinaciones_lineas.sql.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'vialis'
+          AND table_name = 'combinaciones_lineas_flujos'
+          AND column_name = 'nombre_origen'
+    ) THEN
+        TRUNCATE vialis.combinaciones_lineas_flujos;
+        ALTER TABLE vialis.combinaciones_lineas_flujos
+            ADD COLUMN nombre_origen  TEXT NOT NULL,
+            ADD COLUMN nombre_destino TEXT NOT NULL;
+    END IF;
+END
+$$;

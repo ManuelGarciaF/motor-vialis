@@ -247,17 +247,21 @@ INSERT INTO vialis.combinaciones_lineas_flujos (
     h3_destino,
     rango_horario,
     viajes_estimados,
-    alternativas
+    alternativas,
+    nombre_origen,
+    nombre_destino
 )
 SELECT
-    id_recorrido_primero,
-    id_recorrido_segundo,
-    posicion,
-    h3_origen,
-    h3_destino,
-    rango_horario,
-    viajes_atribuidos,
-    alternativas
+    ordenados.id_recorrido_primero,
+    ordenados.id_recorrido_segundo,
+    ordenados.posicion,
+    ordenados.h3_origen,
+    ordenados.h3_destino,
+    ordenados.rango_horario,
+    ordenados.viajes_atribuidos,
+    ordenados.alternativas,
+    parada_origen.nombre,
+    parada_destino.nombre
 FROM (
     SELECT
         atribucion.*,
@@ -271,7 +275,28 @@ FROM (
         )::SMALLINT AS posicion
     FROM atribucion
 ) AS ordenados
-WHERE posicion <= 3;
+-- El nombre de cada celda es el de su parada mas cercana. Se resuelve con el
+-- operador KNN sobre el indice GiST de paradas, asi que son tres busquedas por
+-- combinacion y no un recorrido de las 43.594 paradas. El desempate por
+-- id_parada es deterministico: dos corridas sobre los mismos datos tienen que
+-- nombrar la celda igual.
+CROSS JOIN LATERAL (
+    SELECT parada.nombre
+    FROM vialis.hexagonos_viajes AS hexagono
+    JOIN vialis.paradas AS parada ON TRUE
+    WHERE hexagono.indice_h3 = ordenados.h3_origen
+    ORDER BY parada.posicion <-> hexagono.punto_maxima_concurrencia, parada.id_parada
+    LIMIT 1
+) AS parada_origen
+CROSS JOIN LATERAL (
+    SELECT parada.nombre
+    FROM vialis.hexagonos_viajes AS hexagono
+    JOIN vialis.paradas AS parada ON TRUE
+    WHERE hexagono.indice_h3 = ordenados.h3_destino
+    ORDER BY parada.posicion <-> hexagono.punto_maxima_concurrencia, parada.id_parada
+    LIMIT 1
+) AS parada_destino
+WHERE ordenados.posicion <= 3;
 
 COMMIT;
 

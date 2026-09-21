@@ -79,6 +79,11 @@ type TransferStop struct {
 // cell would dominate the response.
 type Cell struct {
 	H3Index string `json:"h3Index"`
+	// Name is the stop nearest to the cell, from the GTFS catalogue. An H3
+	// index and a pair of coordinates name nothing to a person: without this,
+	// two flows that agree on volume and hour read as the same row repeated
+	// when they are different places.
+	Name string `json:"name"`
 	// Longitude and Latitude are hexagonos_viajes.punto_maxima_concurrencia,
 	// which is where people in that cell actually start or end trips, not the
 	// geometric centre of the hexagon.

@@ -297,6 +297,13 @@ CREATE TABLE vialis.combinaciones_lineas_flujos (
         CHECK (rango_horario BETWEEN 0 AND 23),
     viajes_estimados      DOUBLE PRECISION NOT NULL,
     alternativas          INTEGER NOT NULL CHECK (alternativas >= 1),
+    -- Nombre de la parada mas cercana a cada celda. Un indice H3 y un par de
+    -- coordenadas no le dicen nada a nadie: sin esto, dos flujos que coinciden
+    -- en volumen y hora se leen como la misma fila repetida cuando son lugares
+    -- distintos. Sale del mismo catalogo GTFS que nombra el punto de
+    -- trasbordo, asi que la pantalla habla siempre el mismo idioma.
+    nombre_origen         TEXT NOT NULL,
+    nombre_destino        TEXT NOT NULL,
     PRIMARY KEY (id_recorrido_primero, id_recorrido_segundo, posicion),
     -- Las claves foraneas no son decorativas: si el feed GTFS se vuelve a
     -- transformar y este agregado no se recalcula, sin ellas la tabla quedaria
