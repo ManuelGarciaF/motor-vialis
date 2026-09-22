@@ -29,9 +29,10 @@ go.work.sum
 .env.*
 !.env.example
 
-# Local spike outputs, generated viewers, and database dumps
+# Local spike outputs, generated viewers, database dumps and agent sessions
 .local/
 docker/*.dump
+pi-session-*.html
 
 # Editor/IDE
 .idea/
@@ -39,12 +40,14 @@ docker/*.dump
 .agents/
 # Datos de entrada del pipeline.
 #
-# No se versionan: los tres pasan el límite de 100 MB de GitHub y entre los
-# tres son 2,4 GB, así que estaban volviendo impracticables el clon y el push.
+# No se versionan: son insumos grandes que vuelven impracticables el clon y el
+# push.
 # Se bajan de sus fuentes públicas; ver "Datos de entrada" en el README.
 viajes_BAdata_20241016.csv
+diccionario_viajes.xlsx
 colectivos-gtfs.zip
-colectivos-gtfs/stop_times.txt
+colectivos-gtfs/
+calles.osm
 
 # Basura del Finder.
 .DS_Store

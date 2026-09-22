@@ -136,6 +136,47 @@ Por clase OSM en las muestras locales:
 - La Plata: secondary 97,8 %, primary 82,2 %, residential 74,4 %, tertiary
   39,4 %.
 
+## Validación del sentido de `one_side`
+
+La documentación de TomTom define `one_side` como tráfico de un solo lado de
+una vía bidireccional, pero no declara en forma explícita que el orden del
+`LineString` sea el sentido de circulación. Se contrastó esa hipótesis contra
+las aristas OSM de sentido único de CABA, cuya geometría está normalizada en el
+sentido permitido.
+
+Elegir primero el segmento más cercano y mirar después su orientación no
+funciona: entre 707 matches `one_side` seleccionados de esa manera, sólo 47,1 %
+apuntaba en el sentido OSM. El segmento más próximo puede representar la mano
+opuesta de la misma vía.
+
+Al buscar candidatos por cada sentido antes de elegir por distancia, el
+resultado cambia:
+
+| Métrica | CABA completa |
+|---|---:|
+| Aristas OSM de sentido único con algún candidato `one_side` | 1.392 |
+| Con candidato orientado en el sentido permitido | 1.302 (93,5 %) |
+| Con candidatos en ambos sentidos dentro de 15 m | 1.162 |
+| Sólo con candidato opuesto | 90 |
+
+También se probó inferir el sentido por el lado lateral de la geometría respecto
+del eje OSM. No resultó robusto: de 2.424 aristas bidireccionales con candidatos
+`one_side`, sólo 134 tenían geometrías distinguibles a ambos lados y 346 tenían
+todos los candidatos a menos de 0,75 m del eje.
+
+La política resultante es hacer matching **por costo dirigido**:
+
+- `one_side` sólo compite para el costo cuya orientación coincide;
+- el costo opuesto busca su propio candidato;
+- `full` puede abastecer ambos costos permitidos por OSM;
+- nunca se selecciona primero un match no orientado para luego copiarlo;
+- si un sentido no tiene candidato directo, sólo puede entrar mediante la
+  estimación vecina documentada o queda fuera del grafo.
+
+El 6,5 % de aristas de sentido único que sólo encontró candidatos opuestos se
+trata como falta de cobertura o diferencia de cartografía, no se corrige
+invirtiendo el tráfico.
+
 ## Conclusiones
 
 1. **Zoom 14 es suficiente para el MVP.** En las comparaciones realizadas, z15

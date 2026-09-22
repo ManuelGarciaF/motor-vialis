@@ -1,8 +1,7 @@
 # Vialis Motor: funcionamiento de la simulación
 
 **Alcance:** visión funcional y conceptual del motor completo  
-**Estado documentado:** funcionamiento implementado actualmente, salvo la
-sección 13, marcada como diseño aprobado
+**Estado documentado:** funcionamiento implementado actualmente
 **Última actualización:** 15 de agosto de 2026
 
 ## Contenido
@@ -1850,19 +1849,18 @@ reconstrucción.
 
 ### 15.7. Estado operativo actual
 
-El repositorio incluye los procesos de transformación, pero algunos pasos de
-carga de archivos se realizan externamente.
+`cmd/initdb` ejecuta el pipeline completo desde una base vacía: red vial, GTFS,
+viajes, agregados y tarifas. Los archivos fuente siguen siendo insumos externos
+y deben estar disponibles antes de iniciar la carga.
 
 Además:
 
-- La red vial AMBA + 10 km está cargada y su pipeline se encuentra en
-  `sql/calles/`. El análisis de desvíos todavía no puede ejecutarse porque falta
-  implementar la asociación del tráfico TomTom con sus aristas y la lógica de
-  generación de variantes.
+- La red vial AMBA + 10 km y su pipeline están en `sql/calles/`; RF05 asocia
+  tráfico TomTom, genera variantes sobre pgRouting y las expone en
+  `POST /detours`.
 - La importación de etapas individuales no está implementada.
-- Algunos procesos de viajes requieren limpieza antes de repetirse.
-- El cuadro tarifario no se versiona automáticamente; reemplazarlo requiere
-  actualizar el script de carga.
+- El cuadro tarifario no se sincroniza automáticamente con la fuente oficial;
+  reemplazarlo requiere actualizar y ejecutar el script versionado.
 - Las simulaciones no se persisten.
 - No existe todavía un historial de versiones de datos y resultados.
 
@@ -2080,15 +2078,11 @@ base, sin que el motor conserve por sí mismo la comparación histórica.
 
 ### 17.11. Exposición actual
 
-El servicio HTTP publica una comprobación de salud, el catálogo de líneas
-almacenadas —listado y consulta individual—, la simulación de una ruta y la
-comparación de dos rutas. El contrato está documentado en `docs/openapi.yaml`.
-También existe una herramienta de línea de comandos que simula una ruta desde un
-archivo JSON.
-
-Todavía no se expone el análisis de desvíos por cortes (sección 13): la red
-vial ya está preparada, pero falta implementar el ruteo con cortes, la selección
-por tráfico y el contrato HTTP.
+El servicio HTTP publica una comprobación de salud, el catálogo de líneas,
+búsqueda de corredores similares, ranking de combinaciones, simulaciones,
+comparaciones y desvíos por cortes. El contrato está documentado en
+`docs/openapi.yaml`. También existe una herramienta de línea de comandos que
+simula una ruta desde un archivo JSON.
 
 ### 17.12. Cálculo sincrónico
 

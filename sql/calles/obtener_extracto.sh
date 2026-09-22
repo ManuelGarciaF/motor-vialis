@@ -12,7 +12,7 @@ output_dir=$3
 allowed_highways='motorway,trunk,primary,secondary,tertiary,unclassified,residential,living_street,motorway_link,trunk_link,primary_link,secondary_link,tertiary_link'
 
 command -v osmium >/dev/null || {
-    echo "Falta osmium (con Nix: nix shell nixpkgs#osmium-tool)" >&2
+    echo "Falta osmium: instalá osmium-tool y dejalo disponible en PATH" >&2
     exit 1
 }
 [[ -f "$source_pbf" ]] || { echo "No existe $source_pbf" >&2; exit 1; }

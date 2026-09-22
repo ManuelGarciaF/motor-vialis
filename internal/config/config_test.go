@@ -21,7 +21,7 @@ func TestFromEnvFallsBackToLocalDefaults(t *testing.T) {
 
 func TestFromEnvReadsEnvironment(t *testing.T) {
 	const (
-		databaseURL  = "******server:5432/database"
+		databaseURL  = "postgresql://explicit:secret@server:5432/database"
 		httpAddress  = "127.0.0.1:9090"
 		tomTomAPIKey = "test-tomtom-key"
 	)

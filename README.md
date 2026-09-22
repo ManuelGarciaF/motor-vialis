@@ -2,6 +2,62 @@
 
 Servicio REST en Go para el motor de simulación de Vialis.
 
+## Levantar la base de datos
+
+```bash
+docker compose up -d --build
+go run ./cmd/initdb
+```
+
+El contenedor publica PostgreSQL 18, PostGIS, H3 y pgRouting en `localhost:5433`.
+`cmd/initdb` crea el esquema y carga GTFS, viajes, tarifas, combinaciones y la
+red vial OSM en el orden definido por `internal/database/bootstrap`. Requiere
+`osm2pgrouting` 3.x y `osmium-tool` instalados en el host y disponibles en
+`PATH`. `OSM2PGROUTING` permite indicar otra ruta para el importador:
+
+```bash
+OSM2PGROUTING=/ruta/a/osm2pgrouting go run ./cmd/initdb
+```
+
+| Opción | Predeterminado | Para qué |
+| --- | --- | --- |
+| `--data-dir` | `.` | Directorio con los datos de entrada. |
+| `--reset` | `false` | Borra el esquema `vialis` y reconstruye todo. |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5433/vialis` | Base a inicializar. |
+
+Sin `--reset`, el comando se niega a sobrescribir un esquema existente. Para
+usar la API contra el contenedor:
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/vialis \
+TOMTOM_API_KEY=... go run ./cmd/api
+```
+
+## Datos de entrada
+
+`--data-dir` debe contener:
+
+- `viajes_BAdata_20241016.csv`;
+- `colectivos-gtfs/` con los siete archivos enumerados en
+  `sql/recorridos/README.md`;
+- `calles.osm`, el extracto vial completo generado según
+  `sql/calles/README.md`.
+
+Ningún dataset de entrada se versiona. El CSV de viajes proviene de
+[BA Data](https://data.buenosaires.gob.ar/dataset/viajes-etapas-transporte-publico).
+El feed se obtiene como un paquete GTFS completo de colectivos —la publicación
+original es [Colectivos: GTFS](https://data.buenosaires.gob.ar/dataset/colectivos-gtfs)—
+y se extrae en `colectivos-gtfs/`; debe contener `agency.txt`, `routes.txt`,
+`trips.txt`, `stops.txt`, `stop_times.txt`, `shapes.txt` y
+`calendar_dates.txt`. Si la publicación no ofrece el snapshot utilizado, hay
+que obtenerlo por separado: el repositorio no puede reconstruirlo a partir de
+los demás datos.
+
+`calles.osm` se genera desde un PBF de OpenStreetMap con
+`sql/calles/obtener_extracto.sh`, como explica `sql/calles/README.md`.
+`diccionario_viajes.xlsx` no forma parte del pipeline. `cmd/initdb` comprueba
+que todos los insumos requeridos existan antes de modificar la base.
+
 ## Configuración
 
 La configuración está separada en dos según a quién pertenece cada valor.
@@ -17,8 +73,7 @@ en el arranque porque expone RF05 junto con los demás endpoints:
 | `HTTP_ADDRESS` | `:8080` | Dirección de escucha del servicio. |
 | `TOMTOM_API_KEY` | — | Credencial secreta obligatoria para iniciar la API y consultar Traffic Flow en RF05. |
 
-Sin las dos primeras, el motor corre contra la base local que crea
-`sql/init_db.sql`.
+Sin las dos primeras, el motor corre contra una base local en el puerto 5432.
 
 ### Secretos locales para herramientas
 
@@ -112,6 +167,9 @@ Entre ellos, la exportación de las líneas GTFS almacenadas usa:
 - `LinesDefaultPageSize` (`50`) y `LinesMaximumPageSize` (`200`): tamaño de
   página de `GET /lines` cuando no se pide uno, y tope de lo que puede pedirse.
   `TestLinesPolicyIsCoherent` verifica que el predeterminado no supere al máximo.
+- `SimilarityCorridorToleranceMeters`, `SimilarityMinimumCoverage`,
+  `SimilarityDefaultResultCount` y `SimilarityMaximumResultCount`: corredor,
+  cobertura mínima y límites de `POST /lines/similar`.
 
 Una sola constante del modelo vive junto al código que la aplica, para que los
 paquetes de dominio no dependan de `config`: `endpointToleranceMeters` (20 m, en
@@ -144,6 +202,10 @@ El contrato completo está en `docs/openapi.yaml`.
   /comparisons`. No incluye `jurisdiction`: GTFS no registra qué autoridad
   tarifaria rige una línea y el motor no la deduce de la geometría, así que la
   agrega quien simula.
+- `POST /lines/similar`: busca líneas GTFS que cubren el mismo corredor que
+  una ruta dibujada y devuelve ambas coberturas por separado.
+- `GET /transfers`: pagina el ranking precalculado de combinaciones de líneas,
+  opcionalmente por hora.
 - `POST /simulations`: simula una ruta propuesta.
 - `POST /comparisons`: simula dos rutas y devuelve la diferencia entre ambas.
 - `POST /detours`: recibe `route`, un único `cut` GeoJSON `LineString` y

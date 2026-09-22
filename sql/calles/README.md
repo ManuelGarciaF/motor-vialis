@@ -1,7 +1,9 @@
 # Red vial OpenStreetMap
 
 Este módulo construye el grafo que habilita RF05. La carga es administrada: no
-se ejecuta durante una simulación ni al iniciar normalmente la API.
+se ejecuta durante una simulación ni al iniciar normalmente la API. En una base
+nueva, `cmd/initdb` ejecuta la importación y transformación como parte del
+pipeline completo; los comandos siguientes también permiten recargarla a mano.
 
 ## Requisitos
 
@@ -47,12 +49,17 @@ Fuentes:
 Para crear el extracto definitivo:
 
 ```bash
-nix shell nixpkgs#osmium-tool -c \
-  sql/calles/obtener_extracto.sh \
+sql/calles/obtener_extracto.sh \
   argentina-260827.osm.pbf \
   sql/calles/amba-margen-10km.geojson \
   /tmp/vialis-calles
+cp /tmp/vialis-calles/calles.osm ./calles.osm
 ```
+
+Con `calles.osm` en `--data-dir`, `cmd/initdb` usa la fecha OSM informada por
+`osmium`, calcula su SHA-256 e invoca `osm2pgrouting` y la transformación. El
+archivo debe corresponder al alcance canónico versionado; un extracto piloto no
+se puede publicar como la red completa.
 
 El segundo argumento también acepta `min_lon,min_lat,max_lon,max_lat` para
 pilotos pequeños. El PBF de origen es un insumo externo y no debe incorporarse

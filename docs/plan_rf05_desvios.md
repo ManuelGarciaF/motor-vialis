@@ -25,6 +25,13 @@ La semántica funcional autoritativa sigue en
 [`arquitectura_motor.md`](arquitectura_motor.md), sección 13. Este documento
 ordena su implementación.
 
+**Estado al 21 de septiembre de 2026:** fases 0 a 5 implementadas. Están
+probados el selector puro, el cliente TomTom con caché y una consulta real, el
+repositorio PostgreSQL sobre PostgreSQL 18.6, PostGIS 3.6.4 y pgRouting 4.0.1,
+y el servicio que reconstruye, valida y compara la variante completa. RF05 es
+invocable desde Go mediante `detour.Service.Plan` y por HTTP mediante
+`POST /detours`. Resta validar recorridos reales, latencia y demo en la fase 6.
+
 ## 2. Decisiones cerradas
 
 ### 2.1. Corte
@@ -125,7 +132,12 @@ No hay fallback silencioso. Se devuelve un error específico cuando:
   camino con costos actuales.
 
 La ruta por distancia no puede presentarse como `MENOR_TIEMPO` ni como desempate
-de `MENOR_PARADAS_PERDIDAS`.
+de `MENOR_PARADAS_PERDIDAS`. Si falta un camino con costos TomTom, se ejecuta
+una segunda consulta con costos OSM únicamente para diagnosticar el error:
+si la topología sí conecta los puntos se devuelve
+`traffic_coverage_insufficient`; si tampoco los conecta se devuelve
+`no_detour_within_search_area`. El camino diagnóstico nunca puede convertirse
+en la variante.
 
 ## 3. Zoom y volumen de tiles
 
@@ -165,7 +177,9 @@ Política del MVP:
 - descargar en paralelo respetando el límite de TomTom, inicialmente 10 QPS;
 - todos los tiles de una evaluación forman un snapshot lógico y la respuesta
   informa `fetchedAt`, edad máxima, zoom y si hubo hits de caché;
-- caché en memoria por proceso, con capacidad acotada y reemplazo LRU;
+- caché en memoria por proceso, con reemplazo LRU, hasta **256 tiles** y
+  **16 MB** de PBF;
+- timeout propio de **10 segundos** por request a TomTom;
 - no persistir tiles en PostgreSQL durante el MVP.
 
 Treinta minutos favorece consultas repetidas y la demo, pero permite decidir con
@@ -218,10 +232,14 @@ regla local y determinista:
 5. convertir el tag `traffic_level` del tile `absolute` a costo:
    `costo_segundos = longitud_metros / (velocidad_km_h / 3,6)`;
 6. tratar `road_closure=true` o velocidad no positiva como no transitable;
-7. conservar `traffic_road_coverage` al asociar costos dirigidos. En particular,
-   `one_side` no puede copiarse automáticamente al sentido opuesto. La relación
-   entre orientación de la geometría, `full`/`one_side` y sentido se confirma
-   con fixtures TomTom antes de implementarla.
+7. conservar `traffic_road_coverage` al asociar costos dirigidos. `one_side`
+   compite únicamente para el costo cuya orientación coincide y el sentido
+   opuesto busca su propio candidato; `full` puede abastecer ambos costos que
+   OSM permita. La validación sobre CABA mostró que elegir primero el segmento
+   más cercano y copiarlo después acierta el sentido sólo en 47,1 %, mientras
+   que buscar candidatos orientados por costo cubre 93,5 % de las aristas OSM
+   de sentido único con tráfico `one_side`. Los resultados están en
+   [`spike_tomtom_resultados.md`](spike_tomtom_resultados.md).
 
 No se utiliza una fórmula ponderada para el matching directo. La dirección
 mínima sigue siendo necesaria para no asignar a una calle el tráfico de otra que
@@ -266,24 +284,31 @@ en el problema del vértice más cercano. Los 50 m para paradas son coherentes c
 la validación actual del grafo; una parada más lejana sólo puede omitirse si
 está dentro del radio de 500 m. Si es obligatoria, la variante es no resoluble.
 
+La reconstrucción agrega explícitamente un conector entre el punto original y
+su proyección. Ese conector sólo se acepta si queda cubierto por el área de
+búsqueda y no intersecta el corredor prohibido. De ese modo la geometría sigue
+comenzando y terminando en las paradas o anclas declaradas, sin ocultar un salto
+entre la geometría exterior y pgRouting.
+
 ## 6. Arquitectura propuesta
 
 ### 6.1. Dominio
 
 Crear `internal/simulation/detour/` sin dependencias hacia PostgreSQL ni TomTom:
 
-- `service.go`: orquestador del caso de uso;
-- `types.go`: `Input`, `Criterion`, `Cut`, `TrafficSnapshot`, `Variant`,
-  `UncoveredStop` y errores;
+- `service.go`: orquestador y modelos del resultado del caso de uso;
+- `types.go`: `Input`, `Criterion`, `Cut`, clasificación y contrato del
+  repositorio;
 - `policy.go`: radios, tolerancias y límites;
-- `selector.go`: objetivos lexicográficos y reconstrucción de paradas;
-- `geometry.go`: operaciones puras posibles sobre ruta y zonas;
+- `selector.go`: objetivos lexicográficos y selección de paradas;
+- `reconstruct.go`: empalme ordenado de caminos y geometría original;
+- `geometry.go`: validación y operaciones geodésicas puras;
 - pruebas junto a cada archivo.
 
 Interfaces del paquete:
 
-- `Repository`: consulta calles afectadas, asocia segmentos de tráfico al grafo,
-  crea puntos virtuales, calcula costos entre puntos y reconstruye geometrías;
+- `Repository.Analyze`: consulta calles afectadas, buffers, intervalos y anclas;
+- `Repository.Route`: asocia tráfico, crea puntos virtuales y calcula caminos;
 - `TrafficProvider`: obtiene y decodifica un snapshot para un conjunto de tiles;
 - `Comparator`: reutiliza `simulation.Compare` una vez construida la variante.
 
@@ -299,8 +324,11 @@ archivos separados para:
 - obtener aristas dentro del área de 1 km;
 - proyectar anclas y paradas sobre aristas;
 - ejecutar pgRouting con puntos virtuales y costos dinámicos;
-- reconstruir cada `LineString` en el sentido de circulación;
-- unir prefijo original, desvío y sufijo sin saltos ni inversión.
+- reconstruir cada `LineString` en el sentido de circulación y agregar los
+  conectores validados entre puntos solicitados y proyectados.
+
+La unión del prefijo original, desvío y sufijo pertenece al servicio de dominio,
+porque combina caminos de varios intervalos y decide qué paradas permanecen.
 
 Los costos TomTom son efímeros. Para evitar contaminar `vialis.calles`, se pasan
 como datos de la consulta o se cargan en una tabla temporal ligada a una única
@@ -405,11 +433,14 @@ TomTom en logs o respuestas.
 5. Congelar zoom y umbrales únicamente si el matching alcanza los criterios de
    la sección 5.2.
 
-**Estado:** comparación inicial y barrido completo de CABA completados; se
-adoptó z14. CABA conserva 58,6 % de longitud total, pero entre 82 % y 100 % de
-las principales clases arteriales. Los resultados y el consumo exacto están en
-[`spike_tomtom_resultados.md`](spike_tomtom_resultados.md). Aún falta validar
-matching dirigido y casos sobre recorridos completos.
+**Estado: completada.** Se adoptó z14. CABA conserva 58,6 % de longitud total,
+pero entre 82 % y 100 % de las principales clases arteriales. También se validó
+el matching dirigido: seleccionar primero por cercanía acertaba el sentido de
+`one_side` sólo en 47,1 %, mientras que buscar un candidato por costo dirigido
+cubrió 93,5 % de las aristas OSM de sentido único con candidatos. Los resultados
+y el consumo exacto están en
+[`spike_tomtom_resultados.md`](spike_tomtom_resultados.md). La revisión visual de
+recorridos completos continúa en la fase 6.
 
 **Salida:** informe reproducible y fixtures anonimizadas/permitidas por licencia.
 Si TomTom no cubre suficientes calles para formar caminos sin velocidades
@@ -423,15 +454,27 @@ inventadas, RF05 queda bloqueado y no se oculta con fallback.
 4. Probar que `MENOR_TIEMPO` y `MENOR_PARADAS_PERDIDAS` divergen en el caso
    esperado.
 
-**Salida:** selector puro probado, todavía sin DB ni HTTP.
+**Estado: completada.** `internal/simulation/detour` contiene validación del
+corte, clasificación geodésica de paradas y selector DAG determinista. Las
+interfaces prematuras de servicio se retiraron: el servicio real se define en
+la fase 4 sobre los contratos concretos ya implementados.
+
+**Salida:** selector puro probado, todavía sin HTTP.
 
 ### Fase 2 — proveedor TomTom
 
 1. Implementar cobertura de tiles, cliente, decoder, rate limit y timeout.
 2. Implementar LRU de 30 minutos y deduplicación concurrente.
-3. Añadir métricas de requests, cache hits y antigüedad.
+3. Registrar por snapshot requests realizados, cache hits y antigüedad, sin
+   incorporar todavía un sistema de métricas agregadas.
 
-**Salida:** `TrafficProvider` determinista para un snapshot dado.
+**Estado: completada.** `internal/traffic/tomtom` implementa cobertura de tiles,
+decoder MVT, timeout de 10 segundos, límite de 10 QPS, LRU de 256 entradas y
+16 MB, TTL de 30 minutos y deduplicación concurrente. Incluye fixture PBF
+anonimizada y una prueba opt-in que consultó exitosamente un tile real de AMBA;
+no se ejecuta sin `TOMTOM_LIVE_TEST=1`.
+
+**Salida:** `tomtom.Client.Snapshot` determinista para un conjunto de tiles.
 
 ### Fase 3 — repositorio pgRouting
 
@@ -443,6 +486,14 @@ inventadas, RF05 queda bloqueado y no se oculta con fallback.
 5. Calcular matriz/caminos y reconstruir geometría orientada.
 6. Agregar pruebas de integración PostGIS + pgRouting.
 
+**Estado: completada.** `postgres.DetourRepository` expone dos operaciones:
+`Analyze` construye buffers, verifica alcance, bloquea calles y obtiene todos los
+intervalos y anclas; `Route` carga costos efímeros en tablas temporales, proyecta
+puntos y ejecuta `pgr_withPoints`. Las tablas usan `ON COMMIT DROP` y permanecen
+aisladas por conexión. Las pruebas contra la base real cubren costos directos,
+`one_side`, sentidos OSM, estimación vecina, bloqueo, puntos virtuales, puntos
+obligatorios/opcionales sin match y reconstrucción orientada dentro del área.
+
 **Salida:** caminos locales válidos sin usar el vértice más cercano.
 
 ### Fase 4 — servicio completo
@@ -452,19 +503,50 @@ inventadas, RF05 queda bloqueado y no se oculta con fallback.
 3. Reutilizar `simulation.Compare` para evaluación estable.
 4. Agregar trazabilidad del grafo y del snapshot.
 
+**Estado: completada.** `detour.Service.Plan` valida la entrada, calcula la
+cobertura exacta de tiles del polígono, obtiene un único snapshot, resuelve cada
+intervalo afectado y cose los caminos en orden. Conserva las coordenadas
+exteriores originales, admite omitir paradas terminales, valida conectores de
+proyección y distingue cobertura de tráfico de aislamiento topológico. La
+variante pasa `route.Validate` antes de llamar sin cambios a
+`simulation.Service.Compare`; `uncovered` toma el aporte de cada parada desde el
+`baseline.byStop`. `app.NewDetourService` deja el caso de uso invocable desde
+Go. Hay pruebas unitarias de criterios, extremos, múltiples intervalos, errores
+y reconstrucción, además de una prueba integral opt-in contra PostGIS/pgRouting.
+
 **Salida:** servicio RF05 invocable desde Go.
 
 ### Fase 5 — contrato HTTP
-
-Se difiere hasta acordar el contrato. Después:
 
 1. definir endpoint, request, response y status por error;
 2. actualizar `docs/openapi.yaml`;
 3. agregar handler e interfaz en `internal/httpapi`;
 4. cablear en `cmd/api`;
-5. agregar pruebas de handler y ejemplos ejecutables.
+5. agregar pruebas de handler y documentación de ejecución.
+
+**Estado: completada.** `POST /detours` recibe `route`, un `cut` GeoJSON
+`LineString` y `criterion`. Devuelve `variant`, `uncoveredStops`, la
+`comparison` anidada y `trace`; cada parada no cubierta distingue
+`cut_reached` de `criterion_omission`. Entrada inválida usa 400, ausencia de
+solución 422, dependencia de tráfico 503, timeout 504 y fallos internos 500,
+preservando los códigos de dominio. `cmd/api` crea un único cliente/cache
+TomTom compartido y, por decisión de despliegue, falla al iniciar si falta
+`TOMTOM_API_KEY`. La versión 1.1.0 del contrato está en OpenAPI y las pruebas del handler
+cubren el cuerpo estricto, la respuesta y el mapeo de errores.
 
 ### Fase 6 — endurecimiento y demo
+
+**Estado: en progreso.** Se ejecutó `POST /detours` con
+`examples/linea-132.json` y cortes distintos sobre Avenida Córdoba en Avenida
+Callao y en Avenida 9 de Julio. Ambas consultas reales usaron 4 tiles z14,
+produjeron variantes válidas y reutilizaron los 4 tiles al repetir con el otro
+criterio. El primer caso bloqueó 4 aristas y omitió una parada opcional; el
+segundo bloqueó 9 aristas y conservó las 17 paradas. El caso inicial detectó y corrigió dos
+efectos numéricos de borde: la pérdida de precisión al serializar el buffer y
+la proyección de anclas sobre la porción de una arista que queda fuera del área.
+También se agregó una tolerancia de un nanosegundo al comparar sumas de costos
+idénticos divididos en distinta cantidad de puntos virtuales. Todavía faltan
+60ENIE, revisión visual y mediciones sistemáticas fría/caliente.
 
 1. Ejecutar casos reales con líneas 132A, 60ENIE y cortes conocidos.
 2. Verificar que la variante no atraviesa el corte ni sale del radio de 1 km.
@@ -525,9 +607,11 @@ Registrar por consulta, sin datos secretos:
 - duración de cada etapa;
 - `calles_metadata.id_carga`.
 
-Exponer métricas agregadas para cuota TomTom y latencia. Limitar tamaño de body,
-puntos del LineString, longitud, tiles y concurrencia. Aplicar timeout propio a
-TomTom y conservar el deadline general del request.
+Durante el MVP se registra por snapshot cuántos requests TomTom fueron
+necesarios, junto con hits y antigüedad. Las métricas agregadas para cuota y
+latencia quedan para el endurecimiento operativo. Limitar tamaño de body, puntos
+del LineString, longitud, tiles y concurrencia. Aplicar timeout propio a TomTom
+y conservar el deadline general del request.
 
 ## 12. Criterios de aceptación del MVP
 

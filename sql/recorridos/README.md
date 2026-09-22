@@ -4,6 +4,12 @@ Este módulo importa un feed GTFS estático y lo transforma en el modelo de
 recorridos utilizado por Vialis. El proceso conserva los identificadores GTFS
 para poder rastrear cada dato hasta su archivo de origen.
 
+El feed no está versionado. Se descarga como paquete completo desde la
+publicación [Colectivos: GTFS](https://data.buenosaires.gob.ar/dataset/colectivos-gtfs)
+o se obtiene como snapshot externo compatible, y se extrae en
+`colectivos-gtfs/`. La carga requiere juntos los siete archivos enumerados más
+abajo; no puede reconstruir los faltantes a partir de los demás.
+
 ## Jerarquía de GTFS
 
 GTFS no relaciona una línea directamente con sus paradas. La relación atraviesa

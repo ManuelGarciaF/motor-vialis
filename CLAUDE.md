@@ -33,6 +33,10 @@ go test ./internal/simulation/demand/...   # single package
 # unless TEST_DATABASE_URL is set:
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/vialis go test ./internal/database/postgres/...
 
+# Build the database from nothing (requires the external data documented in README)
+docker compose up -d --build
+go run ./cmd/initdb
+
 # Run the API service (checks DB connectivity on startup, then serves)
 go run ./cmd/api
 
@@ -47,9 +51,9 @@ provider credentials such as `TOMTOM_API_KEY` come from the environment
 parameter and is a constant in `internal/config/parameters.go` — access radius,
 accessibility method, revenue factors, travel-time policy, server timeouts. They
 are constants deliberately: changing one changes the engine's output, so it
-belongs in a reviewable commit rather than in a process's environment. Both
-`cmd/` binaries read the same `config.FromEnv()` and wire their estimators
-through `app.NewSimulationService`, so they cannot drift apart;
+belongs in a reviewable commit rather than in a process's environment.
+`cmd/api` and `cmd/simulation-test` read the same `config.FromEnv()` and wire
+their estimators through `app.NewSimulationService`, so they cannot drift apart;
 `simulation-test` accepts `-database-url` to override the connection.
 
 ## Architecture
@@ -58,19 +62,21 @@ through `app.NewSimulationService`, so they cannot drift apart;
 
 ```
 cmd/api, cmd/simulation-test        entry points; flags and transport, no logic
-internal/app                        composition root: NewSimulationService(),
-                                     NewLinesService()
-internal/httpapi                    HTTP handlers (/lines, /simulations,
-                                     /comparisons, /detours); see docs/openapi.yaml
-internal/lines                      reads stored GTFS lines back out as routes
+internal/app                        composition root for services
+internal/httpapi                    HTTP handlers (/lines, /lines/similar,
+                                     /transfers, /simulations, /comparisons,
+                                     /detours); see docs/openapi.yaml
+internal/lines                      stored GTFS routes and corridor similarity
+internal/combinaciones              precomputed transfer ranking
 internal/simulation                 orchestrator: Service.Simulate()
 internal/simulation/{demand,traveltime,revenue}   estimators (pure domain logic)
 internal/simulation/detour          RF05 cut analysis, selection, reconstruction
 internal/simulation/route           shared Route/Position/LineString model + Validate()
 internal/database/postgres          repositories: DB-backed implementations of
                                      each estimator's Repository interface
-internal/config                     model parameters (constants) + 2 env settings
-sql/                                DDL and ETL scripts (GTFS import, trip data, tariffs)
+internal/config                     model parameters and environment settings
+internal/database/bootstrap         fresh-database pipeline used by cmd/initdb
+sql/                                DDL and ETL scripts
 ```
 
 `internal/simulation.Service` is the only orchestrator. It calls, in order:
@@ -121,7 +127,8 @@ SQL against a real PostGIS+H3 instance.
    reported as `line_not_simulable` (422) rather than repaired; the monotone
    stop location in `transformar_gtfs.sql` means this should not happen on the
    current feed. User-designed lines are persisted by a different service;
-   nothing here writes.
+   nothing here writes. `POST /lines/similar` performs a pure geometric
+   mutual-coverage search and runs no estimator.
 4. **Revenue** (`internal/simulation/revenue`): for each demand stop pair,
    sums segment distances to look up a jurisdiction-specific tariff band
    (`route.Jurisdiction`: `caba`/`province`/`national`), then applies the
@@ -149,8 +156,17 @@ a README:
   time.
 - `sql/tarifas/` — tariff bands by jurisdiction and distance
   (`vialis.tarifas_colectivo`).
+- `sql/calles/` — OpenStreetMap extract → pgRouting road graph for RF05.
 - `sql/ddl.sql` — final table definitions; `sql/init_db.sql` bootstraps a new
   database.
+
+`internal/database/bootstrap` is the source of truth for fresh-database order
+and `cmd/initdb` is the supported entry point. `sql/sql.go` embeds pipeline
+scripts; `migrar_*.sql` files only upgrade existing databases.
+
+`sql/viajes/combinaciones_lineas.sql` is the only script that joins mobility
+flows with GTFS. It splits each O-D flow equally among feasible combinations;
+`sql/viajes/README.md` documents the interpretation limits of `GET /transfers`.
 
 Data preparation is an external, administered process — it does not run
 inside a simulation request. When changing repository queries, keep in mind

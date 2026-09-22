@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ func TestStepNamesAreInPipelineOrder(t *testing.T) {
 	expected := []string{
 		"esquema y extensiones (sql/init_db.sql)",
 		"tablas finales (sql/ddl.sql)",
+		"red vial OpenStreetMap",
 		"tablas de staging GTFS (sql/recorridos/crear_gtfs_raw.sql)",
 		"importación de los siete archivos GTFS",
 		"transformación GTFS (sql/recorridos/transformar_gtfs.sql)",
@@ -157,6 +159,25 @@ func TestResolveExistingSchema(t *testing.T) {
 	}
 }
 
+func TestStreetTransformReplacesPsqlVariables(t *testing.T) {
+	path := t.TempDir() + "/calles.osm"
+	if err := os.WriteFile(path, []byte("osm fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script, err := streetTransformScript(path, "2026-08-27T20:21:06Z", "3.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(script, ":'") {
+		t.Fatal("el script conserva variables de psql")
+	}
+	for _, value := range []string{"calles.osm", "2026-08-27T20:21:06Z", "3.0.0"} {
+		if !strings.Contains(script, value) {
+			t.Errorf("el script no contiene %q", value)
+		}
+	}
+}
+
 func TestStripPsqlDirectives(t *testing.T) {
 	script := "\\set ON_ERROR_STOP on\n  \\timing off\nSELECT 1;\n-- \\set no es directiva acá\n"
 	expected := "\n\nSELECT 1;\n-- \\set no es directiva acá\n"
@@ -173,6 +194,9 @@ func TestEmbeddedScriptsAreExecutable(t *testing.T) {
 		"ddl.sql":                       scripts.DDL,
 		"crear_gtfs_raw.sql":            scripts.CrearGTFSRaw,
 		"transformar_gtfs.sql":          scripts.TransformarGTFS,
+		"transformar_calles.sql":        scripts.TransformarCalles,
+		"mapconfig.xml":                 scripts.CallesMapConfig,
+		"amba-margen-10km.geojson":      scripts.CallesScope,
 		"crear_viajes_raw.sql":          scripts.CrearViajesRaw,
 		"transformar_viajes.sql":        scripts.TransformarViajes,
 		"hexagonos_viajes.sql":          scripts.HexagonosViajes,
@@ -284,6 +308,19 @@ func TestLosAgregadosDeCombinacionesVanDespuesDeSusDependencias(t *testing.T) {
 // Los scripts de los dos agregados vacían su tabla antes de recalcularla. Sin
 // eso, una segunda corrida del pipeline sobre una base ya poblada choca contra
 // la clave primaria en lugar de actualizar los datos.
+func TestLaUltimaBandaDeCadaJurisdiccionNoTieneLimiteSuperior(t *testing.T) {
+	script := strings.Join(strings.Fields(scripts.InsertarTarifasVigentes), " ")
+	for _, row := range []string{
+		"('caba', 12000, NULL",
+		"('province', 27000, NULL",
+		"('national', 27000, NULL",
+	} {
+		if !strings.Contains(script, row) {
+			t.Errorf("falta la banda abierta %q", row)
+		}
+	}
+}
+
 func TestLosAgregadosDeCombinacionesSePuedenRecalcular(t *testing.T) {
 	casos := map[string]string{
 		"conexiones entre recorridos":        scripts.ConexionesRecorridos,
