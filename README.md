@@ -75,11 +75,10 @@ en el arranque porque expone RF05 junto con los demás endpoints:
 
 Sin las dos primeras, el motor corre contra una base local en el puerto 5432.
 
-### Secretos locales para herramientas
+### Secretos locales
 
-El repositorio no administra secretos. Para el spike de tráfico se usa
-`TOMTOM_API_KEY` desde el entorno. Hay una plantilla versionada y el archivo
-local está ignorado por Git:
+El repositorio no administra secretos. La API usa `TOMTOM_API_KEY` desde el
+entorno. Hay una plantilla versionada y el archivo local está ignorado por Git:
 
 ```bash
 cp .env.example .env
@@ -99,50 +98,6 @@ direnv allow
 
 `.gitignore` excluye `.env` y cualquier `.env.*`, salvo `.env.example`. No se
 debe imprimir la key en logs, comandos, URLs de diagnóstico ni fixtures.
-
-El ejecutable temporal del spike consulta un radio de 1 km alrededor del
-Obelisco en zooms 14, 15 y 16, y escribe un resumen JSON sin incluir la key:
-
-```bash
-go run ./cmd/tomtom-spike
-```
-
-Se puede cambiar el caso y usar un directorio externo como caché read-through
-de respuestas PBF. Si un tile ya existe allí, no vuelve a consultar TomTom:
-
-```bash
-go run ./cmd/tomtom-spike \
-  -lat -34.6037 -lon -58.3816 -radius 1000 \
-  -zooms 14,15,16 -output-dir /tmp/tomtom-spike
-```
-
-También puede barrer sólo los tiles que intersectan una jurisdicción del
-GeoJSON versionado. El barrido completo de CABA en z14 requiere 68 tiles:
-
-```bash
-go run ./cmd/tomtom-spike \
-  -area-file sql/calles/amba-jurisdicciones.geojson \
-  -area-id 02 -zooms 14 -max-tiles 100 \
-  -output-dir /tmp/tomtom-spike
-```
-
-Para generar el visor comparativo usando esos tiles cacheados:
-
-```bash
-go run ./cmd/tomtom-spike \
-  -area-file sql/calles/amba-jurisdicciones.geojson \
-  -area-id 02 -zooms 14 -max-tiles 100 \
-  -output-dir /tmp/tomtom-spike-tiles \
-  -viewer-dir .local/tomtom-caba-viewer
-
-go run ./cmd/tomtom-spike-viewer \
-  -dir .local/tomtom-caba-viewer -address :8090
-```
-
-Luego se abre `http://localhost:8090`. El mapa superpone TomTom en azul,
-`vialis.calles` con match directo en verde, con velocidad vecina estimada en
-amarillo y sin ninguna cobertura en rojo. Los GeoJSON y el visor
-son generados, pueden ser grandes y quedan bajo `.local/`, ignorado por Git.
 
 ### Código: los parámetros del modelo
 
