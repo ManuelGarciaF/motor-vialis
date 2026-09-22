@@ -41,8 +41,7 @@ func TestLinesRepositoryIntegration(t *testing.T) {
 		return transaction.Query(ctx, sql, arguments...)
 	})
 
-	// The fixture sits far from the AMBA feed so the bbox filter can tell it
-	// apart from whatever real data the database already holds.
+	// Keep the fixture outside AMBA to isolate it from existing feed data.
 	fixturePrefix := fmt.Sprintf("lines-integration-%d", time.Now().UnixNano())
 	lineID := insertStoredLine(t, ctx, transaction, fixturePrefix)
 
@@ -71,7 +70,6 @@ func TestLinesRepositoryIntegration(t *testing.T) {
 			t.Fatalf("stops[0].PathToNext = %#v, want a decoded LineString",
 				stored.Stops[0].PathToNext)
 		}
-		// The last stop never has a segment ahead of it.
 		if stored.Stops[2].PathToNext != nil {
 			t.Fatalf("last stop path = %#v, want nil", stored.Stops[2].PathToNext)
 		}
@@ -142,8 +140,7 @@ func TestLinesRepositoryIntegration(t *testing.T) {
 		}
 	})
 
-	// A search term is data, not a pattern: the underscore has to match an
-	// underscore.
+	// Search metacharacters must be treated as literal data.
 	t.Run("ListSummaries escapes search wildcards", func(t *testing.T) {
 		summaries, _, err := repository.ListSummaries(ctx, lines.Query{
 			Search: "lines_integration",
@@ -159,8 +156,7 @@ func TestLinesRepositoryIntegration(t *testing.T) {
 	})
 }
 
-// insertStoredLine creates a three-stop line whose geometry covers both of its
-// segments, mirroring what transformar_gtfs.sql produces for a healthy route.
+// insertStoredLine creates a valid three-stop ETL fixture.
 func insertStoredLine(
 	t *testing.T,
 	ctx context.Context,
@@ -220,8 +216,7 @@ func insertStoredLine(
 		}
 	}
 
-	// stop_sequence is copied from GTFS and is not contiguous, so the fixture
-	// uses gaps too: the query must order by it rather than assume 0..n.
+	// GTFS stop_sequence values need not be contiguous.
 	stopNumbers := []int{5, 15, 25}
 	segments := []any{
 		"LINESTRING(-50 -40, -49.99 -40)",

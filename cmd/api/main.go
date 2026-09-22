@@ -18,6 +18,11 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	cfg := config.FromEnv()
+	trafficClient, err := app.NewTomTomTrafficClient(cfg.TomTomAPIKey, logger)
+	if err != nil {
+		logger.Error("could not configure TomTom traffic", "error", err)
+		os.Exit(1)
+	}
 
 	connectContext, cancelConnect := context.WithTimeout(
 		context.Background(),
@@ -32,6 +37,11 @@ func main() {
 	defer database.Close()
 
 	service := app.NewSimulationService(database)
+	detourService, err := app.NewDetourService(database, trafficClient, service)
+	if err != nil {
+		logger.Error("could not configure detour service", "error", err)
+		os.Exit(1)
+	}
 	linesService := app.NewLinesService(database)
 	transfersService := app.NewCombinacionesService(database)
 
@@ -39,6 +49,7 @@ func main() {
 		logger,
 		service,
 		service,
+		detourService,
 		linesService,
 		transfersService,
 		config.SimulationTimeout,

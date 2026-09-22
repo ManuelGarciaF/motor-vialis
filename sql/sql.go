@@ -35,6 +35,21 @@ var CrearGTFSRaw string
 //go:embed recorridos/transformar_gtfs.sql
 var TransformarGTFS string
 
+// TransformarCalles publishes the road graph imported by osm2pgrouting.
+//
+//go:embed calles/transformar_calles.sql
+var TransformarCalles string
+
+// CallesMapConfig configures which OSM ways osm2pgrouting imports.
+//
+//go:embed calles/mapconfig.xml
+var CallesMapConfig string
+
+// CallesScope is the AMBA plus 10 km boundary used by the canonical extract.
+//
+//go:embed calles/amba-margen-10km.geojson
+var CallesScope string
+
 // CrearViajesRaw creates the staging table for the trip survey CSV.
 //
 //go:embed viajes/crear_viajes_raw.sql

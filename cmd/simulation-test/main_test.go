@@ -94,8 +94,6 @@ func TestDecodeRouteAlignsStoredGTFSPathEndpoints(t *testing.T) {
 		t.Fatalf("decodeRoute() error = %v", err)
 	}
 
-	// The alignment rules themselves are covered in internal/lines; here it is
-	// enough that decodeRoute applies them before returning.
 	if err := route.Validate(actual); err != nil {
 		t.Fatalf("aligned route validation error = %v", err)
 	}

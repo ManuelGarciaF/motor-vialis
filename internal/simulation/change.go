@@ -2,13 +2,8 @@ package simulation
 
 import "math"
 
-// Change reports one measured value in both versions of a route and how it
-// moved between them.
-//
-// Relative is a fraction of the baseline value, so 0.12 means twelve percent
-// more than the baseline. It is null when the baseline is zero, because the
-// ratio is undefined there: adding demand to a route that carried none is not
-// infinite growth, it is an absolute gain and only Absolute describes it.
+// Change reports absolute and relative movement from a baseline.
+// Relative is nil when the baseline is zero.
 type Change struct {
 	Baseline float64  `json:"baseline"`
 	Proposed float64  `json:"proposed"`
@@ -42,8 +37,7 @@ func newIntChange(baseline, proposed int64) IntChange {
 	}
 }
 
-// relativeChange returns nil for any ratio JSON cannot represent, so that an
-// edge case cannot fail encoding after the response status has been written.
+// relativeChange returns nil for ratios that JSON cannot represent.
 func relativeChange(baseline, absolute float64) *float64 {
 	if baseline == 0 {
 		return nil

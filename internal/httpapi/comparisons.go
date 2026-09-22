@@ -7,9 +7,7 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
 )
 
-// comparisonRequest decodes into pointers so an absent route is told apart
-// from one sent empty: both are invalid, but only the first is a caller who
-// forgot the field.
+// Pointer fields distinguish missing routes from present but invalid routes.
 type comparisonRequest struct {
 	Baseline *simulation.Route `json:"baseline"`
 	Proposed *simulation.Route `json:"proposed"`
@@ -27,8 +25,6 @@ func (handler *Handler) createComparison(writer http.ResponseWriter, request *ht
 		)
 		return
 	}
-	// Checked in order so that a request missing both fields always names the
-	// baseline, matching the precedence the comparison itself applies.
 	required := []struct {
 		field string
 		value *simulation.Route

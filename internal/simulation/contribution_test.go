@@ -10,8 +10,7 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
 
-// Each column has to reconcile with the route total on its own: that is what
-// makes reporting origin and destination separately meaningful.
+// Origin and destination columns must each reconcile with route totals.
 func TestStopResultsSumToTheRouteTotals(t *testing.T) {
 	input, demandResult, travelTimeResult, revenueResult := stopResultFixture()
 
@@ -62,7 +61,6 @@ func TestStopResultsListEveryStopInRouteOrder(t *testing.T) {
 	}
 }
 
-// The segment belongs to the ride away from a stop, so the last stop has none.
 func TestStopResultsAttachEachSegmentToItsOriginStop(t *testing.T) {
 	input, demandResult, travelTimeResult, revenueResult := stopResultFixture()
 
@@ -83,8 +81,7 @@ func TestStopResultsAttachEachSegmentToItsOriginStop(t *testing.T) {
 	}
 }
 
-// The last stop originates nothing and the first receives nothing. Listing them
-// with zeros is what shows a stop is not carrying its weight.
+// Stops with no contribution remain visible with zero values.
 func TestStopResultsKeepStopsThatContributeNothing(t *testing.T) {
 	input, demandResult, travelTimeResult, revenueResult := stopResultFixture()
 

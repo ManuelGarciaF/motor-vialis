@@ -34,20 +34,8 @@ func (err *GapError) Error() string {
 	)
 }
 
-// AlignStoredPathEndpoints adapts paths exported from stored GTFS routes.
-//
-// A GTFS shape fraction can place a segment boundary close to, but not exactly
-// on, its physical stop. Replacing only the first and last position, and never
-// an intermediate one, turns such a path into geometry route.Validate accepts
-// without altering the itinerary it describes.
-//
-// toleranceMeters is the largest gap this closes. It is far wider than the
-// tolerance route.Validate accepts because the two answer different questions:
-// route.Validate decides whether a caller sent coherent geometry, while this
-// decides whether a stored path is recognisably the same place as its stop.
-//
-// This runs when the engine exports its own stored data, never on geometry a
-// caller sent: input keeps being validated against the strict tolerance.
+// AlignStoredPathEndpoints snaps nearby GTFS segment endpoints to their stops.
+// It only adjusts stored geometry; caller input remains subject to strict validation.
 func AlignStoredPathEndpoints(input *route.Route, toleranceMeters float64) error {
 	for index := 0; index < len(input.Stops)-1; index++ {
 		path := input.Stops[index].PathToNext
@@ -65,8 +53,7 @@ func AlignStoredPathEndpoints(input *route.Route, toleranceMeters float64) error
 		reverseGap := route.DistanceMeters(first, destination) +
 			route.DistanceMeters(last, origin)
 
-		// Do not hide a reversed LineString. The regular route validation will
-		// report it with its domain-specific error.
+		// Leave reversed paths untouched so route validation can reject them.
 		if reverseGap < forwardGap {
 			continue
 		}

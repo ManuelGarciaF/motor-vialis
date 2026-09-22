@@ -10,11 +10,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// ComparisonInput is the pair of routes to evaluate against each other.
-//
-// Both are complete routes rather than a description of what changed: the
-// engine evaluates routes, it does not edit them, so deciding what a proposal
-// looks like stays with the caller.
+// ComparisonInput contains two complete routes to evaluate.
 type ComparisonInput struct {
 	Baseline Route `json:"baseline"`
 	Proposed Route `json:"proposed"`
@@ -61,9 +57,7 @@ type TravelTimeDelta struct {
 	Confidence     ConfidenceChange `json:"confidence"`
 }
 
-// ConfidenceChange reports both confidence levels and subtracts nothing: the
-// levels are ordinal labels, so the distance between two of them has no
-// meaning to report.
+// ConfidenceChange reports both ordinal levels without deriving a numeric delta.
 type ConfidenceChange struct {
 	Baseline traveltime.Confidence `json:"baseline"`
 	Proposed traveltime.Confidence `json:"proposed"`
@@ -78,10 +72,7 @@ func (service *Service) Compare(
 		return Comparison{}, err
 	}
 
-	// Both simulations spend nearly all of their time inside PostGIS, so
-	// running them together turns the wait into the longer of the two rather
-	// than their sum. The shared context cancels the surviving query as soon as
-	// one of them fails, instead of paying for an answer already discarded.
+	// The shared context cancels the other database-heavy simulation on failure.
 	group, groupContext := errgroup.WithContext(ctx)
 	var baseline, proposed Result
 	group.Go(func() error {
@@ -111,10 +102,7 @@ func (service *Service) Compare(
 	}, nil
 }
 
-// validateComparison checks both routes before either simulation starts, so an
-// invalid request cannot spend minutes of database work first. Reporting the
-// baseline ahead of the proposal keeps the answer deterministic when both are
-// invalid.
+// validateComparison rejects invalid routes before database work begins.
 func validateComparison(input ComparisonInput) error {
 	if err := rootedValidation(input.Baseline, "baseline"); err != nil {
 		return err
@@ -123,9 +111,7 @@ func validateComparison(input ComparisonInput) error {
 		return err
 	}
 
-	// Every other policy input is shared configuration, so the jurisdiction is
-	// the only way a caller can ask to compare results priced under different
-	// tariff authorities.
+	// Revenue from different tariff authorities is not comparable.
 	if input.Baseline.Jurisdiction != input.Proposed.Jurisdiction {
 		return &route.ValidationError{
 			Field: "proposed.jurisdiction",

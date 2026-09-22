@@ -6,41 +6,26 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/combinaciones"
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/detour"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/revenue"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
 )
 
-// This file holds the parameters of the simulation model. They are constants on
-// purpose: each one changes the numbers the engine reports, so changing one is a
-// change to the model that belongs in a reviewable commit, not in the
-// environment of whoever happens to start the process. Only the two settings a
-// deployment genuinely owns — the database URL and the listen address — are read
-// from the environment, in config.go.
-//
-// One model constant lives next to the code that enforces it rather than here,
-// because the domain packages must not depend on this one:
-// route.endpointToleranceMeters (20 m, how far a pathToNext endpoint may sit
-// from its stop).
+// Model parameters are constants so output-changing decisions remain reviewable.
+// Deployment settings and credentials are read from the environment in config.go.
 
 const (
-	// AccessRadiusMeters is the maximum walking distance between a stop and a
-	// cell's point of maximum concurrence. Cells farther than this are not
-	// assigned to the stop at all.
+	// AccessRadiusMeters limits which demand cells may be assigned to a stop.
 	AccessRadiusMeters = 800.0
 
-	// RevenueCaptureFactor is the share of potential demand assumed to actually
-	// board the line. At 1 the engine reports the ceiling, which is what a
-	// proposal should be judged against before any operational discount.
+	// RevenueCaptureFactor is the share of potential demand expected to board.
 	RevenueCaptureFactor = 1.0
 
-	// RegisteredCardShare is the share of trips paid with a registered SUBE
-	// card, which is charged the lower band of the tariff table.
+	// RegisteredCardShare selects the lower registered-SUBE tariff proportion.
 	RegisteredCardShare = 1.0
 )
 
-// HTTP server timeouts. SimulationTimeout sits below WriteTimeout so a slow
-// simulation is answered with a timeout status instead of having its connection
-// closed mid-response. Raise both together when comparing long suburban routes.
+// SimulationTimeout must remain below WriteTimeout to allow an HTTP timeout response.
 const (
 	ReadHeaderTimeout = 5 * time.Second
 	ReadTimeout       = 10 * time.Second
@@ -48,22 +33,64 @@ const (
 	IdleTimeout       = 60 * time.Second
 	SimulationTimeout = 25 * time.Second
 
-	// DatabaseConnectTimeout bounds the startup connectivity check and the
-	// graceful shutdown that mirrors it.
+	// DatabaseConnectTimeout bounds connectivity checks and graceful shutdown.
 	DatabaseConnectTimeout = 10 * time.Second
 )
 
-// AccessibilityCalculator converts the distance between a stop and a cell into a
-// 0-1 weight. demand.QuadraticAccessibility is the documented alternative: it
-// applies the same ratio squared, penalising distant cells harder.
+// AccessibilityCalculator returns the model's distance-weighting strategy.
 func AccessibilityCalculator() demand.AccessibilityCalculator {
 	return demand.LinearAccessibility{}
 }
 
-// TravelTimePolicy controls how existing GTFS routes are chosen as a reference
-// for each segment: the corridors tried in order, how many routes a corridor
-// needs before it wins, and the bounds outside which a reference's commercial
-// speed is discarded as a data error.
+// Detour model limits determine which route variants are operable.
+const (
+	DetourForbiddenCorridorMeters          = 5.0
+	DetourForcedStopRadiusMeters           = 20.0
+	DetourOptionalStopRadiusMeters         = 500.0
+	DetourSearchRadiusMeters               = 1000.0
+	DetourMaximumCutPositions              = 10_000
+	DetourMaximumCutLengthMeters           = 20_000.0
+	DetourMaximumTrafficTiles              = 32
+	DetourTrafficZoom                      = 14
+	DetourTrafficMatchRadiusMeters         = 15.0
+	DetourTrafficDirectionToleranceDegrees = 45.0
+	DetourTrafficEstimateRadiusMeters      = 300.0
+	DetourTrafficEstimateMinimumSamples    = 3
+	DetourTrafficEstimateMaximumSamples    = 5
+	DetourPointDirectionToleranceDegrees   = 60.0
+
+	TomTomTrafficTTL          = 30 * time.Minute
+	TomTomRequestTimeout      = 10 * time.Second
+	TomTomRequestsPerSecond   = 10
+	TomTomCacheEntries        = 256
+	TomTomCacheBytes          = 16 << 20
+	TomTomMaximumTileBytes    = 20 << 20
+	TomTomMaximumTileFeatures = 100_000
+	TomTomTileMargin          = 0.1
+)
+
+// DetourPolicy returns the geographic thresholds and defensive limits used by
+// RF05.
+func DetourPolicy() detour.Policy {
+	return detour.Policy{
+		ForbiddenCorridorMeters:          DetourForbiddenCorridorMeters,
+		ForcedStopRadiusMeters:           DetourForcedStopRadiusMeters,
+		OptionalStopRadiusMeters:         DetourOptionalStopRadiusMeters,
+		SearchRadiusMeters:               DetourSearchRadiusMeters,
+		MaximumCutPositions:              DetourMaximumCutPositions,
+		MaximumCutLengthMeters:           DetourMaximumCutLengthMeters,
+		MaximumTrafficTiles:              DetourMaximumTrafficTiles,
+		TrafficZoom:                      DetourTrafficZoom,
+		TrafficMatchRadiusMeters:         DetourTrafficMatchRadiusMeters,
+		TrafficDirectionToleranceDegrees: DetourTrafficDirectionToleranceDegrees,
+		TrafficEstimateRadiusMeters:      DetourTrafficEstimateRadiusMeters,
+		TrafficEstimateMinimumSamples:    DetourTrafficEstimateMinimumSamples,
+		TrafficEstimateMaximumSamples:    DetourTrafficEstimateMaximumSamples,
+		PointDirectionToleranceDegrees:   DetourPointDirectionToleranceDegrees,
+	}
+}
+
+// TravelTimePolicy defines corridor selection and valid commercial-speed bounds.
 func TravelTimePolicy() traveltime.Policy {
 	return traveltime.Policy{
 		ReferenceRadiiMeters:      []float64{100, 300, 800},
@@ -74,24 +101,15 @@ func TravelTimePolicy() traveltime.Policy {
 	}
 }
 
-// Reading the stored GTFS lines back out, for GET /lines and /lines/{id}.
+// Stored-line export parameters.
 const (
-	// LinesAlignmentToleranceMeters is deliberately far wider than the 20 m
-	// route.Validate demands: it decides whether a stored path endpoint is
-	// recognisably the same place as its stop, not whether a caller sent
-	// coherent geometry. It applies only to the engine's own stored geometry,
-	// never to caller input. Raise it only if the GTFS feed places shape
-	// boundaries further from its stops.
+	// LinesAlignmentToleranceMeters applies only to stored GTFS geometry.
 	LinesAlignmentToleranceMeters = 250.0
 
-	// LinesDefaultPageSize is how many lines a listing returns when the caller
-	// does not ask for a size.
+	// LinesDefaultPageSize applies when the caller omits a limit.
 	LinesDefaultPageSize = 50
 
-	// LinesMaximumPageSize bounds one response so listing the AMBA feed cannot
-	// be turned into a full table dump by a single request. It must stay at or
-	// above LinesDefaultPageSize, or a listing would silently return fewer
-	// lines than configured; TestLinesPolicyIsCoherent enforces that.
+	// LinesMaximumPageSize caps one response and must not be below the default.
 	LinesMaximumPageSize = 200
 )
 

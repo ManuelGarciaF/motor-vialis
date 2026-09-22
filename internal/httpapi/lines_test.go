@@ -124,8 +124,7 @@ func TestGetLineReturnsARouteAndItsStops(t *testing.T) {
 	if stored.requestedID != 12 {
 		t.Fatalf("requested id = %d, want 12", stored.requestedID)
 	}
-	// The exported route claims no tariff authority: GTFS records none, and the
-	// caller picks one when it simulates.
+	// GTFS does not provide a tariff jurisdiction.
 	if strings.Contains(response.Body.String(), "jurisdiction") {
 		t.Fatalf("body = %s, want no jurisdiction field", response.Body)
 	}
@@ -151,8 +150,7 @@ func TestGetLineReportsAnUnknownID(t *testing.T) {
 	}
 }
 
-// A stored line the engine cannot express as a valid route is neither the
-// caller's mistake nor something a retry fixes, so it gets its own status.
+// Invalid stored geometry has its own status code.
 func TestGetLineReportsALineItCannotSimulate(t *testing.T) {
 	stored := &fakeLines{err: &lines.NotSimulableError{
 		LineID: 12,

@@ -73,7 +73,6 @@ func TestListAppliesTheDefaultPageSize(t *testing.T) {
 	if page.Total != 300 {
 		t.Fatalf("total = %d, want 300", page.Total)
 	}
-	// A caller decoding the response should get [] rather than null.
 	if page.Lines == nil {
 		t.Fatal("lines = nil, want an empty slice")
 	}
@@ -134,8 +133,7 @@ func TestGetExportsARouteTheEngineAccepts(t *testing.T) {
 	}
 }
 
-// GTFS records no tariff authority, and the engine never infers one from
-// geometry, so the export must not invent a jurisdiction: the caller sets it.
+// Stored GTFS lines must not invent a tariff jurisdiction.
 func TestGetExportsNoJurisdiction(t *testing.T) {
 	repository := &fakeRepository{stored: storedLine()}
 	service := lines.NewService(repository, testPolicy())
@@ -149,8 +147,7 @@ func TestGetExportsNoJurisdiction(t *testing.T) {
 	}
 }
 
-// A circular line calls at its first stop again at the end. The repeat needs
-// its own id, because route.Validate requires ids unique within a route.
+// Repeated stops in circular lines need route-unique IDs.
 func TestGetDisambiguatesRepeatedStops(t *testing.T) {
 	stored := storedLine()
 	stored.Stops[2].GTFSStopID = stored.Stops[0].GTFSStopID
@@ -217,15 +214,13 @@ func TestGetPassesThroughNotFound(t *testing.T) {
 	}
 }
 
-// simulable adds the jurisdiction the caller is expected to choose, so a
-// validation failure can only come from the geometry the export built.
+// simulable adds the caller-owned jurisdiction before validation.
 func simulable(exported route.Route) route.Route {
 	exported.Jurisdiction = route.JurisdictionCABA
 	return exported
 }
 
-// storedLine mirrors an ETL export whose segment boundaries were projected onto
-// the GTFS shape and therefore land near, but not on, each stop.
+// storedLine has GTFS-projected endpoints near, but not on, each stop.
 func storedLine() lines.StoredLine {
 	return lines.StoredLine{
 		Summary: lines.Summary{

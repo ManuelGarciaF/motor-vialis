@@ -2,6 +2,7 @@
 package route
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -55,7 +56,9 @@ func (line *LineString) UnmarshalJSON(data []byte) error {
 		Type        string            `json:"type"`
 		Coordinates []json.RawMessage `json:"coordinates"`
 	}
-	if err := json.Unmarshal(data, &value); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
 		return fmt.Errorf("decode LineString: %w", err)
 	}
 	if value.Type != "LineString" {

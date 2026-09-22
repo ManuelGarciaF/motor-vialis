@@ -58,7 +58,6 @@ func TestCreateComparisonRequiresBothRoutes(t *testing.T) {
 			wantField: "proposed",
 		},
 		{
-			// Naming the baseline first matches the comparison's own order.
 			name:      "missing both",
 			body:      `{}`,
 			wantField: "baseline",
@@ -99,9 +98,7 @@ func TestCreateComparisonRejectsUnknownFields(t *testing.T) {
 	assertErrorResponse(t, response, http.StatusBadRequest, "validation_error", "")
 }
 
-// A field inside a nested route must be rejected too: DisallowUnknownFields
-// reaches the whole document, which is what keeps a catalogue route
-// re-postable without alteration.
+// Unknown-field rejection applies recursively to nested routes.
 func TestCreateComparisonRejectsUnknownFieldsInsideARoute(t *testing.T) {
 	router := newTestRouterWith(&fakeSimulator{}, &fakeComparator{})
 

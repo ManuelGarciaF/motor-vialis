@@ -1,6 +1,4 @@
-// Package config holds the parameters of the simulation model, as constants in
-// parameters.go, and the handful of settings a deployment owns, read from the
-// environment here.
+// Package config defines model parameters and environment-owned settings.
 package config
 
 import "os"
@@ -14,22 +12,19 @@ const (
 	DefaultHTTPAddress = ":8080"
 )
 
-// Config contains the settings that legitimately differ between the development
-// machine and a deployment: where the database is, and where to listen. Every
-// other setting is a model parameter and lives in parameters.go.
+// Config contains deployment-specific settings and provider credentials.
 type Config struct {
-	DatabaseURL string
-	HTTPAddress string
+	DatabaseURL  string
+	HTTPAddress  string
+	TomTomAPIKey string
 }
 
-// FromEnv reads the deployment settings, falling back to the local defaults.
-// Neither value is parsed here: an unusable database URL is reported by
-// postgres.Open and a bad listen address by the server, both at startup and both
-// with a better message than this package could produce.
+// FromEnv reads deployment settings, using local defaults where available.
 func FromEnv() Config {
 	return Config{
-		DatabaseURL: valueOrDefault("DATABASE_URL", DefaultDatabaseURL),
-		HTTPAddress: valueOrDefault("HTTP_ADDRESS", DefaultHTTPAddress),
+		DatabaseURL:  valueOrDefault("DATABASE_URL", DefaultDatabaseURL),
+		HTTPAddress:  valueOrDefault("HTTP_ADDRESS", DefaultHTTPAddress),
+		TomTomAPIKey: os.Getenv("TOMTOM_API_KEY"),
 	}
 }
 

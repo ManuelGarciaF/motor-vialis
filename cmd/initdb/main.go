@@ -1,5 +1,6 @@
 // Command initdb builds the Vialis database from scratch: schema, extensions,
-// tables, the GTFS feed, the trip survey and every transformation between them.
+// tables, the OSM road graph, the GTFS feed, the trip survey and every
+// transformation between them.
 //
 //	docker compose up -d --build
 //	go run ./cmd/initdb
@@ -14,6 +15,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -46,7 +48,7 @@ func main() {
 	dataDirectory := flag.String(
 		"data-dir",
 		".",
-		"directorio con viajes_BAdata_20241016.csv y colectivos-gtfs/",
+		"directorio con viajes_BAdata_20241016.csv, calles.osm y colectivos-gtfs/",
 	)
 	flag.Parse()
 
@@ -69,6 +71,8 @@ func main() {
 
 	err = bootstrap.Run(ctx, database, bootstrap.Options{
 		DataDirectory: *dataDirectory,
+		StreetsFile:   filepath.Join(*dataDirectory, "calles.osm"),
+		DatabaseURL:   databaseURL,
 		Reset:         *reset,
 		Logger:        logger,
 	})

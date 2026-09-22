@@ -111,13 +111,7 @@ type segmentEstimate struct {
 	found          bool
 }
 
-// resolveLocalPaces queries one corridor radius at a time, widening the search
-// only for the segments that no narrower radius could resolve.
-//
-// An estimate keeps the first radius that reaches MinimumReferenceRoutes, so
-// asking for every radius at once measures corridors that are then discarded.
-// The widest radius is also by far the most expensive to measure, which makes
-// that discarded work the dominant cost of a simulation.
+// resolveLocalPaces widens corridors only for unresolved segments.
 func (service *Service) resolveLocalPaces(
 	ctx context.Context,
 	segments []Segment,
@@ -173,8 +167,7 @@ func (service *Service) resolveLocalPaces(
 	return estimates, nil
 }
 
-// orderMeasuredSegments returns the measurements in the order they were
-// requested and rejects a repository that answers with a different set.
+// orderMeasuredSegments restores request order and rejects mismatched results.
 func orderMeasuredSegments(
 	measured []MeasuredSegment,
 	requested []Segment,
