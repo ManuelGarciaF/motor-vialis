@@ -46,7 +46,7 @@ type storedFlow struct {
 	H3Destination   string  `json:"h3Destino"`
 	LongitudeDest   float64 `json:"lonDestino"`
 	LatitudeDest    float64 `json:"latDestino"`
-	Hour            int     `json:"hora"`
+	PeakHour        int     `json:"horaPico"`
 	EstimatedTrips  float64 `json:"viajes"`
 	Alternatives    int     `json:"alternativas"`
 	OriginName      string  `json:"nombreOrigen"`
@@ -159,7 +159,7 @@ func decodeFlows(raw []byte) ([]combinaciones.Flow, error) {
 				Longitude: flow.LongitudeDest,
 				Latitude:  flow.LatitudeDest,
 			},
-			Hour:           flow.Hour,
+			PeakHour:       flow.PeakHour,
 			EstimatedTrips: flow.EstimatedTrips,
 			Alternatives:   flow.Alternatives,
 		}

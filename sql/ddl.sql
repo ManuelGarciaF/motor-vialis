@@ -366,8 +366,11 @@ CREATE TABLE vialis.combinaciones_lineas_flujos (
     posicion              SMALLINT NOT NULL CHECK (posicion >= 1),
     h3_origen             H3INDEX NOT NULL,
     h3_destino            H3INDEX NOT NULL,
-    rango_horario         SMALLINT NOT NULL
-        CHECK (rango_horario BETWEEN 0 AND 23),
+    -- Hora en la que el flujo concentra mas viajes, no "la hora del flujo".
+    -- Un viaje es su par de celdas: la hora es un atributo suyo y no otra
+    -- fila, o el mismo viaje aparece tres veces y nadie puede distinguirlos.
+    rango_horario_pico    SMALLINT NOT NULL
+        CHECK (rango_horario_pico BETWEEN 0 AND 23),
     viajes_estimados      DOUBLE PRECISION NOT NULL,
     alternativas          INTEGER NOT NULL CHECK (alternativas >= 1),
     -- Nombre de la parada mas cercana a cada celda. Un indice H3 y un par de

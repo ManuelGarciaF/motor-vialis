@@ -227,7 +227,7 @@ func insertRankingFixture(ctx context.Context, t *testing.T, tx pgx.Tx) {
 	execFixture(ctx, t, tx, `
 		INSERT INTO vialis.combinaciones_lineas_flujos (
 			id_recorrido_primero, id_recorrido_segundo, posicion,
-			h3_origen, h3_destino, rango_horario, viajes_estimados, alternativas,
+			h3_origen, h3_destino, rango_horario_pico, viajes_estimados, alternativas,
 			nombre_origen, nombre_destino
 		)
 		SELECT $1, $2, 1,

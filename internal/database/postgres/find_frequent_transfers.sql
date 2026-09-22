@@ -76,7 +76,7 @@ SELECT
                 'h3Destino',   flujo.h3_destino::text,
                 'lonDestino',  ST_X(hexagono_destino.punto_maxima_concurrencia),
                 'latDestino',  ST_Y(hexagono_destino.punto_maxima_concurrencia),
-                'hora',        flujo.rango_horario,
+                'horaPico',    flujo.rango_horario_pico,
                 'viajes',      flujo.viajes_estimados,
                 'alternativas', flujo.alternativas,
                 'nombreOrigen',  flujo.nombre_origen,

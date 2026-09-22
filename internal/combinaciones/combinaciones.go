@@ -96,7 +96,11 @@ type Cell struct {
 type Flow struct {
 	Origin      Cell `json:"origin"`
 	Destination Cell `json:"destination"`
-	Hour        int  `json:"hour"`
+	// PeakHour is the hour in which this flow concentrates the most trips, not
+	// "the flow's hour". A flow is its pair of cells: the hour is an attribute
+	// of it and not another row, or the same trip shows up three times and
+	// nobody can tell the copies apart.
+	PeakHour int `json:"peakHour"`
 	// EstimatedTrips is this flow's share after the split, not the flow's whole
 	// volume: the rest went to the other feasible combinations.
 	EstimatedTrips float64 `json:"estimatedTrips"`

@@ -89,8 +89,11 @@ CREATE TABLE IF NOT EXISTS vialis.combinaciones_lineas_flujos (
     posicion              SMALLINT NOT NULL CHECK (posicion >= 1),
     h3_origen             H3INDEX NOT NULL,
     h3_destino            H3INDEX NOT NULL,
-    rango_horario         SMALLINT NOT NULL
-        CHECK (rango_horario BETWEEN 0 AND 23),
+    -- Hora en la que el flujo concentra mas viajes, no "la hora del flujo".
+    -- Un viaje es su par de celdas: la hora es un atributo suyo y no otra
+    -- fila, o el mismo viaje aparece tres veces y nadie puede distinguirlos.
+    rango_horario_pico    SMALLINT NOT NULL
+        CHECK (rango_horario_pico BETWEEN 0 AND 23),
     viajes_estimados      DOUBLE PRECISION NOT NULL,
     alternativas          INTEGER NOT NULL CHECK (alternativas >= 1),
     -- Nombre de la parada mas cercana a cada celda. Un indice H3 y un par de
@@ -122,6 +125,21 @@ BEGIN
         ALTER TABLE vialis.combinaciones_lineas_flujos
             ADD COLUMN nombre_origen  TEXT NOT NULL,
             ADD COLUMN nombre_destino TEXT NOT NULL;
+    END IF;
+
+    -- La columna paso de ser "la hora del flujo" a "la hora pico del flujo"
+    -- cuando los flujos se agruparon por par de celdas en vez de por par y
+    -- hora. Los valores viejos no se pueden reinterpretar: se vacia y se
+    -- repuebla con combinaciones_lineas.sql.
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'vialis'
+          AND table_name = 'combinaciones_lineas_flujos'
+          AND column_name = 'rango_horario'
+    ) THEN
+        TRUNCATE vialis.combinaciones_lineas_flujos;
+        ALTER TABLE vialis.combinaciones_lineas_flujos
+            RENAME COLUMN rango_horario TO rango_horario_pico;
     END IF;
 END
 $$;

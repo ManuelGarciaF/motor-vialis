@@ -87,6 +87,37 @@ SELECT DISTINCT h3_origen, h3_destino FROM vialis.combinaciones_od;
 CREATE INDEX idx_pares_celdas ON pares_celdas (h3_origen, h3_destino);
 ANALYZE pares_celdas;
 
+-- Nombre de cada celda: la parada mas cercana a su punto de maxima
+-- concurrencia. Se resuelve una vez por celda y no una vez por fila del
+-- resultado. Sobre el dataset completo son 4.744 celdas distintas contra
+-- ~450.000 extremos de fila: resolverlo abajo, en el INSERT, multiplicaba por
+-- noventa y cinco las busquedas KNN y el paso pasaba de segundos a no terminar.
+--
+-- El desempate por id_parada es deterministico: dos corridas sobre los mismos
+-- datos tienen que nombrar la celda igual.
+CREATE TEMP TABLE nombre_celda ON COMMIT DROP AS
+WITH celdas_usadas AS (
+    SELECT h3_origen AS indice_h3 FROM pares_celdas
+    UNION
+    SELECT h3_destino FROM pares_celdas
+)
+SELECT
+    celdas_usadas.indice_h3,
+    (
+        SELECT parada.nombre
+        FROM vialis.paradas AS parada
+        ORDER BY
+            parada.posicion <-> hexagono.punto_maxima_concurrencia,
+            parada.id_parada
+        LIMIT 1
+    ) AS nombre
+FROM celdas_usadas
+JOIN vialis.hexagonos_viajes AS hexagono
+  ON hexagono.indice_h3 = celdas_usadas.indice_h3;
+
+CREATE UNIQUE INDEX idx_nombre_celda ON nombre_celda (indice_h3);
+ANALYZE nombre_celda;
+
 -- 2. Pares de celdas que una sola linea ya cubre de punta a punta, en el
 -- sentido correcto. Ahi el trasbordo no era obligatorio, y el flujo no habla de
 -- un hueco de la red.
@@ -237,15 +268,24 @@ FROM vialis.combinaciones_lineas
 WHERE rango_horario IS NOT NULL
 GROUP BY id_recorrido_primero, id_recorrido_segundo;
 
--- 8. Los tres flujos mas grandes de cada combinacion, para el detalle de una
+-- 8. Los tres viajes mas grandes de cada combinacion, para el detalle de una
 -- fila del ranking.
+--
+-- Se agrupa por par de celdas y NO por par y hora. Un viaje es su par de
+-- celdas: la hora es un atributo suyo, no otra fila. Agrupando por las dos
+-- cosas, el mismo viaje a las 5 y a las 10 ocupaba dos de los tres lugares y
+-- se leia como dos viajes distintos que nadie podia diferenciar, porque tenian
+-- el mismo origen y el mismo destino.
+--
+-- `alternativas` es una propiedad del par de celdas, igual para las 24 horas,
+-- asi que MIN devuelve ese valor y no un resumen de varios.
 INSERT INTO vialis.combinaciones_lineas_flujos (
     id_recorrido_primero,
     id_recorrido_segundo,
     posicion,
     h3_origen,
     h3_destino,
-    rango_horario,
+    rango_horario_pico,
     viajes_estimados,
     alternativas,
     nombre_origen,
@@ -257,46 +297,48 @@ SELECT
     ordenados.posicion,
     ordenados.h3_origen,
     ordenados.h3_destino,
-    ordenados.rango_horario,
+    ordenados.rango_horario_pico,
     ordenados.viajes_atribuidos,
     ordenados.alternativas,
     parada_origen.nombre,
     parada_destino.nombre
+-- El recorte a los tres primeros va en su propio nivel para que el ranking se
+-- resuelva una sola vez, y los nombres salen de un join plano contra
+-- nombre_celda en vez de una busqueda por fila.
 FROM (
+  SELECT * FROM (
     SELECT
-        atribucion.*,
+        id_recorrido_primero,
+        id_recorrido_segundo,
+        h3_origen,
+        h3_destino,
+        SUM(viajes_atribuidos) AS viajes_atribuidos,
+        MIN(alternativas) AS alternativas,
+        -- La hora que mas viajes concentra, con desempate por hora para que dos
+        -- corridas sobre los mismos datos elijan la misma.
+        (ARRAY_AGG(
+            rango_horario ORDER BY viajes_atribuidos DESC, rango_horario
+        ))[1] AS rango_horario_pico,
         ROW_NUMBER() OVER (
             PARTITION BY id_recorrido_primero, id_recorrido_segundo
             ORDER BY
-                viajes_atribuidos DESC,
+                SUM(viajes_atribuidos) DESC,
                 h3_origen,
-                h3_destino,
-                rango_horario
+                h3_destino
         )::SMALLINT AS posicion
     FROM atribucion
+    GROUP BY
+        id_recorrido_primero,
+        id_recorrido_segundo,
+        h3_origen,
+        h3_destino
+  ) AS rankeados
+  WHERE rankeados.posicion <= 3
 ) AS ordenados
--- El nombre de cada celda es el de su parada mas cercana. Se resuelve con el
--- operador KNN sobre el indice GiST de paradas, asi que son tres busquedas por
--- combinacion y no un recorrido de las 43.594 paradas. El desempate por
--- id_parada es deterministico: dos corridas sobre los mismos datos tienen que
--- nombrar la celda igual.
-CROSS JOIN LATERAL (
-    SELECT parada.nombre
-    FROM vialis.hexagonos_viajes AS hexagono
-    JOIN vialis.paradas AS parada ON TRUE
-    WHERE hexagono.indice_h3 = ordenados.h3_origen
-    ORDER BY parada.posicion <-> hexagono.punto_maxima_concurrencia, parada.id_parada
-    LIMIT 1
-) AS parada_origen
-CROSS JOIN LATERAL (
-    SELECT parada.nombre
-    FROM vialis.hexagonos_viajes AS hexagono
-    JOIN vialis.paradas AS parada ON TRUE
-    WHERE hexagono.indice_h3 = ordenados.h3_destino
-    ORDER BY parada.posicion <-> hexagono.punto_maxima_concurrencia, parada.id_parada
-    LIMIT 1
-) AS parada_destino
-WHERE ordenados.posicion <= 3;
+JOIN nombre_celda AS parada_origen
+  ON parada_origen.indice_h3 = ordenados.h3_origen
+JOIN nombre_celda AS parada_destino
+  ON parada_destino.indice_h3 = ordenados.h3_destino;
 
 COMMIT;
 

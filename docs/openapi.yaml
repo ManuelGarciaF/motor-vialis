@@ -689,16 +689,21 @@ components:
       description: >
         Un movimiento origen-destino atribuido a la combinación. Dice de dónde
         sale la demanda que hay detrás del par de líneas.
-      required: [origin, destination, hour, estimatedTrips, alternatives]
+      required: [origin, destination, peakHour, estimatedTrips, alternatives]
       properties:
         origin:
           $ref: "#/components/schemas/TransferCell"
         destination:
           $ref: "#/components/schemas/TransferCell"
-        hour:
+        peakHour:
           type: integer
           minimum: 0
           maximum: 23
+          description: >
+            La hora en la que este viaje concentra más viajes, no «la hora del
+            viaje». Un viaje es su par de celdas: la hora es un atributo suyo y
+            no otra fila, o el mismo viaje aparece varias veces y nadie puede
+            distinguir las copias.
         estimatedTrips:
           type: number
           format: double
