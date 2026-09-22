@@ -86,6 +86,42 @@ func TestCompareMeasuresEachMetricAgainstTheBaseline(t *testing.T) {
 	}
 }
 
+func TestCompareDetourUsesOriginalDistanceForProposedFare(t *testing.T) {
+	baseline := threeStopRoute()
+	proposed := route.Route{Jurisdiction: baseline.Jurisdiction, Stops: []route.Stop{
+		baseline.Stops[0],
+		baseline.Stops[2],
+	}}
+	proposed.Stops[0].PathToNext = &route.LineString{Positions: []route.Position{
+		proposed.Stops[0].Position,
+		{Latitude: -34.59, Longitude: -58.39},
+		proposed.Stops[1].Position,
+	}}
+	maximum := int64(2500)
+	service := NewService(
+		detourDemandEstimator{},
+		detourTravelTimeEstimator{},
+		revenue.NewService(detourTariffRepository{bands: []revenue.TariffBand{
+			{MinimumDistanceMeters: 0, MaximumDistanceMeters: &maximum, RegisteredFareCents: 100, UnregisteredFareCents: 100},
+			{MinimumDistanceMeters: 2500, RegisteredFareCents: 200, UnregisteredFareCents: 200},
+		}}, revenue.Policy{CaptureFactor: 1, RegisteredCardShare: 1}),
+	)
+
+	comparison, err := service.CompareDetour(context.Background(), ComparisonInput{
+		Baseline: baseline,
+		Proposed: proposed,
+	})
+	if err != nil {
+		t.Fatalf("CompareDetour() error = %v", err)
+	}
+	if comparison.Proposed.Global.Metrics.TotalDistanceMeters != 3000 {
+		t.Fatalf("proposed distance = %v, want 3000", comparison.Proposed.Global.Metrics.TotalDistanceMeters)
+	}
+	if comparison.Proposed.Global.Revenue.PotentialRevenueCents != 100 {
+		t.Fatalf("proposed revenue = %v, want original-distance fare 100", comparison.Proposed.Global.Revenue.PotentialRevenueCents)
+	}
+}
+
 func TestCompareReportsWhichRouteIsInvalid(t *testing.T) {
 	invalid := validRoute()
 	invalid.Stops[0].PathToNext = nil
@@ -275,6 +311,56 @@ func (estimator *scriptedTravelTimeEstimator) Estimate(
 		PeakSeconds:         typical + 60,
 		Confidence:          traveltime.ConfidenceHigh,
 	}, nil
+}
+
+type detourDemandEstimator struct{}
+
+func (detourDemandEstimator) Estimate(_ context.Context, input route.Route) (demand.Result, error) {
+	last := len(input.Stops) - 1
+	return demand.Result{PotentialDemand: 1, ByStopPair: []demand.StopPairDemand{{
+		OriginStopOrder: 0, OriginStopID: input.Stops[0].ID,
+		DestinationStopOrder: last, DestinationStopID: input.Stops[last].ID,
+		PotentialDemand: 1,
+	}}}, nil
+}
+
+type detourTravelTimeEstimator struct{}
+
+func (detourTravelTimeEstimator) Estimate(_ context.Context, input route.Route) (traveltime.Result, error) {
+	segmentDistance := 1000.0
+	if len(input.Stops) == 2 {
+		segmentDistance = 3000
+	}
+	result := traveltime.Result{Confidence: traveltime.ConfidenceHigh}
+	for order := 0; order < len(input.Stops)-1; order++ {
+		result.TotalDistanceMeters += segmentDistance
+		result.BySegment = append(result.BySegment, traveltime.SegmentResult{
+			OriginStopID: input.Stops[order].ID, DestinationStopID: input.Stops[order+1].ID,
+			DistanceMeters: segmentDistance,
+		})
+	}
+	return result, nil
+}
+
+type detourTariffRepository struct {
+	bands []revenue.TariffBand
+}
+
+func (repository detourTariffRepository) FindTariffBands(context.Context, route.Jurisdiction) ([]revenue.TariffBand, error) {
+	return repository.bands, nil
+}
+
+func threeStopRoute() route.Route {
+	positions := []route.Position{
+		{Latitude: -34.600, Longitude: -58.380},
+		{Latitude: -34.601, Longitude: -58.381},
+		{Latitude: -34.602, Longitude: -58.382},
+	}
+	return route.Route{Jurisdiction: route.JurisdictionCABA, Stops: []route.Stop{
+		{ID: "A", Position: positions[0], PathToNext: &route.LineString{Positions: positions[:2]}},
+		{ID: "B", Position: positions[1], PathToNext: &route.LineString{Positions: positions[1:]}},
+		{ID: "C", Position: positions[2]},
+	}}
 }
 
 type scriptedRevenueEstimator struct {

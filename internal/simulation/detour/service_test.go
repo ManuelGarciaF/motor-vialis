@@ -350,7 +350,7 @@ type recordingComparator struct {
 	input simulation.ComparisonInput
 }
 
-func (comparator *recordingComparator) Compare(
+func (comparator *recordingComparator) CompareDetour(
 	_ context.Context,
 	input simulation.ComparisonInput,
 ) (simulation.Comparison, error) {
