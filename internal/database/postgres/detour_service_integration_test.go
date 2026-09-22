@@ -218,7 +218,7 @@ func (provider *integrationTrafficProvider) Snapshot(
 
 type integrationComparator struct{}
 
-func (integrationComparator) Compare(
+func (integrationComparator) CompareDetour(
 	_ context.Context,
 	input simulation.ComparisonInput,
 ) (simulation.Comparison, error) {

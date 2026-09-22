@@ -980,6 +980,11 @@ La distancia de un par de paradas es la suma de las distancias de los tramos
 `PathToNext` entre la parada de origen y la de destino, ya calculadas para la
 estimación de tiempo (sección 7). No se vuelve a medir la geometría.
 
+En una variante temporal por corte, la tarifa conserva la distancia acumulada
+entre esas mismas paradas sobre el recorrido original. El rodeo modifica la
+distancia operativa y el tiempo, pero no el monto que corresponde cobrar al
+pasajero (sección 13.5).
+
 ### 10.4. Selección de banda
 
 Se busca la banda cuya distancia mínima sea menor o igual a la distancia del
@@ -1522,12 +1527,18 @@ muestras suficientes, la arista no recibe una velocidad inventada. Esos costos
 sólo ordenan las alternativas del corte y no reemplazan el modelo de tiempo de
 la simulación.
 
-Una vez armada, la variante se evalúa con exactamente el mismo cálculo que
-cualquier otra ruta: demanda (sección 6), distancia (sección 7), tiempo GTFS
-(sección 8) y recaudación (sección 10). Esto mantiene comparables `baseline` y
-`proposed`: el tráfico responde qué alternativa conviene ahora, mientras que
-GTFS describe cómo se comportaría operacionalmente bajo la metodología estable
-del motor.
+Una vez armada, la variante se evalúa con el mismo cálculo que cualquier otra
+ruta para demanda (sección 6), distancia (sección 7) y tiempo GTFS (sección 8).
+La recaudación usa la demanda recalculada de la variante, pero selecciona la
+banda tarifaria con la distancia del recorrido original entre las paradas que
+se conservaron (sección 10.3): el pasajero no paga más porque un corte obligue
+a realizar un rodeo temporal. Así, la distancia y el tiempo operativos sí
+reflejan el desvío, mientras que la tarifa mantiene el camino comercial
+original.
+
+Esto mantiene comparables `baseline` y `proposed`: el tráfico responde qué
+alternativa conviene ahora, mientras que GTFS describe cómo se comportaría
+operacionalmente bajo la metodología estable del motor.
 
 Los tiles se consultan una vez por coordenada de tesela y se reutilizan por
 hasta 30 minutos mediante una caché por tile; el spike comparativo adoptó zoom

@@ -25,10 +25,9 @@ type TrafficProvider interface {
 	Snapshot(context.Context, []traffic.Tile) (traffic.Snapshot, error)
 }
 
-// Comparator evaluates the original and generated routes with the stable
-// simulation model.
+// Comparator evaluates a detour while retaining the original fare distances.
 type Comparator interface {
-	Compare(context.Context, simulation.ComparisonInput) (simulation.Comparison, error)
+	CompareDetour(context.Context, simulation.ComparisonInput) (simulation.Comparison, error)
 }
 
 // Result is the complete RF05 outcome before an HTTP representation is chosen.
@@ -202,7 +201,7 @@ func (service *Service) Plan(ctx context.Context, input Input) (Result, error) {
 		// not an input validation error attributable to the caller.
 		return Result{}, fmt.Errorf("validate generated detour variant: %v", err)
 	}
-	comparison, err := service.comparator.Compare(ctx, simulation.ComparisonInput{
+	comparison, err := service.comparator.CompareDetour(ctx, simulation.ComparisonInput{
 		Baseline: input.Route,
 		Proposed: variant,
 	})
