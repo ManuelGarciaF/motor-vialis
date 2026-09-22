@@ -29,7 +29,12 @@ func TestStepNamesAreInPipelineOrder(t *testing.T) {
 		"ranking de combinaciones de líneas (sql/viajes/combinaciones_lineas.sql)",
 		"cuadro tarifario (sql/tarifas/insertar_tarifas_vigentes.sql)",
 	}
-	if names := StepNames(); !reflect.DeepEqual(names, expected) {
+	definitions := steps()
+	names := make([]string, len(definitions))
+	for index, definition := range definitions {
+		names[index] = definition.name
+	}
+	if !reflect.DeepEqual(names, expected) {
 		t.Fatalf("pasos = %q, se esperaba %q", names, expected)
 	}
 }
@@ -258,8 +263,8 @@ func TestPipelineScriptsWithVacuumAreSplit(t *testing.T) {
 // tablas todavia vacias, que no falla: produce silenciosamente cero filas.
 func TestLosAgregadosDeCombinacionesVanDespuesDeSusDependencias(t *testing.T) {
 	posicion := make(map[string]int)
-	for index, name := range StepNames() {
-		posicion[name] = index
+	for index, definition := range steps() {
+		posicion[definition.name] = index
 	}
 
 	dependencias := []struct{ antes, despues string }{

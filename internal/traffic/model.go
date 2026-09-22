@@ -19,15 +19,6 @@ func (tile Tile) String() string {
 	return fmt.Sprintf("%d/%d/%d", tile.Zoom, tile.X, tile.Y)
 }
 
-// Bounds is a WGS 84 geographic bounding box. MinLongitude greater than
-// MaxLongitude represents a box that crosses the antimeridian.
-type Bounds struct {
-	MinLatitude  float64
-	MinLongitude float64
-	MaxLatitude  float64
-	MaxLongitude float64
-}
-
 // Snapshot contains provider-neutral observations and their provenance.
 type Snapshot struct {
 	Segments   []Segment

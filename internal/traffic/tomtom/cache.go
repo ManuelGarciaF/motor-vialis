@@ -16,7 +16,6 @@ type cacheEntry struct {
 	key       cacheKey
 	data      []byte
 	fetchedAt time.Time
-	etag      string
 	expires   time.Time
 }
 

@@ -10,15 +10,13 @@ func TestTilesForGeoJSONUsesPolygonInsteadOfItsWholeBoundingBox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TilesForGeoJSON() error = %v", err)
 	}
-	bounds, err := TilesForBounds(Bounds{
-		MinLatitude: -34.70, MinLongitude: -58.50,
-		MaxLatitude: -34.50, MaxLongitude: -58.30,
-	}, 14)
+	bounds := []byte(`{"type":"Polygon","coordinates":[[[-58.50,-34.70],[-58.30,-34.70],[-58.30,-34.50],[-58.50,-34.50],[-58.50,-34.70]]]}`)
+	boundingCover, err := TilesForGeoJSON(bounds, 14)
 	if err != nil {
-		t.Fatalf("TilesForBounds() error = %v", err)
+		t.Fatalf("TilesForGeoJSON(bounds) error = %v", err)
 	}
-	if len(covered) == 0 || len(covered) >= len(bounds) {
-		t.Fatalf("polygon tiles = %d, bounding tiles = %d", len(covered), len(bounds))
+	if len(covered) == 0 || len(covered) >= len(boundingCover) {
+		t.Fatalf("polygon tiles = %d, bounding tiles = %d", len(covered), len(boundingCover))
 	}
 	for index := 1; index < len(covered); index++ {
 		if covered[index-1].Y > covered[index].Y ||

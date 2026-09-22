@@ -175,16 +175,6 @@ func steps() []step {
 	}
 }
 
-// StepNames lists the pipeline in order, for documentation and tests.
-func StepNames() []string {
-	definitions := steps()
-	names := make([]string, len(definitions))
-	for index, definition := range definitions {
-		names[index] = definition.name
-	}
-	return names
-}
-
 // Run builds the database. It holds a single connection for the whole run
 // because the pipeline needs one: transformar_gtfs.sql uses temporary tables
 // with ON COMMIT DROP, which only exist in the session that created them.

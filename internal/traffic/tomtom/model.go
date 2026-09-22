@@ -7,7 +7,6 @@ import "github.com/ManuelGarciaF/vialis-motor/internal/traffic"
 // detour domain to this provider.
 type (
 	Tile      = traffic.Tile
-	Bounds    = traffic.Bounds
 	Segment   = traffic.Segment
 	Snapshot  = traffic.Snapshot
 	ErrorCode = traffic.ErrorCode

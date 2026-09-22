@@ -281,7 +281,6 @@ func (client *Client) fetch(ctx context.Context, key cacheKey) (cacheEntry, erro
 		key:       key,
 		data:      data,
 		fetchedAt: fetchedAt,
-		etag:      response.Header.Get("ETag"),
 		expires:   parseHTTPTime(response.Header.Get("Expires")),
 	}, nil
 }
