@@ -1,6 +1,6 @@
 // Package bootstrap builds the Vialis database from an empty one: schema,
-// extensions, tables, the two data loads and every transformation, in the one
-// order that produces a database the engine can query.
+// extensions, tables, data loads and every transformation, in the one order
+// that produces a database the engine can query.
 //
 // The order lives here, in code, and not in a README, because it is the part of
 // the pipeline that cannot be rearranged: recorridos needs its staging tables
@@ -12,10 +12,15 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -43,11 +48,16 @@ var ErrDatabaseAlreadyInitialized = errors.New(
 	"el esquema " + SchemaName + " ya existe: usá --reset para borrarlo y volver a crearlo",
 )
 
-// Options are the two things a run legitimately varies: where the data files
-// are, and whether an existing database may be destroyed.
+// Options configures the inputs and destination of a full load.
 type Options struct {
 	// DataDirectory contains viajes_BAdata_20241016.csv and colectivos-gtfs/.
 	DataDirectory string
+
+	// StreetsFile is the canonical AMBA calles.osm extract.
+	StreetsFile string
+
+	// DatabaseURL is passed to osm2pgrouting for its staging import.
+	DatabaseURL string
 
 	// Reset drops the vialis schema before rebuilding it.
 	Reset bool
@@ -77,6 +87,12 @@ func steps() []step {
 			name: "tablas finales (sql/ddl.sql)",
 			run: func(ctx context.Context, e *executor) error {
 				return e.runScript(ctx, scripts.DDL)
+			},
+		},
+		{
+			name: "red vial OpenStreetMap",
+			run: func(ctx context.Context, e *executor) error {
+				return e.importStreets(ctx)
 			},
 		},
 		{
@@ -159,16 +175,6 @@ func steps() []step {
 	}
 }
 
-// StepNames lists the pipeline in order, for documentation and tests.
-func StepNames() []string {
-	definitions := steps()
-	names := make([]string, len(definitions))
-	for index, definition := range definitions {
-		names[index] = definition.name
-	}
-	return names
-}
-
 // Run builds the database. It holds a single connection for the whole run
 // because the pipeline needs one: transformar_gtfs.sql uses temporary tables
 // with ON COMMIT DROP, which only exist in the session that created them.
@@ -188,6 +194,8 @@ func Run(ctx context.Context, pool *pgxpool.Pool, options Options) error {
 		connection:    connection.Conn(),
 		logger:        logger,
 		dataDirectory: options.DataDirectory,
+		streetsFile:   options.StreetsFile,
+		databaseURL:   options.DatabaseURL,
 	}
 
 	if err := e.checkFiles(); err != nil {
@@ -225,21 +233,29 @@ type executor struct {
 	connection    *pgx.Conn
 	logger        *slog.Logger
 	dataDirectory string
+	streetsFile   string
+	databaseURL   string
 }
 
 // checkFiles verifies that every file the pipeline reads exists before the first
 // one is created in the database. Finding out that stop_times.txt is missing
 // after loading the trip survey would cost the user the whole load.
 func (e *executor) checkFiles() error {
-	paths := []string{filepath.Join(e.dataDirectory, viajesFile.FileName)}
+	for _, command := range []string{osm2pgroutingExecutable(), "osmium"} {
+		if _, err := exec.LookPath(command); err != nil {
+			return fmt.Errorf("falta %s en PATH: %w", command, err)
+		}
+	}
+	if _, err := pgx.ParseConfig(e.databaseURL); err != nil {
+		return fmt.Errorf("interpretar DATABASE_URL para osm2pgrouting: %w", err)
+	}
+
+	paths := []string{filepath.Join(e.dataDirectory, viajesFile.FileName), e.streetsFile}
 	for _, file := range gtfsFiles {
 		paths = append(paths, filepath.Join(e.dataDirectory, GTFSDirectory, file.FileName))
 	}
 	for _, path := range paths {
 		if _, err := os.Stat(path); err != nil {
-			// Los dos archivos pesados no se versionan —pasan el límite de
-			// 100 MB de GitHub—, así que en un clon nuevo faltan y el error
-			// tiene que decir qué hacer en vez de un "no such file" pelado.
 			return fmt.Errorf(
 				"falta un archivo de datos (%w). "+
 					"Los archivos que no se versionan se consiguen aparte: "+
@@ -249,6 +265,134 @@ func (e *executor) checkFiles() error {
 		}
 	}
 	return nil
+}
+
+func osm2pgroutingExecutable() string {
+	if executable := os.Getenv("OSM2PGROUTING"); executable != "" {
+		return executable
+	}
+	return "osm2pgrouting"
+}
+
+func (e *executor) importStreets(ctx context.Context) error {
+	config, err := pgx.ParseConfig(e.databaseURL)
+	if err != nil {
+		return fmt.Errorf("interpretar DATABASE_URL para osm2pgrouting: %w", err)
+	}
+
+	mapConfig, err := os.CreateTemp("", "vialis-mapconfig-*.xml")
+	if err != nil {
+		return fmt.Errorf("crear configuración de osm2pgrouting: %w", err)
+	}
+	mapConfigPath := mapConfig.Name()
+	defer os.Remove(mapConfigPath)
+	if _, err := mapConfig.WriteString(scripts.CallesMapConfig); err != nil {
+		mapConfig.Close()
+		return fmt.Errorf("escribir configuración de osm2pgrouting: %w", err)
+	}
+	if err := mapConfig.Close(); err != nil {
+		return fmt.Errorf("cerrar configuración de osm2pgrouting: %w", err)
+	}
+
+	versionOutput, err := exec.CommandContext(
+		ctx, osm2pgroutingExecutable(), "--version",
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("consultar versión de osm2pgrouting: %w", err)
+	}
+	dataTimeOutput, err := exec.CommandContext(
+		ctx,
+		"osmium", "fileinfo", "-e", "-g", "data.timestamp.last", e.streetsFile,
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("consultar fecha de datos OSM con osmium: %w", err)
+	}
+	transform, err := streetTransformScript(
+		e.streetsFile,
+		strings.TrimSpace(string(dataTimeOutput)),
+		strings.TrimSpace(string(versionOutput)),
+	)
+	if err != nil {
+		return err
+	}
+
+	command := exec.CommandContext(ctx, osm2pgroutingExecutable(),
+		"--file", e.streetsFile,
+		"--conf", mapConfigPath,
+		"--dbname", config.Database,
+		"--username", config.User,
+		"--password", config.Password,
+		"--host", config.Host,
+		"--port", fmt.Sprint(config.Port),
+		"--schema", SchemaName,
+		"--prefix", "calles_",
+		"--suffix", "_raw",
+		"--addnodes",
+		"--tags",
+		"--clean",
+	)
+	command.Stdout = os.Stderr
+	command.Stderr = os.Stderr
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("importar red vial con osm2pgrouting: %w", err)
+	}
+	return e.runScript(ctx, transform)
+}
+
+func streetTransformScript(streetsFile, dataTime, toolVersion string) (string, error) {
+	file, err := os.Open(streetsFile)
+	if err != nil {
+		return "", fmt.Errorf("abrir %s: %w", streetsFile, err)
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		file.Close()
+		return "", fmt.Errorf("calcular checksum de %s: %w", streetsFile, err)
+	}
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("cerrar %s: %w", streetsFile, err)
+	}
+	info, err := os.Stat(streetsFile)
+	if err != nil {
+		return "", fmt.Errorf("consultar %s: %w", streetsFile, err)
+	}
+
+	var scope struct {
+		Features []struct {
+			Geometry json.RawMessage `json:"geometry"`
+		} `json:"features"`
+	}
+	if err := json.Unmarshal([]byte(scripts.CallesScope), &scope); err != nil {
+		return "", fmt.Errorf("interpretar alcance vial embebido: %w", err)
+	}
+	if len(scope.Features) != 1 || len(scope.Features[0].Geometry) == 0 {
+		return "", errors.New("el alcance vial embebido debe contener una geometría")
+	}
+
+	if dataTime == "" || toolVersion == "" {
+		return "", errors.New("faltan la fecha del extracto OSM o la versión de osm2pgrouting")
+	}
+	values := map[string]string{
+		"fuente_url":          "archivo local: " + filepath.Base(streetsFile),
+		"fecha_descarga":      info.ModTime().UTC().Format(time.RFC3339),
+		"fecha_datos":         dataTime,
+		"checksum_sha256":     hex.EncodeToString(hash.Sum(nil)),
+		"alcance_geojson":     string(scope.Features[0].Geometry),
+		"version_herramienta": toolVersion,
+	}
+	transform := scripts.TransformarCalles
+	for name, value := range values {
+		transform = strings.ReplaceAll(transform, ":'"+name+"'", postgresLiteral(value))
+	}
+	return transform, nil
+}
+
+func postgresLiteral(value string) string {
+	tag := "$vialis$"
+	for strings.Contains(value, tag) {
+		tag = "$" + tag
+	}
+	return tag + value + tag
 }
 
 // prepareSchema applies the guard against running over a populated database.

@@ -21,7 +21,7 @@ services:
     # device" (SQLSTATE 53100), que no es falta de disco aunque lo parezca.
     shm_size: "1gb"
     volumes:
-      - vialis-db-data:/var/lib/postgresql/data
+      - vialis-db-data:/var/lib/postgresql
     # El inicializador espera a que este chequeo pase antes de cargar nada.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d vialis"]

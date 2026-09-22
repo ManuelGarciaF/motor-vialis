@@ -28,13 +28,38 @@ ANALYZE vialis.gtfs_shapes_raw;
 
 BEGIN;
 
+-- El feed nacional incluye servicios urbanos de Junín, fuera del polígono
+-- operativo AMBA + 10 km de Vialis. Se excluye la agencia completa: en el feed
+-- vigente, 446 corresponde a TRANSPORTE 8 DE OCTUBRE S.A. y contiene únicamente
+-- las rutas locales VERDE, ROJA, AZUL1 y AZUL2 de Junín.
+CREATE TEMP TABLE gtfs_excluded_agencies (
+    agency_id TEXT PRIMARY KEY,
+    motivo TEXT NOT NULL
+) ON COMMIT DROP;
+
+INSERT INTO gtfs_excluded_agencies (agency_id, motivo)
+VALUES ('446', 'Servicios urbanos de Junín, fuera de AMBA + 10 km');
+
+CREATE TEMP TABLE gtfs_eligible_routes ON COMMIT DROP AS
+SELECT route.route_id
+FROM vialis.gtfs_routes_raw route
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM gtfs_excluded_agencies excluded
+    WHERE excluded.agency_id = route.agency_id
+);
+
+CREATE UNIQUE INDEX idx_gtfs_eligible_routes_route_id
+ON gtfs_eligible_routes (route_id);
+
 -- El modelo final define un recorrido como route_id + direction_id. Abortamos
 -- si otro feed rompe esa condición en vez de mezclar geometrías silenciosamente.
 DO $$
 BEGIN
     IF EXISTS (
         SELECT 1
-        FROM vialis.gtfs_trips_raw
+        FROM vialis.gtfs_trips_raw trip
+        JOIN gtfs_eligible_routes eligible ON eligible.route_id = trip.route_id
         WHERE direction_id IS NULL
             OR direction_id NOT IN (0, 1)
             OR shape_id IS NULL
@@ -46,8 +71,9 @@ BEGIN
 
     IF EXISTS (
         SELECT 1
-        FROM vialis.gtfs_trips_raw
-        GROUP BY route_id, direction_id
+        FROM vialis.gtfs_trips_raw trip
+        JOIN gtfs_eligible_routes eligible ON eligible.route_id = trip.route_id
+        GROUP BY trip.route_id, trip.direction_id
         HAVING COUNT(DISTINCT shape_id) <> 1
     ) THEN
         RAISE EXCEPTION
@@ -90,6 +116,8 @@ SELECT
         0
     )::INTEGER AS duracion_segundos
 FROM vialis.gtfs_trips_raw t
+JOIN gtfs_eligible_routes eligible
+    ON eligible.route_id = t.route_id
 JOIN gtfs_stop_times_seconds st
     ON st.trip_id = t.trip_id
 GROUP BY
@@ -439,4 +467,9 @@ VACUUM ANALYZE vialis.recorridos_paradas;
 SELECT
     (SELECT COUNT(*) FROM vialis.recorridos) AS recorridos,
     (SELECT COUNT(*) FROM vialis.paradas) AS paradas,
-    (SELECT COUNT(*) FROM vialis.recorridos_paradas) AS paradas_en_recorridos;
+    (SELECT COUNT(*) FROM vialis.recorridos_paradas) AS paradas_en_recorridos,
+    (
+        SELECT COUNT(*)
+        FROM vialis.gtfs_routes_raw route
+        WHERE route.agency_id = '446'
+    ) AS rutas_junin_excluidas;

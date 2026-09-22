@@ -18,9 +18,7 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
 )
 
-// runBudget bounds one CLI run end to end, connecting included. It is more
-// generous than the API's per-request timeout because a run here is interactive
-// and nothing else is waiting on the process.
+// runBudget allows interactive CLI runs more time than API requests.
 const runBudget = 30 * time.Second
 
 func main() {

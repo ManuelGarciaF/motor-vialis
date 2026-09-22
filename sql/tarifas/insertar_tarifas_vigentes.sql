@@ -11,7 +11,7 @@ INSERT INTO vialis.tarifas_colectivo (
     ('caba',     0,  3000,  85290, 135611),
     ('caba',  3000,  6000,  94771, 150686),
     ('caba',  6000, 12000, 102071, 162293),
-    ('caba', 12000, 27000, 109377, 173909),
+    ('caba', 12000,  NULL, 109377, 173909),
     ('province',     0,  3000, 111119, 222238),
     ('province',  3000,  6000, 125008, 250016),
     ('province',  6000, 12000, 138898, 277796),
@@ -21,4 +21,8 @@ INSERT INTO vialis.tarifas_colectivo (
     ('national',  3000,  6000,  86166, 172332),
     ('national',  6000, 12000, 100280, 200560),
     ('national', 12000, 27000, 115136, 230272),
-    ('national', 27000,  NULL, 133706, 267412);
+    ('national', 27000,  NULL, 133706, 267412)
+ON CONFLICT (jurisdiccion, distancia_min_metros) DO UPDATE SET
+    distancia_max_metros = EXCLUDED.distancia_max_metros,
+    tarifa_registrada_centavos = EXCLUDED.tarifa_registrada_centavos,
+    tarifa_sin_registrar_centavos = EXCLUDED.tarifa_sin_registrar_centavos;

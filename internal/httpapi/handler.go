@@ -3,6 +3,8 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -10,17 +12,13 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/combinaciones"
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/detour"
 )
 
-// maximumRequestBytes bounds a request body. A route of 140 stops exported
-// from stored GTFS geometry is around 45 KB, so this leaves ample room for two
-// of them while refusing anything that could only be an attempt to exhaust
-// memory.
+// maximumRequestBytes leaves ample room for route calculations without allowing unbounded bodies.
 const maximumRequestBytes = 4 << 20
 
-// Simulator runs a full simulation for one route. It is the same interface a
-// future message-queue worker would call: neither the HTTP handler nor the
-// worker owns simulation logic, they only adapt a transport to this call.
+// Simulator runs a full simulation for one route.
 type Simulator interface {
 	Simulate(ctx context.Context, input simulation.Route) (simulation.Result, error)
 }
@@ -33,8 +31,12 @@ type Comparator interface {
 	) (simulation.Comparison, error)
 }
 
-// Lines reads the stored GTFS lines the engine already knows, so a client can
-// pick one as the starting point of a proposal.
+// DetourPlanner builds and evaluates a temporary route around one road cut.
+type DetourPlanner interface {
+	Plan(ctx context.Context, input detour.Input) (detour.Result, error)
+}
+
+// Lines reads stored GTFS lines that can serve as proposal baselines.
 type Lines interface {
 	List(ctx context.Context, query lines.Query) (lines.Page, error)
 	Get(ctx context.Context, id int64) (lines.Detail, error)
@@ -58,6 +60,7 @@ type Handler struct {
 	logger     *slog.Logger
 	simulator  Simulator
 	comparator Comparator
+	detours    DetourPlanner
 	lines      Lines
 	transfers  Transfers
 	timeout    time.Duration
@@ -67,6 +70,7 @@ func NewHandler(
 	logger *slog.Logger,
 	simulator Simulator,
 	comparator Comparator,
+	detours DetourPlanner,
 	storedLines Lines,
 	transfers Transfers,
 	timeout time.Duration,
@@ -75,6 +79,7 @@ func NewHandler(
 		logger:     logger,
 		simulator:  simulator,
 		comparator: comparator,
+		detours:    detours,
 		lines:      storedLines,
 		transfers:  transfers,
 		timeout:    timeout,
@@ -97,15 +102,11 @@ func (handler *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /transfers", handler.listCombinationRanking)
 	mux.HandleFunc("POST /simulations", handler.createSimulation)
 	mux.HandleFunc("POST /comparisons", handler.createComparison)
+	mux.HandleFunc("POST /detours", handler.createDetour)
 	return handler.recoverPanic(handler.logRequest(mux))
 }
 
-// withTimeout bounds the work a single request may start.
-//
-// The server's write timeout closes the connection but leaves the handler
-// running, so without this an abandoned request would keep querying the
-// database for as long as it liked. Deriving the deadline from the request
-// context also preserves cancellation when the client hangs up.
+// withTimeout bounds backend work and preserves client cancellation.
 func (handler *Handler) withTimeout(
 	request *http.Request,
 ) (context.Context, context.CancelFunc) {
@@ -118,7 +119,17 @@ func (handler *Handler) withTimeout(
 func decodeBody(request *http.Request, target any) error {
 	decoder := json.NewDecoder(http.MaxBytesReader(nil, request.Body, maximumRequestBytes))
 	decoder.DisallowUnknownFields()
-	return decoder.Decode(target)
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("body must contain exactly one JSON value")
+		}
+		return err
+	}
+	return nil
 }
 
 func (handler *Handler) logRequest(next http.Handler) http.Handler {

@@ -10,6 +10,7 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/httpapi"
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
+	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/detour"
 )
 
 type fakeSimulator struct {
@@ -42,15 +43,29 @@ func (comparator *fakeComparator) Compare(
 	return comparator.result, comparator.err
 }
 
-type fakeLines struct {
-	page     lines.Page
-	detail   lines.Detail
-	similar  lines.Similarities
+type fakeDetourPlanner struct {
+	result   detour.Result
 	err      error
-	received lines.Query
-	// requestedID records the id of the last Get call.
-	requestedID int64
-	// receivedSimilarity records the last corridor search.
+	received detour.Input
+	calls    int
+}
+
+func (planner *fakeDetourPlanner) Plan(
+	_ context.Context,
+	input detour.Input,
+) (detour.Result, error) {
+	planner.calls++
+	planner.received = input
+	return planner.result, planner.err
+}
+
+type fakeLines struct {
+	page               lines.Page
+	detail             lines.Detail
+	similar            lines.Similarities
+	err                error
+	received           lines.Query
+	requestedID        int64
 	receivedSimilarity lines.SimilarityRequest
 }
 
@@ -91,9 +106,19 @@ func newTestRouterWithAll(
 	comparator httpapi.Comparator,
 	storedLines httpapi.Lines,
 ) http.Handler {
-	return newTestRouterWithTransfers(
+	return newTestRouterWithDetours(simulator, comparator, &fakeDetourPlanner{}, storedLines)
+}
+
+func newTestRouterWithDetours(
+	simulator httpapi.Simulator,
+	comparator httpapi.Comparator,
+	detours httpapi.DetourPlanner,
+	storedLines httpapi.Lines,
+) http.Handler {
+	return newTestRouterWithDetoursAndTransfers(
 		simulator,
 		comparator,
+		detours,
 		storedLines,
 		&fakeTransfers{},
 	)
@@ -105,11 +130,28 @@ func newTestRouterWithTransfers(
 	storedLines httpapi.Lines,
 	transfers httpapi.Transfers,
 ) http.Handler {
+	return newTestRouterWithDetoursAndTransfers(
+		simulator,
+		comparator,
+		&fakeDetourPlanner{},
+		storedLines,
+		transfers,
+	)
+}
+
+func newTestRouterWithDetoursAndTransfers(
+	simulator httpapi.Simulator,
+	comparator httpapi.Comparator,
+	detours httpapi.DetourPlanner,
+	storedLines httpapi.Lines,
+	transfers httpapi.Transfers,
+) http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return httpapi.NewHandler(
 		logger,
 		simulator,
 		comparator,
+		detours,
 		storedLines,
 		transfers,
 		5*time.Second,

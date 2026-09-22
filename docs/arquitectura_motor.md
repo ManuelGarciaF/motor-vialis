@@ -1,7 +1,7 @@
 # Vialis Motor: funcionamiento de la simulación
 
 **Alcance:** visión funcional y conceptual del motor completo  
-**Estado documentado:** funcionamiento implementado actualmente  
+**Estado documentado:** funcionamiento implementado actualmente
 **Última actualización:** 15 de agosto de 2026
 
 ## Contenido
@@ -18,13 +18,14 @@
 10. [Cálculo de recaudación potencial](#10-cálculo-de-recaudación-potencial)
 11. [Resultado de la simulación](#11-resultado-de-la-simulación)
 12. [Comparación de dos rutas](#12-comparación-de-dos-rutas)
-13. [Ejemplo conceptual](#13-ejemplo-conceptual)
-14. [Preparación y actualización de datos](#14-preparación-y-actualización-de-datos)
-15. [Decisiones funcionales](#15-decisiones-funcionales)
-16. [Alcance actual y limitaciones](#16-alcance-actual-y-limitaciones)
-17. [Evolución prevista](#17-evolución-prevista)
-18. [Glosario](#18-glosario)
-19. [Conclusión](#19-conclusión)
+13. [Desvíos por cortes](#13-desvíos-por-cortes)
+14. [Ejemplo conceptual](#14-ejemplo-conceptual)
+15. [Preparación y actualización de datos](#15-preparación-y-actualización-de-datos)
+16. [Decisiones funcionales](#16-decisiones-funcionales)
+17. [Alcance actual y limitaciones](#17-alcance-actual-y-limitaciones)
+18. [Evolución prevista](#18-evolución-prevista)
+19. [Glosario](#19-glosario)
+20. [Conclusión](#20-conclusión)
 
 ## 1. Objetivo del motor
 
@@ -43,8 +44,10 @@ información, el motor estima:
 - Qué recaudación potencial podría generar esa demanda, según el cuadro
   tarifario de la jurisdicción y los supuestos de captación configurados.
 
-El motor no genera automáticamente el recorrido ni decide dónde deben ubicarse
-las paradas. Evalúa una propuesta ya definida.
+El motor no genera el recorrido desde cero ni decide dónde deben ubicarse las
+paradas. Evalúa una propuesta ya definida. La única excepción es una calle
+cortada: ante una ruta que dejó de ser transitable, el motor traza el desvío que
+la sortea y lo evalúa contra la original (sección 13).
 
 Tampoco intenta predecir con exactitud la operación futura. Sus resultados son
 estimaciones comparativas construidas con:
@@ -72,6 +75,8 @@ Para una ruta propuesta, el motor puede responder:
    supuestos de captación y mezcla de pago configurados?
 9. ¿Cuánto aporta cada parada a la demanda y a la recaudación de la ruta?
 10. Frente a una ruta ya definida, ¿qué efecto tiene modificarla? (sección 12)
+11. Si un corte deja intransitable parte del recorrido, ¿por dónde puede seguir
+    circulando, qué paradas pierde y cuánto cuesta el rodeo? (sección 13)
 
 ### 1.2. Qué todavía no responde
 
@@ -89,12 +94,13 @@ Estas capacidades pueden incorporarse sobre las métricas existentes.
 
 ## 2. Qué información utiliza
 
-El motor combina cuatro grupos de información.
+El motor combina cinco grupos de información.
 
 ```mermaid
 flowchart LR
     MOV["Movilidad existente<br/>viajes y expansión"] --> MOTOR["Vialis Motor"]
     GTFS["Transporte existente<br/>recorridos y horarios GTFS"] --> MOTOR
+    RED["Red vial<br/>calles transitables<br/>y sus conexiones"] --> MOTOR
     TARIFAS["Cuadro tarifario<br/>por jurisdicción"] --> MOTOR
     ROUTE["Propuesta nueva<br/>paradas, jurisdicción<br/>y recorrido exacto"] --> MOTOR
     MOTOR --> RESULT["Demanda, distancia,<br/>tiempo, recaudación<br/>y confianza"]
@@ -170,7 +176,23 @@ tramo.
 Los horarios GTFS son programados. No son mediciones GPS ni registros de
 tráfico real.
 
-### 2.5. Ruta propuesta
+### 2.5. Red vial
+
+La red vial describe por qué calles se puede circular y cómo se conectan entre
+sí. Es lo que permite trazar un desvío cuando un corte vuelve intransitable un
+tramo (sección 13): sin ella, esquivar un corte sólo podría resolverse con una
+línea recta que ignora las calles.
+
+El motor la usa exclusivamente para elegir un camino entre dos paradas. No la
+usa para medir distancia, que se calcula sobre la geometría de la ruta
+(sección 7), ni para estimar tiempo, que sale de las referencias GTFS
+(sección 8).
+
+Igual que la movilidad, GTFS y el cuadro tarifario, es información preparada de
+antemano. Su antigüedad se traslada directamente a la calidad de los desvíos
+(sección 13.9).
+
+### 2.6. Ruta propuesta
 
 La propuesta contiene:
 
@@ -183,7 +205,7 @@ La propuesta contiene:
 La ruta representa un solo sentido de circulación. Una eventual vuelta debe
 simularse como otra ruta ordenada.
 
-### 2.6. Cuadro tarifario
+### 2.7. Cuadro tarifario
 
 El cuadro tarifario define, para cada jurisdicción, bandas de distancia con
 una tarifa para tarjeta registrada y una tarifa sin registrar
@@ -252,7 +274,9 @@ de la ruta y el aporte de cada parada (sección 11). Si la ruta es inválida o s
 produce un error de datos, no se entrega un resultado parcial.
 
 Cuando se comparan dos rutas, este flujo se ejecuta completo para cada una y
-después se calcula la diferencia (sección 12).
+después se calcula la diferencia (sección 12). El análisis de un corte
+(sección 13) agrega un paso previo —construir la variante que lo esquiva— y
+termina en esa misma comparación.
 
 ## 4. Definición de la ruta a simular
 
@@ -948,7 +972,7 @@ Los importes se almacenan en centavos para evitar errores de redondeo. El
 cuadro cargado actualmente corresponde a las tarifas AMBA publicadas para
 agosto de 2026 (`sql/tarifas/insertar_tarifas_vigentes.sql`). Actualizarlo es
 un proceso administrado, igual que el resto de los datos de referencia
-(sección 14).
+(sección 15).
 
 ### 10.3. Distancia del par
 
@@ -1189,7 +1213,7 @@ resultados junto con la diferencia entre ellos.
 La entrada son **dos rutas enteras**: una base y una propuesta. No se envía una
 descripción de qué cambió.
 
-El motor evalúa rutas, no las edita (sección 15.1). Si se enviara algo como
+El motor evalúa rutas, no las edita (sección 16.1). Si se enviara algo como
 "eliminar la parada 8", el motor tendría que decidir por dónde pasa ahora el
 recorrido entre las paradas 7 y 9, y esa decisión es de diseño, no de
 evaluación: podría unir los dos tramos, tomar otra avenida, o evitar un giro
@@ -1203,7 +1227,7 @@ Ambas rutas se validan con las mismas reglas de la sección 5, sin excepción.
 ### 12.2. De dónde sale la ruta base
 
 La ruta base suele ser una línea que ya existe. El motor guarda las líneas del
-AMBA que cargó el flujo GTFS (sección 14.2) y las expone en dos endpoints de
+AMBA que cargó el flujo GTFS (sección 15.2) y las expone en dos endpoints de
 sólo lectura: uno que las lista con su metadata —línea, ramal, sentido,
 distancia, cantidad de paradas— y otro que devuelve una de ellas con sus
 paradas y la geometría exacta de cada tramo, ya con la forma que acepta el
@@ -1239,7 +1263,7 @@ lugar de devolverla.** El flujo GTFS ubica cada parada sobre el `shape` de la
 línea y recorta el tramo que va hasta la siguiente; si una parada no lograra
 avanzar sobre el recorrido, ese tramo quedaría vacío y la ruta tendría un
 hueco. Una ruta con un hueco no cumple las reglas de la sección 5, y el motor
-no inventa la geometría faltante (sección 15.9). La ubicación monótona de las
+no inventa la geometría faltante (sección 16.9). La ubicación monótona de las
 paradas resolvió los casos que producían esto —recorridos circulares, pasadas
 equivocadas y retrocesos cortos— así que sobre el feed actual del AMBA no
 quedan líneas en esa condición; la respuesta de error existe para no entregar
@@ -1342,16 +1366,270 @@ Un delta favorable en demanda no alcanza por sí solo. Conviene mirar además:
 
 ### 12.8. Limitaciones
 
-La comparación hereda todas las limitaciones de cada simulación (sección 16).
+La comparación hereda todas las limitaciones de cada simulación (sección 17).
 Además:
 
 - Ambas rutas se evalúan contra el estado actual de la base. La comparación es
   válida entre sí, pero no es una serie histórica.
-- No se persiste (sección 16.10): cada comparación se calcula en el momento.
+- No se persiste (sección 17.10): cada comparación se calcula en el momento.
 - El motor no propone modificaciones ni sugiere qué parada conviene eliminar.
-  Evalúa la propuesta que recibe.
+  Evalúa la propuesta que recibe. La excepción es el desvío ante un corte
+  (sección 13), donde la propuesta la construye el motor porque el corte la
+  determina por completo (sección 16.1).
 
-## 13. Ejemplo conceptual
+## 13. Desvíos por cortes
+
+> **Estado:** dominio, proveedor de tráfico, repositorio pgRouting, servicio Go y
+> `POST /detours` implementados. Los casos reales, la demo y las mediciones
+> operativas corresponden a la fase 6 de
+> [`plan_rf05_desvios.md`](plan_rf05_desvios.md).
+
+Una calle cortada no cambia el diseño de una línea, pero le impide recorrerla.
+Cuando eso ocurre la pregunta deja de ser "¿conviene esta ruta?" y pasa a ser
+"¿por dónde puede circular mientras dure el corte, y qué cuesta el rodeo?".
+
+Para responderla el motor recibe la ruta y un corte lineal, traza una variante
+que lo evita y la evalúa contra la ruta original.
+
+```mermaid
+flowchart TD
+    IN["Ruta + corte"] --> HIT["1. Determinar qué tramos<br/>y paradas quedan afectados"]
+    HIT --> NONE{"¿Hay bloqueo?"}
+    NONE -- no --> SAME["Se informa que el corte<br/>no afecta la ruta"]
+    NONE -- sí --> REROUTE["2. Buscar caminos dentro de 1 km<br/>sobre la red vial, evitando el corte"]
+    REROUTE --> DROP["3. Elegir las paradas opcionales<br/>según el criterio"]
+    DROP --> VARIANT["4. Armar la variante<br/>y validarla"]
+    VARIANT --> COMPARE["5. Comparar variante<br/>contra ruta original"]
+```
+
+### 13.1. Qué es un corte
+
+El MVP recibe exactamente un corte como `LineString` GeoJSON: una cuadra o una
+sucesión de cuadras que la línea no puede atravesar. Normalmente proviene de un
+path OSRM y por eso sigue calles OSM, aunque el motor tolera diferencias entre
+las versiones de ambos grafos. Los puntos y polígonos, igual que múltiples
+cortes en un pedido, quedan fuera del MVP.
+
+El corte lo aporta quien consulta, marcado sobre el mapa. El motor no lo
+descubre ni lo guarda: viaja en el pedido, igual que la ruta. Un corte que dejó
+de existir sencillamente no se envía.
+
+**Un corte no tiene vigencia.** El motor no interpreta fechas ni horarios:
+evalúa el escenario en el que el corte recibido rige. Decidir si está vigente
+es responsabilidad de quien consulta, por la misma razón que la jurisdicción
+(sección 16.10): una vigencia inferida aplicaría restricciones que nadie pidió
+sin que quede en evidencia.
+
+**Un corte tampoco tiene sentido de circulación.** Una simulación representa un
+solo sentido (sección 16.2), así que un corte que sólo bloquea una mano se envía
+en la consulta del sentido afectado y se omite en la otra. Todo corte recibido
+bloquea.
+
+### 13.2. Qué parte de la ruta queda bloqueada
+
+Un tramo queda bloqueado cuando su recorrido toca un corte. "Tocar" requiere
+una tolerancia: un punto nunca cae exactamente sobre una línea, y dos
+geometrías dibujadas por separado casi nunca se intersecan de forma exacta. Por
+eso el contacto se evalúa contra un corredor configurable, inicialmente de 5
+metros, del mismo modo que la validación admite una tolerancia entre una parada
+y el extremo de su tramo (sección 5.2).
+
+El `LineString` es una barrera que no se puede atravesar, no la identificación
+de una calle cerrada. Toda arista que ingresa en ese corredor se excluye sin
+importar su orientación: si una calle perpendicular cruza el corte, tampoco se
+puede circular por ella. Una calle paralela que permanece completamente fuera
+del corredor sigue disponible.
+
+El bloqueo produce dos efectos distintos, y conviene no confundirlos:
+
+| Qué toca el corte | Consecuencia |
+|---|---|
+| El recorrido entre dos paradas | El tramo se puede redibujar: hay desvío posible. |
+| La ubicación de una parada | Ningún desvío la vuelve accesible: la parada se pierde. |
+
+El primero es un problema de trazado. El segundo es una pérdida de cobertura, y
+se trata en la sección 13.4.
+
+### 13.3. Diseñar sólo lo que el corte obliga
+
+Acá el motor hace algo que en todo el resto del documento evita: propone
+geometría. La sección 16.1 explica por qué esto no abandona la separación entre
+generar y evaluar. Lo que importa acá es cuán acotada es la propuesta.
+
+La variante se construye con el cambio mínimo:
+
+- El orden de las paradas no cambia.
+- No se agregan paradas.
+- No se reubican paradas.
+- Los tramos que el corte no alcanza se conservan exactamente como llegaron.
+- Sólo se reemplaza el recorrido de los tramos bloqueados.
+
+Alrededor del corte se construye un área de búsqueda de 1 km. La geometría
+original que queda fuera de esa área se conserva exactamente; dentro de ella se
+buscan caminos sobre la red vial, descartando las calles que el corte alcanza.
+El camino no puede salir del área de búsqueda: un rodeo mayor ya no se considera
+un desvío local aceptable para el MVP.
+
+Cuando el límite corta un `PathToNext` por la mitad, se conservan su prefijo y
+su sufijo originales y sólo se reemplaza la porción interior. Los puntos donde
+la ruta cruza el límite actúan como anclas del camino nuevo. Al proyectar una
+parada o ancla sobre la red puede aparecer una separación por las distintas
+versiones de OSM. La geometría incluye explícitamente ese conector y sólo lo
+acepta si permanece dentro del área de búsqueda y no cruza el corredor
+prohibido; no deja un salto implícito al coser ambos trazados.
+
+Esa distinción es la que mantiene interpretable el resultado: como todo lo demás
+queda igual, la diferencia entre la variante y la ruta original es atribuible al
+corte y nada más.
+
+### 13.4. Paradas forzadas y opcionales
+
+Si una parada queda a 20 metros o menos del corte, se considera alcanzada: el
+vehículo no puede detenerse donde no puede entrar. Esa parada se quita de todas
+las variantes posibles.
+
+Además, una parada cuya distancia geográfica mínima al `LineString` del corte
+sea de hasta 500 metros es **opcional**. El criterio de decisión puede
+saltearla para evitar que el vehículo vuelva hacia la zona afectada. Las paradas
+a más de 500 metros no pueden eliminarse: si no existe un camino que las
+conserve dentro del área de búsqueda, el corte no tiene variante resoluble.
+Ambos radios son parámetros versionados del modelo: 500 metros para omisión de
+paradas y 1 km para búsqueda vial.
+
+El orden de las paradas conservadas nunca cambia. Cuando se omite una, el motor
+rutea directamente entre las paradas o anclas conservadas que quedan a ambos
+lados. Informa cuáles quitó y el efecto real que la simulación de la variante
+produce sobre demanda y recaudación (sección 13.7).
+
+**El motor no propone una parada de reemplazo.** Correr una parada para esquivar
+un corte expresaría una decisión de diseño que el corte no determina.
+
+Si se pierde la primera o la última parada, la variante arranca o termina antes.
+Se informa como cualquier otra parada no cubierta, pero conviene leerlo con
+atención: acortar una punta cambia qué es la línea, no sólo por dónde pasa.
+
+### 13.5. El tráfico elige el camino; GTFS evalúa la variante
+
+La selección del camino y la simulación responden preguntas distintas.
+
+Para elegir el desvío más rápido, el motor consulta tiles vectoriales de tráfico
+TomTom que cubran el área de búsqueda de 1 km, asocia sus segmentos con las
+aristas de `vialis.calles` y calcula costos en segundos a partir de la velocidad
+actual. Cuando una arista no tiene observación directa, puede usar la mediana de
+entre 3 y 5 segmentos de la misma categoría vial situados a hasta 300 metros.
+La respuesta distingue `tomtom_direct` de `tomtom_nearby_estimate`; si no hay
+muestras suficientes, la arista no recibe una velocidad inventada. Esos costos
+sólo ordenan las alternativas del corte y no reemplazan el modelo de tiempo de
+la simulación.
+
+Una vez armada, la variante se evalúa con exactamente el mismo cálculo que
+cualquier otra ruta: demanda (sección 6), distancia (sección 7), tiempo GTFS
+(sección 8) y recaudación (sección 10). Esto mantiene comparables `baseline` y
+`proposed`: el tráfico responde qué alternativa conviene ahora, mientras que
+GTFS describe cómo se comportaría operacionalmente bajo la metodología estable
+del motor.
+
+Los tiles se consultan una vez por coordenada de tesela y se reutilizan por
+hasta 30 minutos mediante una caché por tile; el spike comparativo adoptó zoom
+14 porque z15 y z16 no mejoraron la cobertura de matching. Nunca se
+consulta TomTom una vez por calle. La respuesta debe registrar la fuente y
+antigüedad del tráfico utilizado.
+
+### 13.6. Criterios de optimización del MVP
+
+El criterio se declara en la consulta y se aplica sólo a las paradas opcionales
+de la sección 13.4:
+
+| Criterio | Prioridad | Desempate |
+|---|---|---|
+| Menor tiempo | Menor tiempo según tráfico actual; puede omitir paradas a hasta 500 m del corte. | Menor cantidad de paradas perdidas. |
+| Menor cantidad de paradas perdidas | Mayor cantidad de paradas conservadas. | Menor tiempo según tráfico actual. |
+
+Las prioridades son lexicográficas: el desempate nunca puede empeorar el
+objetivo principal. Para comparar alternativas no hace falta calcular todas las
+combinaciones de paradas; como su orden no cambia, puede resolverse como un
+camino sobre estados ordenados de paradas conservadas y omitidas.
+
+`MENOR_DESVIO` queda fuera del MVP. La distancia continúa informándose en la
+simulación y en el `delta`, pero no elige la variante.
+
+### 13.7. Qué se informa
+
+```text
+Desvío
+├── variant     ← la variante completa, lista para reenviar
+├── uncovered   ← paradas que el corte dejó fuera, con su aporte perdido
+├── baseline    ← resultado de la ruta original
+├── proposed    ← resultado de la variante
+└── delta       ← cuánto se movió cada métrica
+```
+
+Los últimos tres son exactamente la comparación de la sección 12: la variante es
+una ruta propuesta como cualquier otra, y comparar contra la ruta original es lo
+que responde "cuánto cuesta el corte".
+
+`uncovered` lista cada parada perdida con el aporte que tenía en la ruta
+original, tomado de su `byStop` (sección 11.3). Ese aporte da contexto, pero no
+se presenta como pérdida atribuible individual: las zonas H3 se reasignan al
+simular la variante. La pérdida efectiva total está en el `delta` entre
+`baseline` y `proposed`.
+
+**La variante se devuelve como una ruta completa**, con sus paradas, la
+geometría de cada tramo y la jurisdicción declarada en la consulta, en el mismo
+formato que acepta el endpoint de simulación. Quien consulta puede revisarla,
+editarla y reenviarla. El motor propone el desvío; adoptarlo no es una decisión
+suya.
+
+Esa variante pasa las mismas validaciones de la sección 5, sin excepción. Una
+geometría generada por el motor no tiene un permiso especial: si el trazado que
+produjo no formara una ruta válida, el pedido falla en lugar de devolverla.
+
+### 13.8. Cuando no hay variante
+
+El motor no siempre puede responder con un desvío, y en cada caso lo dice en
+lugar de aproximar:
+
+- **Ningún tramo ni parada bloqueado.** El corte no toca la ruta. No se inventa
+  un cambio: se informa que la ruta sigue siendo transitable.
+- **El corte aísla el tramo.** Si dentro del área de búsqueda de 1 km no existe
+  ningún camino entre las anclas o paradas obligatorias que evite todos los
+  cortes, no se amplía el radio ni se devuelve una recta. El tramo se informa
+  como no resoluble: una geometría fuera del límite aceptado evaluaría una
+  variante distinta de la solicitada.
+- **Quedan menos de dos paradas cubiertas.** La ruta deja de existir como
+  recorrido y no hay nada que evaluar.
+- **La topología conecta pero el tráfico no.** Se puede consultar el mismo
+  subgrafo con sus costos OSM sólo para distinguir este caso de un aislamiento
+  real. Se informa cobertura de tráfico insuficiente; ese camino diagnóstico
+  nunca se devuelve ni participa de la selección.
+
+### 13.9. Limitaciones
+
+- **La red vial es un dato preparado** (sección 15.4). Su antigüedad limita la
+  calidad del desvío: una calle abierta después de la última carga no se
+  considera, y una cerrada de forma permanente se sigue considerando
+  transitable.
+- **El motor no sabe si una calle admite un colectivo.** Rutea sobre lo que la
+  red representa. Ancho, altura libre, restricciones de giro, sentido único o
+  prohibición de vehículos pesados se respetan sólo en la medida en que la red
+  los registre. Un desvío puede ser geométricamente correcto y operativamente
+  imposible, y quien consulta debería revisarlo antes de adoptarlo.
+- **El desvío se resuelve tramo por tramo.** No se evalúa una reorganización
+  global de la ruta que podría ser mejor que la suma de los rodeos locales.
+- **Las paradas alejadas de la red no bloquean RF05.** En la carga vigente, 61
+  de 43.400 paradas dentro del área quedan a más de 50 metros de una arista,
+  principalmente dentro de terminales y Ciudad Universitaria. No se incorporan
+  calles internas `service` sólo para acercarlas ni se rechaza el grafo por
+  esos casos. Si una modificación necesita rutear hasta una de esas paradas, la
+  calidad del enganche queda limitada por la red disponible; el criterio puede
+  omitirla únicamente cuando esté dentro de los 500 metros habilitados.
+- **No se reubican paradas** (sección 13.4).
+- **Un solo sentido**, como toda simulación (sección 16.2).
+- **No se persiste** (sección 17.10): cada análisis se calcula en el momento.
+- Hereda además todas las limitaciones de cada simulación (sección 17) y de la
+  comparación (sección 12.8).
+
+## 14. Ejemplo conceptual
 
 Supongamos una ruta:
 
@@ -1362,7 +1640,7 @@ A → B → C
 El tramo `A → B` recorre una avenida rápida. El tramo `B → C` atraviesa una
 zona céntrica.
 
-### 13.1. Demanda
+### 14.1. Demanda
 
 | Par | Demanda bruta | Accesibilidad combinada | Demanda potencial |
 |---|---:|---:|---:|
@@ -1371,7 +1649,7 @@ zona céntrica.
 | B → C | 25 | 0,72 | 18 |
 | **Total** | **175** | — | **118** |
 
-### 13.2. Tiempo
+### 14.2. Tiempo
 
 | Tramo | Distancia | Ritmo típico | Tiempo típico | Fuente |
 |---|---:|---:|---:|---|
@@ -1381,7 +1659,7 @@ zona céntrica.
 
 Una velocidad única habría ocultado que el segundo tramo es más lento.
 
-### 13.3. Recaudación
+### 14.3. Recaudación
 
 Para simplificar, se asume una única banda tarifaria de 1.000 centavos, con
 captación total y pago 100 % con tarjeta registrada (valores predeterminados):
@@ -1393,7 +1671,7 @@ captación total y pago 100 % con tarjeta registrada (valores predeterminados):
 | B → C | 500 m | 18 | 1.000 centavos | 18.000 centavos |
 | **Total** | — | **118** | — | **118.000 centavos** |
 
-### 13.4. Aporte por parada
+### 14.4. Aporte por parada
 
 Los pares anteriores son el cálculo interno. Lo que el motor informa es el
 aporte de cada parada (sección 11.3), que se obtiene agrupándolos:
@@ -1412,7 +1690,7 @@ contado una vez como origen y otra como destino.
 La parada A no recibe a nadie porque es la cabecera, y C no origina viajes
 porque es la terminal. Ambas aparecen igual, con sus ceros.
 
-### 13.5. Comparación de una modificación
+### 14.5. Comparación de una modificación
 
 Supongamos que se propone eliminar la parada B, uniendo los dos tramos en uno
 solo de 1.500 metros. La ruta pasa a ser `A → C`.
@@ -1439,7 +1717,7 @@ Esa diferencia entre "lo que la parada aportaba" y "lo que la ruta pierde" es
 la razón por la que una modificación se evalúa simulando y comparando, y no
 restando el aporte de la parada eliminada.
 
-### 13.6. Interpretación
+### 14.6. Interpretación
 
 El escenario original sugiere:
 
@@ -1459,11 +1737,11 @@ No permite concluir todavía:
 - Cuántos pasajeros elegirían efectivamente la línea.
 - Cuántos vehículos serían necesarios.
 
-## 14. Preparación y actualización de datos
+## 15. Preparación y actualización de datos
 
 El motor necesita datos preparados antes de simular.
 
-### 14.1. Flujo de movilidad
+### 15.1. Flujo de movilidad
 
 ```mermaid
 flowchart LR
@@ -1482,7 +1760,7 @@ La actualización de viajes modifica:
 - Cantidades de la matriz.
 - Demanda estimada de futuras simulaciones.
 
-### 14.2. Flujo GTFS
+### 15.2. Flujo GTFS
 
 ```mermaid
 flowchart LR
@@ -1504,7 +1782,7 @@ Una actualización GTFS puede modificar:
 - Cantidad de líneas disponibles en cada corredor.
 - Confianza de una misma ruta simulada.
 
-### 14.3. Flujo de tarifas
+### 15.3. Flujo de tarifas
 
 ```mermaid
 flowchart LR
@@ -1520,7 +1798,31 @@ realiza mediante un script SQL versionado
 (`sql/tarifas/insertar_tarifas_vigentes.sql`) que debe actualizarse
 manualmente cuando cambia el cuadro publicado.
 
-### 14.4. Naturaleza de las actualizaciones
+### 15.4. Flujo de red vial
+
+```mermaid
+flowchart LR
+    FUENTE["Cartografía vial"] --> IMPORT["Importación<br/>de calles"]
+    IMPORT --> TOPO["Topología<br/>conexiones entre calles"]
+    TOPO --> RED["Red vial ruteable"]
+    RED --> SIM["Desvío por corte"]
+```
+
+Una actualización de la red vial puede modificar:
+
+- Qué calles existen y cuáles no.
+- Cómo se conectan entre sí.
+- El desvío elegido ante un mismo corte.
+- La existencia misma de un desvío en zonas con pocas alternativas.
+
+A diferencia de los otros tres flujos, este no afecta demanda, tiempo ni
+recaudación de una simulación común: sólo interviene cuando hay un corte que
+esquivar.
+
+La obtención, transformación y validación de esta red están versionadas en
+`sql/calles/`; su estado operativo se resume en la sección 15.7.
+
+### 15.5. Naturaleza de las actualizaciones
 
 La preparación no ocurre dentro de cada simulación. Es un proceso previo
 administrado.
@@ -1531,7 +1833,7 @@ Esto permite respuestas más rápidas, pero requiere:
 - Actualizar viajes, GTFS y tarifas con una frecuencia definida.
 - Validar las cargas antes de reemplazar datos productivos.
 
-### 14.5. Reconstrucción GTFS
+### 15.6. Reconstrucción GTFS
 
 La transformación GTFS actual reconstruye las tablas finales de recorridos y
 paradas.
@@ -1545,35 +1847,58 @@ Antes de ejecutarla se debe:
 Los datos de viajes, matriz OD y tarifas no se modifican durante esa
 reconstrucción.
 
-### 14.6. Estado operativo actual
+### 15.7. Estado operativo actual
 
-El repositorio incluye los procesos de transformación, pero algunos pasos de
-carga de archivos se realizan externamente.
+`cmd/initdb` ejecuta el pipeline completo desde una base vacía: red vial, GTFS,
+viajes, agregados y tarifas. Los archivos fuente siguen siendo insumos externos
+y deben estar disponibles antes de iniciar la carga.
 
 Además:
 
+- La red vial AMBA + 10 km y su pipeline están en `sql/calles/`; RF05 asocia
+  tráfico TomTom, genera variantes sobre pgRouting y las expone en
+  `POST /detours`.
 - La importación de etapas individuales no está implementada.
-- Algunos procesos de viajes requieren limpieza antes de repetirse.
-- El cuadro tarifario no se versiona automáticamente; reemplazarlo requiere
-  actualizar el script de carga.
+- El cuadro tarifario no se sincroniza automáticamente con la fuente oficial;
+  reemplazarlo requiere actualizar y ejecutar el script versionado.
 - Las simulaciones no se persisten.
 - No existe todavía un historial de versiones de datos y resultados.
 
-## 15. Decisiones funcionales
+## 16. Decisiones funcionales
 
-### 15.1. Evaluar una ruta, no diseñarla
+### 16.1. Diseñar sólo lo que un corte obliga
 
-El motor no propone automáticamente paradas o calles. Esto mantiene separadas:
+El motor no propone paradas ni recorridos: evalúa la propuesta que recibe. Esto
+mantiene separadas la generación de alternativas y su evaluación.
 
-- Generación de alternativas.
-- Evaluación de alternativas.
+La única excepción es el desvío ante un corte (sección 13). Conviene precisar
+por qué es una excepción y no el abandono de la regla.
 
-### 15.2. Un sentido por simulación
+Lo que la regla protege es la distancia entre **intención de diseño** y
+**evaluación**. Cuando alguien dice "eliminá la parada 8", la geometría
+resultante queda indeterminada: unir los dos tramos, tomar otra avenida o
+esquivar un giro prohibido son todas respuestas posibles, y elegir entre ellas
+expresa una intención que el motor no tiene cómo conocer. Por eso esa clase de
+cambio se sigue enviando ya resuelta (sección 16.12).
+
+Un corte no expresa una intención sino una imposibilidad. No dice qué se quiere
+lograr; dice por dónde ya no se puede pasar. El objetivo queda completamente
+determinado por la ruta original —parecerse a ella todo lo posible— y el corte
+sólo agrega una restricción. No hay ahí una decisión de diseño que adivinar:
+hay un problema con una respuesta calculable.
+
+Por eso la excepción es acotada, y se mantiene acotada a propósito. El motor
+redibuja los tramos que el corte volvió intransitables y nada más: no mueve
+paradas, no agrega paradas, no reordena la ruta y no reubica la parada que
+quedó dentro del corte. Cada una de esas decisiones volvería a ser diseño, y
+ninguna está determinada por el corte.
+
+### 16.2. Un sentido por simulación
 
 La demanda y el recorrido son direccionales. Ida y vuelta deben evaluarse por
 separado si sus paradas o geometrías difieren.
 
-### 15.3. Demanda territorial
+### 16.3. Demanda territorial
 
 La demanda se vincula con áreas cercanas a paradas y no exclusivamente con
 puntos exactos.
@@ -1581,43 +1906,43 @@ puntos exactos.
 Esto es apropiado para analizar cobertura, aunque no reemplaza un modelo de
 elección de transporte.
 
-### 15.4. Asignación exclusiva de zonas
+### 16.4. Asignación exclusiva de zonas
 
 Evita doble contabilización, pero hace que la distribución por parada dependa
 de la configuración completa de paradas.
 
-### 15.5. Recorrido exacto
+### 16.5. Recorrido exacto
 
 Permite medir distancia y condiciones locales sin depender de un servicio
 externo de mapas.
 
-### 15.6. Tiempo local antes que promedio global
+### 16.6. Tiempo local antes que promedio global
 
 Se priorizan referencias cercanas. El promedio global se utiliza únicamente
 como respaldo.
 
-### 15.7. Variabilidad explícita
+### 16.7. Variabilidad explícita
 
 El motor devuelve tres escenarios en lugar de un único tiempo. Esto comunica
 que la operación no tiene una duración constante.
 
-### 15.8. Procedencia visible
+### 16.8. Procedencia visible
 
 Fuente y confianza forman parte del resultado para que una cifra estimada no se
 presente sin contexto.
 
-### 15.9. Fallar ante geometrías inválidas
+### 16.9. Fallar ante geometrías inválidas
 
 Una corrección automática podría evaluar una ruta distinta. Por eso la entrada
 se rechaza y debe corregirse en origen.
 
-### 15.10. Jurisdicción como entrada explícita
+### 16.10. Jurisdicción como entrada explícita
 
 La jurisdicción tarifaria se declara en la ruta y no se infiere de las
 coordenadas. Inferirla automáticamente podría aplicar una tarifa incorrecta en
 zonas limítrofes sin que quede en evidencia.
 
-### 15.11. Captación y mezcla de pago como supuestos de política
+### 16.11. Captación y mezcla de pago como supuestos de política
 
 El factor de captación y la proporción de tarjeta registrada son parámetros de
 configuración, no resultados calibrados con datos observados de la línea. Se
@@ -1625,16 +1950,21 @@ tratan igual que la política de accesibilidad (sección 6.4): valores
 explícitos, documentados y versionables, no un modelo de elección de
 transporte.
 
-### 15.12. Comparar dos rutas completas, no un cambio declarado
+### 16.12. Comparar dos rutas completas, no un cambio declarado
 
 Una modificación se expresa enviando la ruta resultante entera, no una
-instrucción de qué cambiar. Es consecuencia directa de la decisión 15.1: si el
+instrucción de qué cambiar. Es consecuencia directa de la decisión 16.1: si el
 motor tuviera que interpretar "eliminar esta parada", tendría que decidir por
 dónde pasa ahora el recorrido, y eso es diseñar. Quien propone el cambio es
 quien sabe si corresponde unir los dos tramos, tomar otra calle o evitar un
 giro prohibido.
 
-### 15.13. Un resultado del tamaño de la decisión
+Un corte también se declara y el motor sí actúa sobre él (sección 13), lo que
+puede parecer la misma cosa. La diferencia está en qué se declara: una
+modificación declara qué se quiere cambiar y deja abierto el cómo; un corte
+declara qué dejó de ser posible y no deja nada abierto.
+
+### 16.13. Un resultado del tamaño de la decisión
 
 El motor calcula el detalle de cada par origen-destino pero no lo informa. La
 cantidad de pares crece con el cuadrado de la cantidad de paradas, y ese
@@ -1645,22 +1975,22 @@ la ruta completa y el aporte de cada parada (sección 11). Devolver menos
 también es lo que hace práctico entregar dos resultados completos en una
 comparación.
 
-### 15.14. Diferencias relativas indefinidas en lugar de infinitas
+### 16.14. Diferencias relativas indefinidas en lugar de infinitas
 
 Cuando una métrica vale cero en la ruta base, la diferencia relativa se informa
 como nula y no como un crecimiento enorme. Un cociente indefinido presentado
 como número invita a leerlo como una mejora espectacular cuando en realidad
 sólo indica que antes no había nada que comparar.
 
-### 15.15. La confianza no se resta
+### 16.15. La confianza no se resta
 
 Alta, media y baja son categorías ordenadas, no cantidades. Una comparación
 informa ambas etiquetas en lugar de su diferencia, porque la distancia entre
 dos niveles no tiene interpretación (sección 12.6).
 
-## 16. Alcance actual y limitaciones
+## 17. Alcance actual y limitaciones
 
-### 16.1. Demanda y recaudación potencial no equivalen a captación real
+### 17.1. Demanda y recaudación potencial no equivalen a captación real
 
 La demanda potencial indica movimientos accesibles, no pasajeros asegurados.
 La recaudación potencial (sección 10) aplica un factor de captación
@@ -1676,7 +2006,7 @@ Faltan variables como:
 - Preferencias de los usuarios.
 - Evasión y elasticidad frente a la tarifa.
 
-### 16.2. Día típico
+### 17.2. Día típico
 
 Los datos de movilidad representan un día hábil típico. No describen:
 
@@ -1685,12 +2015,12 @@ Los datos de movilidad representan un día hábil típico. No describen:
 - Estacionalidad.
 - Cambios recientes no incluidos en la carga.
 
-### 16.3. Cobertura geográfica
+### 17.3. Cobertura geográfica
 
 La fuente de viajes tiene alcance AMBA. El alcance efectivo depende del archivo
 cargado y no de un recorte automático del motor.
 
-### 16.4. Accesibilidad simplificada
+### 17.4. Accesibilidad simplificada
 
 La distancia es geográfica y no peatonal. El modelo no conoce:
 
@@ -1699,13 +2029,13 @@ La distancia es geográfica y no peatonal. El modelo no conoce:
 - Calidad urbana.
 - Seguridad.
 
-### 16.5. Búsqueda H3 acotada
+### 17.5. Búsqueda H3 acotada
 
 La búsqueda de demanda parte de la vecindad H3 inmediata de la parada y después
 aplica el radio de 800 metros. Esta estrategia es eficiente, pero debería
 revisarse si se cambia la resolución H3 o el radio.
 
-### 16.6. Horarios programados
+### 17.6. Horarios programados
 
 Los tiempos GTFS no observan:
 
@@ -1715,25 +2045,25 @@ Los tiempos GTFS no observan:
 - Incumplimientos.
 - Variabilidad diaria no programada.
 
-### 16.7. Dirección aproximada
+### 17.7. Dirección aproximada
 
 La compatibilidad usa la orientación general entre extremos del tramo. En
 geometrías muy curvas, la dirección local puede estar representada de forma
 simplificada.
 
-### 16.8. Cantidad de muestras
+### 17.8. Cantidad de muestras
 
 Se conserva cuántos viajes GTFS contribuyeron a cada percentil, pero esa
 cantidad no aumenta automáticamente el peso de una línea durante la
 simulación.
 
-### 16.9. Cuadro tarifario sin versionado histórico
+### 17.9. Cuadro tarifario sin versionado histórico
 
 La simulación usa siempre el cuadro tarifario vigente en la base de datos al
 momento de ejecutarse. No conserva tarifas históricas ni permite simular con
 la tarifa de una fecha pasada.
 
-### 16.10. Resultado no persistido
+### 17.10. Resultado no persistido
 
 Actualmente no se guarda:
 
@@ -1746,18 +2076,15 @@ Actualmente no se guarda:
 Dos ejecuciones en momentos distintos podrían cambiar después de actualizar la
 base, sin que el motor conserve por sí mismo la comparación histórica.
 
-### 16.11. Exposición actual
+### 17.11. Exposición actual
 
-El servicio HTTP publica una comprobación de salud, la simulación de una ruta y
-la comparación de dos rutas. El contrato está documentado en
+El servicio HTTP publica una comprobación de salud, el catálogo de líneas,
+búsqueda de corredores similares, ranking de combinaciones, simulaciones,
+comparaciones y desvíos por cortes. El contrato está documentado en
 `docs/openapi.yaml`. También existe una herramienta de línea de comandos que
 simula una ruta desde un archivo JSON.
 
-Todavía no se expone un catálogo de las líneas existentes: quien consulta debe
-construir la ruta base por su cuenta, aunque corresponda a una línea que el
-motor ya tiene cargada.
-
-### 16.12. Cálculo sincrónico
+### 17.12. Cálculo sincrónico
 
 Cada consulta se resuelve dentro del mismo pedido, contra un límite de tiempo
 configurable. Las dos simulaciones de una comparación se calculan en paralelo,
@@ -1770,9 +2097,9 @@ requieren bastante más, porque cada uno de sus tramos atraviesa muchos
 corredores existentes. Para esos casos el límite de tiempo puede quedar corto y
 la respuesta ser un error de tiempo agotado.
 
-## 17. Evolución prevista
+## 18. Evolución prevista
 
-### 17.1. Modelo de captación calibrado
+### 18.1. Modelo de captación calibrado
 
 El factor de captación y la mezcla de pago son actualmente parámetros fijos de
 configuración (secciones 10.5 y 10.6). Pueden complementarse con un modelo que
@@ -1786,7 +2113,7 @@ estime captación a partir de:
 Esto permitiría reemplazar el supuesto fijo por una proporción específica de
 cada ruta y jurisdicción.
 
-### 17.2. Comparación con líneas similares
+### 18.2. Comparación con líneas similares
 
 Una línea existente puede considerarse similar según:
 
@@ -1800,7 +2127,7 @@ Una línea existente puede considerarse similar según:
 
 La comparación debería explicar qué criterios originaron la similitud.
 
-### 17.3. Datos observados
+### 18.3. Datos observados
 
 Tiempos GPS o AVL podrían incorporarse con una jerarquía de fuentes:
 
@@ -1812,7 +2139,7 @@ observación local
 
 La salida debería mantener la procedencia.
 
-### 17.4. Persistencia y escenarios
+### 18.4. Persistencia y escenarios
 
 Guardar las simulaciones permitiría:
 
@@ -1821,13 +2148,13 @@ Guardar las simulaciones permitiría:
 - Auditar cambios.
 - Asociar cada cálculo con una versión de datos.
 
-### 17.5. Versionado histórico de tarifas
+### 18.5. Versionado histórico de tarifas
 
 Guardar cada cuadro tarifario con su fecha de vigencia permitiría simular con
 la tarifa vigente en una fecha pasada y auditar variaciones de recaudación
 potencial causadas exclusivamente por actualizaciones tarifarias.
 
-### 17.6. Publicación mediante API
+### 18.6. Publicación mediante API
 
 El mismo contrato puede exponerse a una aplicación web sin cambiar el
 funcionamiento conceptual.
@@ -1838,7 +2165,7 @@ También conviene separar:
 - Disponibilidad de la base.
 - Vigencia de los datos.
 
-## 18. Glosario
+## 19. Glosario
 
 | Término | Significado |
 |---|---|
@@ -1848,7 +2175,9 @@ También conviene separar:
 | Demanda bruta | Viajes de la matriz entre zonas cubiertas, antes de ponderar accesibilidad. |
 | Demanda captada | Demanda potencial de un par de paradas multiplicada por el factor de captación. |
 | Demanda potencial | Demanda bruta ponderada por accesibilidad en origen y destino. |
+| Corte | Barrera `LineString` que la línea no puede atravesar, declarada por quien consulta. |
 | Delta | Diferencia entre la ruta propuesta y la ruta base, con su valor absoluto y su fracción relativa. |
+| Desvío | Variante de una ruta que esquiva los cortes redibujando sólo los tramos que quedaron intransitables. |
 | Factor de captación | Proporción configurable de la demanda potencial que se asume paga un viaje en la línea. |
 | Factor de expansión | Peso estadístico que convierte una fila de muestra en viajes representados. |
 | GTFS | Formato estándar de oferta, recorridos, paradas y horarios de transporte. |
@@ -1856,17 +2185,20 @@ También conviene separar:
 | Jurisdicción | Autoridad tarifaria aplicable a la ruta simulada (`caba`, `province` o `national`). |
 | LineString | Geometría ordenada que representa un recorrido. |
 | Matriz OD | Cantidad de viajes entre zonas de origen y destino. |
+| Parada no cubierta | Parada de la ruta original que queda dentro de un corte y que ningún desvío puede alcanzar, por lo que la variante la pierde. |
 | Percentil 25 | Valor por debajo del cual queda el 25 % de los tiempos. |
 | Percentil 50 | Mediana de los tiempos. |
 | Percentil 75 | Valor por debajo del cual queda el 75 % de los tiempos. |
 | Recaudación potencial | Ingreso estimado por tarifa a partir de la demanda captada y la tarifa ponderada de cada par de paradas. |
+| Red vial | Descripción de las calles transitables y sus conexiones, usada únicamente para trazar el desvío ante un corte. |
 | Ritmo comercial | Segundos necesarios por metro recorrido, incluyendo detenciones según el criterio GTFS. |
 | Ruta base | Ruta contra la que se compara una propuesta. En una modificación, la línea tal como existe hoy. |
 | Tarifa ponderada | Combinación de la tarifa registrada y la tarifa sin registrar según la proporción de tarjeta registrada asumida. |
 | Tramo | Recorrido desde una parada hasta la siguiente. |
+| Variante | Ruta que el motor devuelve tras esquivar un corte, completa y lista para reenviarse a la simulación. |
 | Viaje canónico | Viaje GTFS elegido para representar la secuencia principal de una línea y sentido. |
 
-## 19. Conclusión
+## 20. Conclusión
 
 Vialis Motor evalúa una ruta nueva combinando movilidad existente, oferta de
 transporte programada, geometría detallada y el cuadro tarifario de la
@@ -1889,6 +2221,13 @@ entre ellas (sección 12). Así una modificación de una línea existente —agr
 o quitar paradas, cambiar las calles que recorre— deja de ser un resultado
 aislado y pasa a poder leerse como impacto: cuánta demanda gana o pierde,
 cuánto tiempo agrega y si la estimación se vuelve menos confiable.
+
+Sobre esa misma comparación se apoya el análisis de un corte (sección 13). Ahí
+el motor da un paso que en el resto del documento evita —traza él mismo la
+variante que esquiva lo intransitable— pero lo da acotado a lo que el corte
+determina: redibuja los tramos bloqueados, informa qué paradas quedaron fuera y
+cuánto aportaban, y deja la decisión de adoptar el desvío en manos de quien
+consulta.
 
 Las métricas actuales constituyen una base para completar la evaluación de
 viabilidad con costos, comparación automática contra líneas similares y un

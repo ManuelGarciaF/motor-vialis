@@ -48,8 +48,7 @@ func TestNewChangeLeavesTheRelativeUndefinedWithoutABaseline(t *testing.T) {
 	}
 }
 
-// A ratio JSON cannot encode would fail after the status line and headers were
-// already written, turning an edge case into a truncated response.
+// Non-finite ratios must not reach JSON encoding.
 func TestChangeAlwaysEncodesToJSON(t *testing.T) {
 	changes := []any{
 		newChange(0, 100),
