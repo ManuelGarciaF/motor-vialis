@@ -214,6 +214,85 @@ JOIN alternativas_por_par
 
 ANALYZE atribucion;
 
+-- 5b. El reparto colapsado por par de celdas, que es la unidad en la que se
+-- elige la zona dominante.
+--
+-- Existe para que el origen y el destino salgan del MISMO viaje. Eligiendo cada
+-- lado por separado —el origen mas votado por un lado, el destino mas votado
+-- por el otro— se puede informar un par que nadie hizo nunca: el origen de un
+-- viaje con el destino de otro.
+--
+-- `alternativas` es una propiedad del par de celdas, igual para las 24 horas,
+-- asi que MIN devuelve ese valor y no un resumen.
+CREATE TEMP TABLE atribucion_por_par ON COMMIT DROP AS
+SELECT
+    id_recorrido_primero,
+    id_recorrido_segundo,
+    rango_horario,
+    h3_origen,
+    h3_destino,
+    SUM(viajes_atribuidos) AS viajes,
+    MIN(alternativas) AS alternativas
+FROM atribucion
+GROUP BY
+    id_recorrido_primero,
+    id_recorrido_segundo,
+    rango_horario,
+    h3_origen,
+    h3_destino;
+
+ANALYZE atribucion_por_par;
+
+-- El viaje dominante de cada combinacion y banda horaria, y el del dia entero.
+-- DISTINCT ON toma la fila entera, asi que las dos celdas vienen juntas.
+CREATE TEMP TABLE viaje_dominante_hora ON COMMIT DROP AS
+SELECT DISTINCT ON (id_recorrido_primero, id_recorrido_segundo, rango_horario)
+    id_recorrido_primero,
+    id_recorrido_segundo,
+    rango_horario,
+    h3_origen,
+    h3_destino
+FROM atribucion_por_par
+ORDER BY
+    id_recorrido_primero,
+    id_recorrido_segundo,
+    rango_horario,
+    viajes DESC,
+    h3_origen,
+    h3_destino;
+
+CREATE UNIQUE INDEX idx_viaje_dominante_hora
+ON viaje_dominante_hora (id_recorrido_primero, id_recorrido_segundo, rango_horario);
+
+CREATE TEMP TABLE viaje_dominante_dia ON COMMIT DROP AS
+SELECT DISTINCT ON (id_recorrido_primero, id_recorrido_segundo)
+    id_recorrido_primero,
+    id_recorrido_segundo,
+    h3_origen,
+    h3_destino
+FROM (
+    SELECT
+        id_recorrido_primero,
+        id_recorrido_segundo,
+        h3_origen,
+        h3_destino,
+        SUM(viajes) AS viajes
+    FROM atribucion_por_par
+    GROUP BY id_recorrido_primero, id_recorrido_segundo, h3_origen, h3_destino
+) AS por_dia
+ORDER BY
+    id_recorrido_primero,
+    id_recorrido_segundo,
+    viajes DESC,
+    h3_origen,
+    h3_destino;
+
+CREATE UNIQUE INDEX idx_viaje_dominante_dia
+ON viaje_dominante_dia (id_recorrido_primero, id_recorrido_segundo);
+
+ANALYZE viaje_dominante_hora;
+ANALYZE viaje_dominante_dia;
+
 -- 6. Ranking por banda horaria, con la zona que la combinacion une.
 --
 -- El promedio de alternativas se pondera por volumen: lo que importa no es
@@ -242,8 +321,8 @@ SELECT
     agregado.viajes_estimados,
     agregado.alternativas_promedio,
     agregado.rango_horario,
-    agregado.h3_origen_dominante,
-    agregado.h3_destino_dominante,
+    dominante.h3_origen,
+    dominante.h3_destino,
     nombre_origen.nombre,
     nombre_destino.nombre,
     agregado.pares_od_distintos
@@ -258,18 +337,18 @@ FROM (
                 / NULLIF(SUM(viajes_atribuidos), 0),
             1
         )::REAL AS alternativas_promedio,
-        (ARRAY_AGG(h3_origen ORDER BY viajes_atribuidos DESC, h3_origen))[1]
-            AS h3_origen_dominante,
-        (ARRAY_AGG(h3_destino ORDER BY viajes_atribuidos DESC, h3_destino))[1]
-            AS h3_destino_dominante,
         COUNT(DISTINCT (h3_origen, h3_destino))::INTEGER AS pares_od_distintos
     FROM atribucion
     GROUP BY id_recorrido_primero, id_recorrido_segundo, rango_horario
 ) AS agregado
+JOIN viaje_dominante_hora AS dominante
+  ON dominante.id_recorrido_primero = agregado.id_recorrido_primero
+ AND dominante.id_recorrido_segundo = agregado.id_recorrido_segundo
+ AND dominante.rango_horario = agregado.rango_horario
 JOIN nombre_celda AS nombre_origen
-  ON nombre_origen.indice_h3 = agregado.h3_origen_dominante
+  ON nombre_origen.indice_h3 = dominante.h3_origen
 JOIN nombre_celda AS nombre_destino
-  ON nombre_destino.indice_h3 = agregado.h3_destino_dominante;
+  ON nombre_destino.indice_h3 = dominante.h3_destino;
 
 -- 7. La fila del dia entero sale de la misma atribucion y no de las 24
 -- anteriores: la celda dominante del dia no es la de ninguna hora en
@@ -294,8 +373,8 @@ SELECT
     agregado.viajes_estimados,
     agregado.alternativas_promedio,
     agregado.rango_horario_pico,
-    agregado.h3_origen_dominante,
-    agregado.h3_destino_dominante,
+    dominante.h3_origen,
+    dominante.h3_destino,
     nombre_origen.nombre,
     nombre_destino.nombre,
     agregado.pares_od_distintos
@@ -311,18 +390,17 @@ FROM (
         )::REAL AS alternativas_promedio,
         (ARRAY_AGG(rango_horario ORDER BY viajes_atribuidos DESC, rango_horario))[1]
             AS rango_horario_pico,
-        (ARRAY_AGG(h3_origen ORDER BY viajes_atribuidos DESC, h3_origen))[1]
-            AS h3_origen_dominante,
-        (ARRAY_AGG(h3_destino ORDER BY viajes_atribuidos DESC, h3_destino))[1]
-            AS h3_destino_dominante,
         COUNT(DISTINCT (h3_origen, h3_destino))::INTEGER AS pares_od_distintos
     FROM atribucion
     GROUP BY id_recorrido_primero, id_recorrido_segundo
 ) AS agregado
+JOIN viaje_dominante_dia AS dominante
+  ON dominante.id_recorrido_primero = agregado.id_recorrido_primero
+ AND dominante.id_recorrido_segundo = agregado.id_recorrido_segundo
 JOIN nombre_celda AS nombre_origen
-  ON nombre_origen.indice_h3 = agregado.h3_origen_dominante
+  ON nombre_origen.indice_h3 = dominante.h3_origen
 JOIN nombre_celda AS nombre_destino
-  ON nombre_destino.indice_h3 = agregado.h3_destino_dominante;
+  ON nombre_destino.indice_h3 = dominante.h3_destino;
 
 COMMIT;
 
