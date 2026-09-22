@@ -339,7 +339,28 @@ CREATE TABLE vialis.combinaciones_lineas (
     -- repite `rango_horario`; en la del dia entero es el dato que la interfaz
     -- muestra como "pico".
     rango_horario_pico     SMALLINT NOT NULL
-        CHECK (rango_horario_pico BETWEEN 0 AND 23)
+        CHECK (rango_horario_pico BETWEEN 0 AND 23),
+
+    -- Las dos zonas que la combinacion une, y cuantos pares origen-destino
+    -- distintos sirve.
+    --
+    -- Es la celda que mas viajes concentra de cada lado, no el promedio de las
+    -- coordenadas: un promedio puede caer donde no viaja nadie, mientras que la
+    -- celda dominante es un lugar real con datos reales. Representa a su zona,
+    -- no es el punto exacto, y la interfaz lo dice asi.
+    --
+    -- Reemplaza a la tabla de "los tres viajes mas grandes", que era una
+    -- muestra enganosa: sobre el dataset completo el mayor par origen-destino
+    -- de una combinacion explica entre el 5 y el 23 % de su volumen, y los tres
+    -- juntos entre el 14 y el 56 %. Mostrarlos como el detalle de la fila
+    -- presentaba una quinta parte del total como si fuera el todo.
+    h3_origen_dominante    H3INDEX NOT NULL
+        REFERENCES vialis.hexagonos_viajes(indice_h3),
+    h3_destino_dominante   H3INDEX NOT NULL
+        REFERENCES vialis.hexagonos_viajes(indice_h3),
+    nombre_origen          TEXT NOT NULL,
+    nombre_destino         TEXT NOT NULL,
+    pares_od_distintos     INTEGER NOT NULL CHECK (pares_od_distintos >= 1)
 );
 
 CREATE UNIQUE INDEX idx_combinaciones_lineas_par
@@ -354,39 +375,3 @@ ON vialis.combinaciones_lineas (
 CREATE INDEX idx_combinaciones_lineas_ranking
 ON vialis.combinaciones_lineas (rango_horario, viajes_estimados DESC);
 
--- Principales flujos de cada combinacion --
---
--- Los tres pares de celdas mas grandes que cada combinacion podria servir, para
--- el detalle de una fila del ranking. Se guardan solo los tres y no todos
--- porque la pantalla muestra tres: la tabla completa de atribucion tendria
--- millones de filas que nadie leeria nunca.
-CREATE TABLE vialis.combinaciones_lineas_flujos (
-    id_recorrido_primero  BIGINT NOT NULL,
-    id_recorrido_segundo  BIGINT NOT NULL,
-    posicion              SMALLINT NOT NULL CHECK (posicion >= 1),
-    h3_origen             H3INDEX NOT NULL,
-    h3_destino            H3INDEX NOT NULL,
-    -- Hora en la que el flujo concentra mas viajes, no "la hora del flujo".
-    -- Un viaje es su par de celdas: la hora es un atributo suyo y no otra
-    -- fila, o el mismo viaje aparece tres veces y nadie puede distinguirlos.
-    rango_horario_pico    SMALLINT NOT NULL
-        CHECK (rango_horario_pico BETWEEN 0 AND 23),
-    viajes_estimados      DOUBLE PRECISION NOT NULL,
-    alternativas          INTEGER NOT NULL CHECK (alternativas >= 1),
-    -- Nombre de la parada mas cercana a cada celda. Un indice H3 y un par de
-    -- coordenadas no le dicen nada a nadie: sin esto, dos flujos que coinciden
-    -- en volumen y hora se leen como la misma fila repetida cuando son lugares
-    -- distintos. Sale del mismo catalogo GTFS que nombra el punto de
-    -- trasbordo, asi que la pantalla habla siempre el mismo idioma.
-    nombre_origen         TEXT NOT NULL,
-    nombre_destino        TEXT NOT NULL,
-    PRIMARY KEY (id_recorrido_primero, id_recorrido_segundo, posicion),
-    -- Las claves foraneas no son decorativas: si el feed GTFS se vuelve a
-    -- transformar y este agregado no se recalcula, sin ellas la tabla quedaria
-    -- apuntando a recorridos que ya no existen y el detalle de una fila
-    -- mostraria lineas equivocadas en vez de fallar.
-    FOREIGN KEY (id_recorrido_primero)
-        REFERENCES vialis.recorridos(id_recorrido) ON DELETE CASCADE,
-    FOREIGN KEY (id_recorrido_segundo)
-        REFERENCES vialis.recorridos(id_recorrido) ON DELETE CASCADE
-);

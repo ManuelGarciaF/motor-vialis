@@ -44,7 +44,6 @@
 
 BEGIN;
 
-TRUNCATE vialis.combinaciones_lineas_flujos;
 TRUNCATE vialis.combinaciones_lineas;
 
 -- 1. Que recorridos sirven cada celda que aparece en algun flujo, y entre que
@@ -215,132 +214,116 @@ JOIN alternativas_por_par
 
 ANALYZE atribucion;
 
--- 6. Ranking por banda horaria. El promedio de alternativas se pondera por
--- volumen: lo que importa no es cuantos flujos aportaron sino cuanta gente.
--- El GREATEST protege el CHECK de la tabla contra el redondeo a REAL.
+-- 6. Ranking por banda horaria, con la zona que la combinacion une.
+--
+-- El promedio de alternativas se pondera por volumen: lo que importa no es
+-- cuantos flujos aportaron sino cuanta gente. El GREATEST protege el CHECK de
+-- la tabla contra el redondeo a REAL.
+--
+-- La zona es la celda que mas viajes concentra de cada lado, con desempate por
+-- indice para que dos corridas sobre los mismos datos elijan la misma.
 INSERT INTO vialis.combinaciones_lineas (
     id_recorrido_primero,
     id_recorrido_segundo,
     rango_horario,
     viajes_estimados,
     alternativas_promedio,
-    rango_horario_pico
-)
-SELECT
-    id_recorrido_primero,
-    id_recorrido_segundo,
-    rango_horario,
-    SUM(viajes_atribuidos),
-    GREATEST(
-        SUM(viajes_atribuidos * alternativas)
-            / NULLIF(SUM(viajes_atribuidos), 0),
-        1
-    )::REAL,
-    rango_horario
-FROM atribucion
-GROUP BY id_recorrido_primero, id_recorrido_segundo, rango_horario;
-
--- 7. La fila del dia entero se deriva de las 24 anteriores en vez de recorrer
--- la atribucion otra vez. La hora pico es la de mayor volumen, con desempate
--- por hora para que dos corridas den lo mismo.
-INSERT INTO vialis.combinaciones_lineas (
-    id_recorrido_primero,
-    id_recorrido_segundo,
-    rango_horario,
-    viajes_estimados,
-    alternativas_promedio,
-    rango_horario_pico
-)
-SELECT
-    id_recorrido_primero,
-    id_recorrido_segundo,
-    NULL,
-    SUM(viajes_estimados),
-    GREATEST(
-        SUM(viajes_estimados * alternativas_promedio)
-            / NULLIF(SUM(viajes_estimados), 0),
-        1
-    )::REAL,
-    (ARRAY_AGG(
-        rango_horario ORDER BY viajes_estimados DESC, rango_horario
-    ))[1]
-FROM vialis.combinaciones_lineas
-WHERE rango_horario IS NOT NULL
-GROUP BY id_recorrido_primero, id_recorrido_segundo;
-
--- 8. Los tres viajes mas grandes de cada combinacion, para el detalle de una
--- fila del ranking.
---
--- Se agrupa por par de celdas y NO por par y hora. Un viaje es su par de
--- celdas: la hora es un atributo suyo, no otra fila. Agrupando por las dos
--- cosas, el mismo viaje a las 5 y a las 10 ocupaba dos de los tres lugares y
--- se leia como dos viajes distintos que nadie podia diferenciar, porque tenian
--- el mismo origen y el mismo destino.
---
--- `alternativas` es una propiedad del par de celdas, igual para las 24 horas,
--- asi que MIN devuelve ese valor y no un resumen de varios.
-INSERT INTO vialis.combinaciones_lineas_flujos (
-    id_recorrido_primero,
-    id_recorrido_segundo,
-    posicion,
-    h3_origen,
-    h3_destino,
     rango_horario_pico,
-    viajes_estimados,
-    alternativas,
+    h3_origen_dominante,
+    h3_destino_dominante,
     nombre_origen,
-    nombre_destino
+    nombre_destino,
+    pares_od_distintos
 )
 SELECT
-    ordenados.id_recorrido_primero,
-    ordenados.id_recorrido_segundo,
-    ordenados.posicion,
-    ordenados.h3_origen,
-    ordenados.h3_destino,
-    ordenados.rango_horario_pico,
-    ordenados.viajes_atribuidos,
-    ordenados.alternativas,
-    parada_origen.nombre,
-    parada_destino.nombre
--- El recorte a los tres primeros va en su propio nivel para que el ranking se
--- resuelva una sola vez, y los nombres salen de un join plano contra
--- nombre_celda en vez de una busqueda por fila.
+    agregado.id_recorrido_primero,
+    agregado.id_recorrido_segundo,
+    agregado.rango_horario,
+    agregado.viajes_estimados,
+    agregado.alternativas_promedio,
+    agregado.rango_horario,
+    agregado.h3_origen_dominante,
+    agregado.h3_destino_dominante,
+    nombre_origen.nombre,
+    nombre_destino.nombre,
+    agregado.pares_od_distintos
 FROM (
-  SELECT * FROM (
     SELECT
         id_recorrido_primero,
         id_recorrido_segundo,
-        h3_origen,
-        h3_destino,
-        SUM(viajes_atribuidos) AS viajes_atribuidos,
-        MIN(alternativas) AS alternativas,
-        -- La hora que mas viajes concentra, con desempate por hora para que dos
-        -- corridas sobre los mismos datos elijan la misma.
-        (ARRAY_AGG(
-            rango_horario ORDER BY viajes_atribuidos DESC, rango_horario
-        ))[1] AS rango_horario_pico,
-        ROW_NUMBER() OVER (
-            PARTITION BY id_recorrido_primero, id_recorrido_segundo
-            ORDER BY
-                SUM(viajes_atribuidos) DESC,
-                h3_origen,
-                h3_destino
-        )::SMALLINT AS posicion
+        rango_horario,
+        SUM(viajes_atribuidos) AS viajes_estimados,
+        GREATEST(
+            SUM(viajes_atribuidos * alternativas)
+                / NULLIF(SUM(viajes_atribuidos), 0),
+            1
+        )::REAL AS alternativas_promedio,
+        (ARRAY_AGG(h3_origen ORDER BY viajes_atribuidos DESC, h3_origen))[1]
+            AS h3_origen_dominante,
+        (ARRAY_AGG(h3_destino ORDER BY viajes_atribuidos DESC, h3_destino))[1]
+            AS h3_destino_dominante,
+        COUNT(DISTINCT (h3_origen, h3_destino))::INTEGER AS pares_od_distintos
     FROM atribucion
-    GROUP BY
+    GROUP BY id_recorrido_primero, id_recorrido_segundo, rango_horario
+) AS agregado
+JOIN nombre_celda AS nombre_origen
+  ON nombre_origen.indice_h3 = agregado.h3_origen_dominante
+JOIN nombre_celda AS nombre_destino
+  ON nombre_destino.indice_h3 = agregado.h3_destino_dominante;
+
+-- 7. La fila del dia entero sale de la misma atribucion y no de las 24
+-- anteriores: la celda dominante del dia no es la de ninguna hora en
+-- particular, asi que derivarla de ellas daria un resultado distinto.
+INSERT INTO vialis.combinaciones_lineas (
+    id_recorrido_primero,
+    id_recorrido_segundo,
+    rango_horario,
+    viajes_estimados,
+    alternativas_promedio,
+    rango_horario_pico,
+    h3_origen_dominante,
+    h3_destino_dominante,
+    nombre_origen,
+    nombre_destino,
+    pares_od_distintos
+)
+SELECT
+    agregado.id_recorrido_primero,
+    agregado.id_recorrido_segundo,
+    NULL,
+    agregado.viajes_estimados,
+    agregado.alternativas_promedio,
+    agregado.rango_horario_pico,
+    agregado.h3_origen_dominante,
+    agregado.h3_destino_dominante,
+    nombre_origen.nombre,
+    nombre_destino.nombre,
+    agregado.pares_od_distintos
+FROM (
+    SELECT
         id_recorrido_primero,
         id_recorrido_segundo,
-        h3_origen,
-        h3_destino
-  ) AS rankeados
-  WHERE rankeados.posicion <= 3
-) AS ordenados
-JOIN nombre_celda AS parada_origen
-  ON parada_origen.indice_h3 = ordenados.h3_origen
-JOIN nombre_celda AS parada_destino
-  ON parada_destino.indice_h3 = ordenados.h3_destino;
+        SUM(viajes_atribuidos) AS viajes_estimados,
+        GREATEST(
+            SUM(viajes_atribuidos * alternativas)
+                / NULLIF(SUM(viajes_atribuidos), 0),
+            1
+        )::REAL AS alternativas_promedio,
+        (ARRAY_AGG(rango_horario ORDER BY viajes_atribuidos DESC, rango_horario))[1]
+            AS rango_horario_pico,
+        (ARRAY_AGG(h3_origen ORDER BY viajes_atribuidos DESC, h3_origen))[1]
+            AS h3_origen_dominante,
+        (ARRAY_AGG(h3_destino ORDER BY viajes_atribuidos DESC, h3_destino))[1]
+            AS h3_destino_dominante,
+        COUNT(DISTINCT (h3_origen, h3_destino))::INTEGER AS pares_od_distintos
+    FROM atribucion
+    GROUP BY id_recorrido_primero, id_recorrido_segundo
+) AS agregado
+JOIN nombre_celda AS nombre_origen
+  ON nombre_origen.indice_h3 = agregado.h3_origen_dominante
+JOIN nombre_celda AS nombre_destino
+  ON nombre_destino.indice_h3 = agregado.h3_destino_dominante;
 
 COMMIT;
 
 VACUUM ANALYZE vialis.combinaciones_lineas;
-VACUUM ANALYZE vialis.combinaciones_lineas_flujos;

@@ -80,33 +80,14 @@ type TransferStop struct {
 type Cell struct {
 	H3Index string `json:"h3Index"`
 	// Name is the stop nearest to the cell, from the GTFS catalogue. An H3
-	// index and a pair of coordinates name nothing to a person: without this,
-	// two flows that agree on volume and hour read as the same row repeated
-	// when they are different places.
+	// index and a pair of coordinates name nothing to a person. It names the
+	// zone rather than the exact spot, and callers should say so.
 	Name string `json:"name"`
 	// Longitude and Latitude are hexagonos_viajes.punto_maxima_concurrencia,
 	// which is where people in that cell actually start or end trips, not the
 	// geometric centre of the hexagon.
 	Longitude float64 `json:"longitude"`
 	Latitude  float64 `json:"latitude"`
-}
-
-// Flow is one origin-destination movement attributed to a combination. It says
-// where the demand behind a pair of lines actually comes from.
-type Flow struct {
-	Origin      Cell `json:"origin"`
-	Destination Cell `json:"destination"`
-	// PeakHour is the hour in which this flow concentrates the most trips, not
-	// "the flow's hour". A flow is its pair of cells: the hour is an attribute
-	// of it and not another row, or the same trip shows up three times and
-	// nobody can tell the copies apart.
-	PeakHour int `json:"peakHour"`
-	// EstimatedTrips is this flow's share after the split, not the flow's whole
-	// volume: the rest went to the other feasible combinations.
-	EstimatedTrips float64 `json:"estimatedTrips"`
-	// Alternatives is how many combinations this flow was split among. One
-	// means the network left no other way of making the trip.
-	Alternatives int `json:"alternatives"`
 }
 
 // Combination is one ranked pair of lines.
@@ -128,9 +109,19 @@ type Combination struct {
 	// trips.
 	PeakHour int          `json:"peakHour"`
 	Transfer TransferStop `json:"transfer"`
-	// TopFlows are the largest origin-destination movements behind the
-	// estimate, largest first, at most three.
-	TopFlows []Flow `json:"topFlows"`
+	// Origin and Destination are the two zones this pair connects: the cell
+	// that concentrates the most trips on each side.
+	//
+	// They replace the list of largest origin-destination movements, which was
+	// a misleading sample: on the full dataset the largest one accounts for 5
+	// to 23 % of its combination's volume and the top three together for 14 to
+	// 56 %, so showing them as the row's detail presented a fifth of the total
+	// as if it were the whole.
+	Origin      Cell `json:"origin"`
+	Destination Cell `json:"destination"`
+	// DistinctFlows is how many origin-destination pairs this combination
+	// serves. It is what says the two zones summarise many trips and not one.
+	DistinctFlows int `json:"distinctFlows"`
 }
 
 // Page is one window over the ranking.
@@ -220,9 +211,6 @@ func (service *Service) FindRanking(
 	sortByEstimatedTrips(found)
 	for index := range found {
 		service.markEvidence(&found[index])
-		if found[index].TopFlows == nil {
-			found[index].TopFlows = []Flow{}
-		}
 	}
 
 	return Page{

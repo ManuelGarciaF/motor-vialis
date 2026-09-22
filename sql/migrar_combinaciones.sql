@@ -82,64 +82,37 @@ ON vialis.combinaciones_lineas (
 CREATE INDEX IF NOT EXISTS idx_combinaciones_lineas_ranking
 ON vialis.combinaciones_lineas (rango_horario, viajes_estimados DESC);
 
--- Los tres flujos mas grandes de cada combinacion, para el detalle de una fila.
-CREATE TABLE IF NOT EXISTS vialis.combinaciones_lineas_flujos (
-    id_recorrido_primero  BIGINT NOT NULL,
-    id_recorrido_segundo  BIGINT NOT NULL,
-    posicion              SMALLINT NOT NULL CHECK (posicion >= 1),
-    h3_origen             H3INDEX NOT NULL,
-    h3_destino            H3INDEX NOT NULL,
-    -- Hora en la que el flujo concentra mas viajes, no "la hora del flujo".
-    -- Un viaje es su par de celdas: la hora es un atributo suyo y no otra
-    -- fila, o el mismo viaje aparece tres veces y nadie puede distinguirlos.
-    rango_horario_pico    SMALLINT NOT NULL
-        CHECK (rango_horario_pico BETWEEN 0 AND 23),
-    viajes_estimados      DOUBLE PRECISION NOT NULL,
-    alternativas          INTEGER NOT NULL CHECK (alternativas >= 1),
-    -- Nombre de la parada mas cercana a cada celda. Un indice H3 y un par de
-    -- coordenadas no le dicen nada a nadie: sin esto, dos flujos que coinciden
-    -- en volumen y hora se leen como la misma fila repetida cuando son lugares
-    -- distintos. Sale del mismo catalogo GTFS que nombra el punto de
-    -- trasbordo, asi que la pantalla habla siempre el mismo idioma.
-    nombre_origen         TEXT NOT NULL,
-    nombre_destino        TEXT NOT NULL,
-    PRIMARY KEY (id_recorrido_primero, id_recorrido_segundo, posicion),
-    FOREIGN KEY (id_recorrido_primero)
-        REFERENCES vialis.recorridos(id_recorrido) ON DELETE CASCADE,
-    FOREIGN KEY (id_recorrido_segundo)
-        REFERENCES vialis.recorridos(id_recorrido) ON DELETE CASCADE
-);
-
--- Para una base que ya corrio una version anterior de esta migracion y tiene
--- la tabla sin los nombres. Vacia el agregado: los nombres se llenan al
--- repoblarlo con sql/viajes/combinaciones_lineas.sql.
+-- Las zonas que une cada combinacion, y la tabla de flujos que reemplazan.
+--
+-- `combinaciones_lineas_flujos` guardaba los tres pares origen-destino mas
+-- grandes de cada combinacion. Era una muestra enganosa: el mayor explica entre
+-- el 5 y el 23 % del volumen de su combinacion y los tres juntos entre el 14 y
+-- el 56 %, asi que el detalle de la fila mostraba una quinta parte del total
+-- como si fuera el todo. La reemplazan cuatro columnas en la propia
+-- combinacion, con la celda dominante de cada lado.
+--
+-- Vacia el agregado: los valores nuevos se llenan al repoblarlo con
+-- sql/viajes/combinaciones_lineas.sql.
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = 'vialis'
-          AND table_name = 'combinaciones_lineas_flujos'
-          AND column_name = 'nombre_origen'
+          AND table_name = 'combinaciones_lineas'
+          AND column_name = 'h3_origen_dominante'
     ) THEN
-        TRUNCATE vialis.combinaciones_lineas_flujos;
-        ALTER TABLE vialis.combinaciones_lineas_flujos
-            ADD COLUMN nombre_origen  TEXT NOT NULL,
-            ADD COLUMN nombre_destino TEXT NOT NULL;
-    END IF;
-
-    -- La columna paso de ser "la hora del flujo" a "la hora pico del flujo"
-    -- cuando los flujos se agruparon por par de celdas en vez de por par y
-    -- hora. Los valores viejos no se pueden reinterpretar: se vacia y se
-    -- repuebla con combinaciones_lineas.sql.
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'vialis'
-          AND table_name = 'combinaciones_lineas_flujos'
-          AND column_name = 'rango_horario'
-    ) THEN
-        TRUNCATE vialis.combinaciones_lineas_flujos;
-        ALTER TABLE vialis.combinaciones_lineas_flujos
-            RENAME COLUMN rango_horario TO rango_horario_pico;
+        TRUNCATE vialis.combinaciones_lineas;
+        ALTER TABLE vialis.combinaciones_lineas
+            ADD COLUMN h3_origen_dominante H3INDEX NOT NULL
+                REFERENCES vialis.hexagonos_viajes(indice_h3),
+            ADD COLUMN h3_destino_dominante H3INDEX NOT NULL
+                REFERENCES vialis.hexagonos_viajes(indice_h3),
+            ADD COLUMN nombre_origen TEXT NOT NULL,
+            ADD COLUMN nombre_destino TEXT NOT NULL,
+            ADD COLUMN pares_od_distintos INTEGER NOT NULL
+                CHECK (pares_od_distintos >= 1);
     END IF;
 END
 $$;
+
+DROP TABLE IF EXISTS vialis.combinaciones_lineas_flujos;

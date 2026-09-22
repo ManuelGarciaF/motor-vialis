@@ -19,7 +19,6 @@ func combinationRow(
 	secondID int64, secondLine string,
 	estimated, alternatives float64,
 	peakHour int,
-	flowsJSON string,
 ) []any {
 	return []any{
 		total, maximum,
@@ -28,14 +27,11 @@ func combinationRow(
 		estimated, alternatives, peakHour,
 		"Rivadavia y Medrano", "Medrano 1200", 40,
 		-58.42, -34.60,
-		flowsJSON,
+		61,
+		"88a", "CAMINO GENERAL BELGRANO_CALLE 473", -58.05, -34.88,
+		"88b", "CALLE 1149 2202-2300", -58.19, -34.87,
 	}
 }
-
-const unFlujo = `[{"h3Origen":"88a","lonOrigen":-58.45,"latOrigen":-34.65,` +
-	`"h3Destino":"88b","lonDestino":-58.37,"latDestino":-34.62,` +
-	`"horaPico":9,"viajes":1900.5,"alternativas":3,` +
-	`"nombreOrigen":"AV. RIVADAVIA 1200","nombreDestino":"CALLE 1149"}]`
 
 func testRankingQuery() combinaciones.Query {
 	return combinaciones.Query{Limit: 10, Offset: 0}
@@ -43,8 +39,8 @@ func testRankingQuery() combinaciones.Query {
 
 func TestCombinacionesRepositoryReadsARankedPage(t *testing.T) {
 	query := &fakeQuery{rows: &fakeRows{values: [][]any{
-		combinationRow(873, 9100, 1, "132", 2, "45", 4300, 2.5, 9, unFlujo),
-		combinationRow(873, 9100, 3, "28", 4, "70", 3900, 11, 18, "[]"),
+		combinationRow(873, 9100, 1, "132", 2, "45", 4300, 2.5, 9),
+		combinationRow(873, 9100, 3, "28", 4, "70", 3900, 11, 18),
 	}}}
 	repository := newCombinacionesRepository(query.execute)
 
@@ -74,16 +70,17 @@ func TestCombinacionesRepositoryReadsARankedPage(t *testing.T) {
 	if found[0].PeakHour != 9 {
 		t.Errorf("peak hour = %d, want 9", found[0].PeakHour)
 	}
-	if found[0].Transfer.WalkMeters != 40 ||
-		found[0].Transfer.AlightingStopName == "" ||
-		found[0].Transfer.BoardingStopName == "" {
+	if found[0].Transfer.WalkMeters != 40 {
 		t.Errorf("transfer = %#v", found[0].Transfer)
 	}
 }
 
-func TestCombinacionesRepositoryDecodesTheTopFlows(t *testing.T) {
+// Las dos zonas son el detalle de la fila. Sin ellas la combinación dice
+// cuántos viajes mueve pero no entre qué lugares, que es lo que la vuelve
+// accionable.
+func TestCombinacionesRepositoryReadsTheTwoZones(t *testing.T) {
 	query := &fakeQuery{rows: &fakeRows{values: [][]any{
-		combinationRow(1, 4300, 1, "132", 2, "45", 4300, 3, 9, unFlujo),
+		combinationRow(1, 4300, 1, "132", 2, "45", 4300, 3, 9),
 	}}}
 	repository := newCombinacionesRepository(query.execute)
 
@@ -95,43 +92,22 @@ func TestCombinacionesRepositoryDecodesTheTopFlows(t *testing.T) {
 		t.Fatalf("FindRanking() error = %v", err)
 	}
 
-	if len(found[0].TopFlows) != 1 {
-		t.Fatalf("top flows = %#v, want 1", found[0].TopFlows)
+	combination := found[0]
+	if combination.Origin.Name != "CAMINO GENERAL BELGRANO_CALLE 473" {
+		t.Errorf("origin zone = %q", combination.Origin.Name)
 	}
-	flow := found[0].TopFlows[0]
-	if flow.Origin.H3Index != "88a" || flow.Destination.H3Index != "88b" {
-		t.Errorf("flow cells = %#v", flow)
+	if combination.Destination.Name != "CALLE 1149 2202-2300" {
+		t.Errorf("destination zone = %q", combination.Destination.Name)
 	}
-	if flow.Origin.Longitude != -58.45 || flow.Destination.Latitude != -34.62 {
-		t.Errorf("flow coordinates = %#v", flow)
+	if combination.Origin.H3Index != "88a" || combination.Destination.H3Index != "88b" {
+		t.Errorf("zone cells = %q / %q", combination.Origin.H3Index, combination.Destination.H3Index)
 	}
-	if flow.PeakHour != 9 || flow.EstimatedTrips != 1900.5 || flow.Alternatives != 3 {
-		t.Errorf("flow numbers = %#v", flow)
+	if combination.Origin.Longitude != -58.05 || combination.Destination.Latitude != -34.87 {
+		t.Errorf("zone coordinates = %#v / %#v", combination.Origin, combination.Destination)
 	}
-	// Sin los nombres, dos flujos con el mismo volumen y la misma hora son
-	// indistinguibles en pantalla.
-	if flow.Origin.Name != "AV. RIVADAVIA 1200" || flow.Destination.Name != "CALLE 1149" {
-		t.Errorf("flow names = %q -> %q", flow.Origin.Name, flow.Destination.Name)
-	}
-}
-
-// A combination with no stored flows is legitimate, and an empty JSON array is
-// how the query says so.
-func TestCombinacionesRepositoryAcceptsACombinationWithoutFlows(t *testing.T) {
-	query := &fakeQuery{rows: &fakeRows{values: [][]any{
-		combinationRow(1, 100, 1, "132", 2, "45", 100, 4, 7, "[]"),
-	}}}
-	repository := newCombinacionesRepository(query.execute)
-
-	found, _, _, err := repository.FindRanking(
-		context.Background(),
-		testRankingQuery(),
-	)
-	if err != nil {
-		t.Fatalf("FindRanking() error = %v", err)
-	}
-	if len(found[0].TopFlows) != 0 {
-		t.Errorf("top flows = %#v, want none", found[0].TopFlows)
+	// Es lo que dice que las dos zonas resumen muchos viajes y no uno.
+	if combination.DistinctFlows != 61 {
+		t.Errorf("distinct flows = %d, want 61", combination.DistinctFlows)
 	}
 }
 
@@ -177,7 +153,7 @@ func TestCombinacionesRepositoryPassesTheQueryAsArguments(t *testing.T) {
 func TestCombinacionesRepositoryReportsAReadFailure(t *testing.T) {
 	failure := errors.New("connection reset")
 	query := &fakeQuery{rows: &fakeRows{
-		values: [][]any{combinationRow(1, 1, 1, "a", 2, "b", 1, 1, 0, "[]")},
+		values: [][]any{combinationRow(1, 1, 1, "a", 2, "b", 1, 1, 0)},
 		err:    failure,
 	}}
 	repository := newCombinacionesRepository(query.execute)
@@ -189,30 +165,14 @@ func TestCombinacionesRepositoryReportsAReadFailure(t *testing.T) {
 	}
 }
 
-func TestCombinacionesRepositoryReportsMalformedFlows(t *testing.T) {
-	query := &fakeQuery{rows: &fakeRows{values: [][]any{
-		combinationRow(1, 1, 1, "a", 2, "b", 1, 1, 0, "{no es json"),
-	}}}
-	repository := newCombinacionesRepository(query.execute)
-
-	if _, _, _, err := repository.FindRanking(
-		context.Background(),
-		testRankingQuery(),
-	); err == nil {
-		t.Error("malformed JSON was accepted, want an error")
-	}
-}
-
 // The ranking, the window and the whole-day semantics belong in SQL: applying
 // them in Go would apply them to whatever the database happened to return.
 func TestFindFrequentTransfersSQLKeepsTheSelectionInTheDatabase(t *testing.T) {
 	required := []string{
 		"vialis.combinaciones_lineas",
-		"vialis.combinaciones_lineas_flujos",
-		"nombre_origen",
-		"nombre_destino",
-		"rango_horario_pico",
 		"vialis.conexiones_recorridos",
+		"h3_origen_dominante",
+		"pares_od_distintos",
 		"IS NOT DISTINCT FROM $1",
 		"COUNT(*) OVER ()",
 		"LIMIT $2",

@@ -247,7 +247,7 @@ func TestFindRankingReportsTheTotalAndMaximumFromTheRepository(t *testing.T) {
 	}
 }
 
-func TestFindRankingReportsEmptyResultsAsEmptyLists(t *testing.T) {
+func TestFindRankingReportsAnEmptyResultAsAnEmptyList(t *testing.T) {
 	repository := &fakeRepository{result: nil}
 	service := combinaciones.NewService(repository, testPolicy())
 
@@ -255,18 +255,11 @@ func TestFindRankingReportsEmptyResultsAsEmptyLists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	// Una hora en la que ninguna combinación sobrevive al filtro de línea
+	// directa es una respuesta real y útil, así que tiene que serializar como
+	// lista vacía y no como null.
 	if page.Combinations == nil {
 		t.Error("combinations is nil, want an empty slice")
-	}
-
-	repository = &fakeRepository{result: []combinaciones.Combination{{}}}
-	service = combinaciones.NewService(repository, testPolicy())
-	page, err = service.FindRanking(context.Background(), combinaciones.Request{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if page.Combinations[0].TopFlows == nil {
-		t.Error("topFlows is nil, want an empty slice")
 	}
 }
 

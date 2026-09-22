@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/combinaciones"
@@ -33,24 +32,6 @@ func NewCombinacionesRepository(database *pgxpool.Pool) *CombinacionesRepository
 
 func newCombinacionesRepository(query queryFunc) *CombinacionesRepository {
 	return &CombinacionesRepository{query: query}
-}
-
-// storedFlow mirrors the JSON object the query builds for each top flow. The
-// three of them travel as one JSON column rather than as repeated rows so the
-// twenty columns describing the combination are not multiplied by three to
-// carry nine values.
-type storedFlow struct {
-	H3Origin        string  `json:"h3Origen"`
-	LongitudeOrigin float64 `json:"lonOrigen"`
-	LatitudeOrigin  float64 `json:"latOrigen"`
-	H3Destination   string  `json:"h3Destino"`
-	LongitudeDest   float64 `json:"lonDestino"`
-	LatitudeDest    float64 `json:"latDestino"`
-	PeakHour        int     `json:"horaPico"`
-	EstimatedTrips  float64 `json:"viajes"`
-	Alternatives    int     `json:"alternativas"`
-	OriginName      string  `json:"nombreOrigen"`
-	DestinationName string  `json:"nombreDestino"`
 }
 
 // FindRanking returns one window over the ranking, its total and the largest
@@ -87,7 +68,6 @@ func (repository *CombinacionesRepository) FindRanking(
 			combination combinaciones.Combination
 			rowTotal    int
 			rowMaximum  float64
-			flowsJSON   []byte
 		)
 		if err := rows.Scan(
 			&rowTotal,
@@ -115,16 +95,20 @@ func (repository *CombinacionesRepository) FindRanking(
 			&combination.Transfer.Longitude,
 			&combination.Transfer.Latitude,
 
-			&flowsJSON,
+			&combination.DistinctFlows,
+
+			&combination.Origin.H3Index,
+			&combination.Origin.Name,
+			&combination.Origin.Longitude,
+			&combination.Origin.Latitude,
+
+			&combination.Destination.H3Index,
+			&combination.Destination.Name,
+			&combination.Destination.Longitude,
+			&combination.Destination.Latitude,
 		); err != nil {
 			return nil, 0, 0, fmt.Errorf("scan combination: %w", err)
 		}
-
-		flows, err := decodeFlows(flowsJSON)
-		if err != nil {
-			return nil, 0, 0, err
-		}
-		combination.TopFlows = flows
 
 		total = rowTotal
 		maximum = rowMaximum
@@ -134,35 +118,4 @@ func (repository *CombinacionesRepository) FindRanking(
 		return nil, 0, 0, fmt.Errorf("read combination ranking: %w", err)
 	}
 	return combinations, total, maximum, nil
-}
-
-func decodeFlows(raw []byte) ([]combinaciones.Flow, error) {
-	if len(raw) == 0 {
-		return nil, nil
-	}
-	var stored []storedFlow
-	if err := json.Unmarshal(raw, &stored); err != nil {
-		return nil, fmt.Errorf("decode top flows: %w", err)
-	}
-	flows := make([]combinaciones.Flow, len(stored))
-	for index, flow := range stored {
-		flows[index] = combinaciones.Flow{
-			Origin: combinaciones.Cell{
-				H3Index:   flow.H3Origin,
-				Name:      flow.OriginName,
-				Longitude: flow.LongitudeOrigin,
-				Latitude:  flow.LatitudeOrigin,
-			},
-			Destination: combinaciones.Cell{
-				H3Index:   flow.H3Destination,
-				Name:      flow.DestinationName,
-				Longitude: flow.LongitudeDest,
-				Latitude:  flow.LatitudeDest,
-			},
-			PeakHour:       flow.PeakHour,
-			EstimatedTrips: flow.EstimatedTrips,
-			Alternatives:   flow.Alternatives,
-		}
-	}
-	return flows, nil
 }

@@ -17,6 +17,11 @@ WITH ranking AS (
         combinacion.viajes_estimados,
         combinacion.alternativas_promedio,
         combinacion.rango_horario_pico,
+        combinacion.h3_origen_dominante,
+        combinacion.h3_destino_dominante,
+        combinacion.nombre_origen,
+        combinacion.nombre_destino,
+        combinacion.pares_od_distintos,
         -- Las ventanas se evaluan antes del LIMIT, asi que las dos describen
         -- el ranking completo y no la pagina. El total es lo que el paginador
         -- necesita; el maximo es contra lo que la interfaz mide la gravedad de
@@ -64,34 +69,21 @@ SELECT
     ST_X(parada_subida.posicion),
     ST_Y(parada_subida.posicion),
 
-    -- Los flujos viajan como JSON y no como filas repetidas porque son hasta
-    -- tres por combinacion: multiplicar por tres las veinte columnas de arriba
-    -- para acarrear nueve valores no paga.
-    COALESCE((
-        SELECT jsonb_agg(
-            jsonb_build_object(
-                'h3Origen',    flujo.h3_origen::text,
-                'lonOrigen',   ST_X(hexagono_origen.punto_maxima_concurrencia),
-                'latOrigen',   ST_Y(hexagono_origen.punto_maxima_concurrencia),
-                'h3Destino',   flujo.h3_destino::text,
-                'lonDestino',  ST_X(hexagono_destino.punto_maxima_concurrencia),
-                'latDestino',  ST_Y(hexagono_destino.punto_maxima_concurrencia),
-                'horaPico',    flujo.rango_horario_pico,
-                'viajes',      flujo.viajes_estimados,
-                'alternativas', flujo.alternativas,
-                'nombreOrigen',  flujo.nombre_origen,
-                'nombreDestino', flujo.nombre_destino
-            )
-            ORDER BY flujo.posicion
-        )
-        FROM vialis.combinaciones_lineas_flujos AS flujo
-        JOIN vialis.hexagonos_viajes AS hexagono_origen
-          ON hexagono_origen.indice_h3 = flujo.h3_origen
-        JOIN vialis.hexagonos_viajes AS hexagono_destino
-          ON hexagono_destino.indice_h3 = flujo.h3_destino
-        WHERE flujo.id_recorrido_primero = ranking.id_recorrido_primero
-          AND flujo.id_recorrido_segundo = ranking.id_recorrido_segundo
-    ), '[]'::jsonb)
+    ranking.pares_od_distintos,
+
+    -- Las dos zonas que la combinacion une. Es la celda dominante de cada lado
+    -- y no el promedio de las coordenadas: un promedio puede caer donde no
+    -- viaja nadie. El punto es el de maxima concurrencia de esa celda, que es
+    -- donde la gente realmente empieza o termina viajes.
+    ranking.h3_origen_dominante::text,
+    ranking.nombre_origen,
+    ST_X(hexagono_origen.punto_maxima_concurrencia),
+    ST_Y(hexagono_origen.punto_maxima_concurrencia),
+
+    ranking.h3_destino_dominante::text,
+    ranking.nombre_destino,
+    ST_X(hexagono_destino.punto_maxima_concurrencia),
+    ST_Y(hexagono_destino.punto_maxima_concurrencia)
 FROM ranking
 JOIN vialis.recorridos AS primero
   ON primero.id_recorrido = ranking.id_recorrido_primero
@@ -104,6 +96,10 @@ JOIN vialis.paradas AS parada_bajada
   ON parada_bajada.id_parada = conexion.id_parada_bajada
 JOIN vialis.paradas AS parada_subida
   ON parada_subida.id_parada = conexion.id_parada_subida
+JOIN vialis.hexagonos_viajes AS hexagono_origen
+  ON hexagono_origen.indice_h3 = ranking.h3_origen_dominante
+JOIN vialis.hexagonos_viajes AS hexagono_destino
+  ON hexagono_destino.indice_h3 = ranking.h3_destino_dominante
 ORDER BY
     ranking.viajes_estimados DESC,
     ranking.id_recorrido_primero,

@@ -600,7 +600,7 @@ components:
       description: Un par de líneas rankeado.
       required:
         [first, second, estimatedTrips, averageAlternatives, weakEvidence,
-         peakHour, transfer, topFlows]
+         peakHour, transfer, origin, destination, distinctFlows]
       properties:
         first:
           $ref: "#/components/schemas/TransferLeg"
@@ -634,11 +634,16 @@ components:
           maximum: 23
         transfer:
           $ref: "#/components/schemas/TransferStop"
-        topFlows:
-          type: array
-          maxItems: 3
-          items:
-            $ref: "#/components/schemas/TransferFlow"
+        origin:
+          $ref: "#/components/schemas/TransferCell"
+        destination:
+          $ref: "#/components/schemas/TransferCell"
+        distinctFlows:
+          type: integer
+          minimum: 1
+          description: >
+            Cuántos pares origen-destino sirve esta combinación. Es lo que dice
+            que las dos zonas resumen muchos viajes y no uno.
 
     TransferLeg:
       type: object
@@ -684,40 +689,6 @@ components:
           type: number
           format: double
 
-    TransferFlow:
-      type: object
-      description: >
-        Un movimiento origen-destino atribuido a la combinación. Dice de dónde
-        sale la demanda que hay detrás del par de líneas.
-      required: [origin, destination, peakHour, estimatedTrips, alternatives]
-      properties:
-        origin:
-          $ref: "#/components/schemas/TransferCell"
-        destination:
-          $ref: "#/components/schemas/TransferCell"
-        peakHour:
-          type: integer
-          minimum: 0
-          maximum: 23
-          description: >
-            La hora en la que este viaje concentra más viajes, no «la hora del
-            viaje». Un viaje es su par de celdas: la hora es un atributo suyo y
-            no otra fila, o el mismo viaje aparece varias veces y nadie puede
-            distinguir las copias.
-        estimatedTrips:
-          type: number
-          format: double
-          description: >
-            La parte de este flujo que le tocó a la combinación después del
-            reparto, no el volumen entero del flujo: el resto fue a las otras
-            combinaciones factibles.
-        alternatives:
-          type: integer
-          minimum: 1
-          description: >
-            Entre cuántas combinaciones se repartió este flujo. Uno significa
-            que la red no dejaba otra forma de hacer ese viaje.
-
     TransferCell:
       type: object
       description: >
@@ -731,10 +702,9 @@ components:
         name:
           type: string
           description: >
-            La parada más cercana a la celda, del catálogo GTFS. Un índice H3 y
-            un par de coordenadas no nombran nada para una persona: sin esto,
-            dos flujos que coinciden en volumen y hora se leen como la misma
-            fila repetida cuando son lugares distintos.
+            La parada más cercana a la celda, del catálogo GTFS. Nombra la zona,
+            no el punto exacto: un índice H3 y un par de coordenadas no nombran
+            nada para una persona.
         longitude:
           type: number
           format: double
