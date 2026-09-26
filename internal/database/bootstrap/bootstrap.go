@@ -336,7 +336,10 @@ func (e *executor) importStreets(ctx context.Context) error {
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("importar red vial con osm2pgrouting: %w", err)
 	}
-	return e.runScript(ctx, transform)
+	if err := e.runScript(ctx, transform); err != nil {
+		return err
+	}
+	return e.importStreetRestrictions(ctx)
 }
 
 func streetTransformScript(streetsFile, dataTime, toolVersion string) (string, error) {

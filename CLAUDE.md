@@ -156,7 +156,10 @@ a README:
   time.
 - `sql/tarifas/` — tariff bands by jurisdiction and distance
   (`vialis.tarifas_colectivo`).
-- `sql/calles/` — OpenStreetMap extract → pgRouting road graph for RF05.
+- `sql/calles/` — OpenStreetMap extract → pgRouting road graph for RF05
+  (`vialis.calles`, `vialis.calles_vertices`) plus node-via turn restrictions
+  (`vialis.calles_restricciones`, read with osmium because osm2pgrouting drops
+  relation roles).
 - `sql/ddl.sql` — final table definitions; `sql/init_db.sql` bootstraps a new
   database.
 

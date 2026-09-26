@@ -261,7 +261,6 @@ ON gtfs_shape_geometries (shape_id);
 -- esta transformacion esta por reemplazar. Lo vuelve a poblar
 -- conexiones_recorridos.sql, que el inicializador corre inmediatamente despues.
 TRUNCATE TABLE
-    vialis.combinaciones_lineas_flujos,
     vialis.combinaciones_lineas,
     vialis.conexiones_recorridos,
     vialis.recorridos_paradas,

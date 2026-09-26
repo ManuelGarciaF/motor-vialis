@@ -1623,7 +1623,9 @@ lugar de aproximar:
 - **El motor no sabe si una calle admite un colectivo.** Rutea sobre lo que la
   red representa. Ancho, altura libre, restricciones de giro, sentido único o
   prohibición de vehículos pesados se respetan sólo en la medida en que la red
-  los registre. Un desvío puede ser geométricamente correcto y operativamente
+  los registre. De las restricciones de giro OSM se aplican las que tienen un
+  nodo como via; las que usan ways como via, las condicionales por horario y
+  las ambiguas no (ver `sql/calles/README.md`). Un desvío puede ser geométricamente correcto y operativamente
   imposible, y quien consulta debería revisarlo antes de adoptarlo.
 - **El desvío se resuelve tramo por tramo.** No se evalúa una reorganización
   global de la ruta que podría ser mejor que la suma de los rodeos locales.

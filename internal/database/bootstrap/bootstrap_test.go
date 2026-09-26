@@ -200,6 +200,8 @@ func TestEmbeddedScriptsAreExecutable(t *testing.T) {
 		"crear_gtfs_raw.sql":            scripts.CrearGTFSRaw,
 		"transformar_gtfs.sql":          scripts.TransformarGTFS,
 		"transformar_calles.sql":        scripts.TransformarCalles,
+		"crear_restricciones_raw.sql":   scripts.CrearRestriccionesRaw,
+		"transformar_restricciones.sql": scripts.TransformarRestricciones,
 		"mapconfig.xml":                 scripts.CallesMapConfig,
 		"amba-margen-10km.geojson":      scripts.CallesScope,
 		"crear_viajes_raw.sql":          scripts.CrearViajesRaw,

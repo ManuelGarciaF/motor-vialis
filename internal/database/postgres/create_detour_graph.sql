@@ -216,9 +216,18 @@ SELECT
         ELSE 'uncovered'
     END AS reverse_source,
     blocked,
+    reverse_allowed,
     geom
 FROM estimated;
 
 CREATE UNIQUE INDEX detour_graph_id_idx ON detour_graph (id);
 CREATE INDEX detour_graph_geom_idx ON detour_graph USING GIST (geom);
 ANALYZE detour_graph;
+
+-- OSM turn restrictions whose two edges are both in the local graph. A
+-- restriction with an edge outside the area cannot be taken anyway.
+CREATE TEMP TABLE detour_restrictions ON COMMIT DROP AS
+SELECT DISTINCT restriction.id_calle_desde AS from_edge, restriction.id_calle_hacia AS to_edge
+FROM vialis.calles_restricciones restriction
+JOIN detour_graph from_edge ON from_edge.id = restriction.id_calle_desde
+JOIN detour_graph to_edge ON to_edge.id = restriction.id_calle_hacia;

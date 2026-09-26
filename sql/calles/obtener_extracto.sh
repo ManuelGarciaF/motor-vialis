@@ -26,7 +26,15 @@ else
         "$source_pbf" -o "$output_dir/area.osm.pbf"
 fi
 osmium tags-filter --overwrite "$output_dir/area.osm.pbf" \
-    "w/highway=$allowed_highways" -o "$output_dir/calles.osm.pbf"
+    "w/highway=$allowed_highways" -o "$output_dir/ways.osm.pbf"
+# Las restricciones de giro se filtran aparte y sin sus miembros: los ways y el
+# nodo via que importan ya están en ways.osm.pbf, y traer los referenciados
+# agregaría ways de clases excluidas (service, footway) con todos sus nodos.
+osmium tags-filter --overwrite --omit-referenced "$output_dir/area.osm.pbf" \
+    "r/type=restriction" -o "$output_dir/restricciones.osm.pbf"
+osmium merge --overwrite "$output_dir/ways.osm.pbf" \
+    "$output_dir/restricciones.osm.pbf" -o "$output_dir/calles.osm.pbf"
+rm "$output_dir/ways.osm.pbf" "$output_dir/restricciones.osm.pbf"
 osmium cat --overwrite "$output_dir/calles.osm.pbf" \
     -o "$output_dir/calles.osm"
 osmium fileinfo -e "$output_dir/calles.osm.pbf" \

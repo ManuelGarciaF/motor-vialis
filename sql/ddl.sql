@@ -239,6 +239,28 @@ ON vialis.calles (destino);
 
 CREATE INDEX idx_calles_osm_way_id
 ON vialis.calles (osm_way_id);
+
+-- Giros prohibidos de la red vial activa, derivados de las relaciones OSM
+-- type=restriction con un nodo como via. Cada fila prohíbe pasar de la arista
+-- id_calle_desde a la arista id_calle_hacia en el vértice id_vertice_via. Una
+-- restricción only_* se guarda como la prohibición de todas las otras salidas,
+-- así que una relación puede producir varias filas.
+-- sql/calles/README.md documenta qué relaciones se descartan y por qué.
+CREATE TABLE vialis.calles_restricciones (
+    osm_relation_id            BIGINT NOT NULL,
+    restriccion                TEXT NOT NULL
+        CHECK (restriccion ~ '^(no|only)_'),
+    id_vertice_via             BIGINT NOT NULL
+        REFERENCES vialis.calles_vertices(id_vertice),
+    id_calle_desde             BIGINT NOT NULL
+        REFERENCES vialis.calles(id_calle),
+    id_calle_hacia             BIGINT NOT NULL
+        REFERENCES vialis.calles(id_calle),
+    PRIMARY KEY (osm_relation_id, id_calle_desde, id_calle_hacia)
+);
+
+CREATE INDEX idx_calles_restricciones_desde
+ON vialis.calles_restricciones (id_calle_desde);
 -- Conexiones entre recorridos --
 --
 -- Un par ordenado (origen, destino) significa que se puede viajar en el
