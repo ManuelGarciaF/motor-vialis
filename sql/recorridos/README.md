@@ -241,6 +241,68 @@ cortara, las paradas posteriores quedarían sin fila y desaparecerían de
 `recorridos_paradas`; clampeando conservan su fila y su tramo queda en `NULL`,
 que es la degradación correcta.
 
+### Saltos del shape
+
+El feed trae viajes canónicos cosidos: dos pedazos de recorrido unidos en un
+mismo `trip_id` por una recta que no sigue ninguna calle. En `129H` dirección 1
+(«H - Pza. de Miserere»), `stop_times.txt` y `shapes.txt` coinciden: el viaje va
+de Florencio Varela a Miserere (paradas 1-47), el shape salta 18,8 km en línea
+recta de vuelta a Florencio Varela (`shape_pt_sequence` 298 → 299) y la
+secuencia sigue por Ing. Allan hasta terminar a 700 m de donde empezó. Los 241
+viajes de esa dirección tienen las mismas 90 paradas, así que no hay otro viaje
+canónico que elegir: el defecto está en el origen, no en la selección.
+
+Un tramo que contiene un segmento recto de más de **8 km** se guarda en `NULL`,
+igual que uno invertido. Así no entra como referencia de tiempos de viaje y
+`GET /lines/{id}` devuelve el recorrido con `simulable: false` y ese tramo sin
+`pathToNext`, en lugar de exportar una recta que cruza la ciudad: la línea se
+puede dibujar con el hueco, pero no simular. El umbral sale del feed vigente:
+
+| Caso                   | Recorridos                             | Segmento recto más largo |
+|------------------------|----------------------------------------|--------------------------|
+| Viaje cosido           | `129F`/1, `129H`/1, `179C`/1, `123A`/0 | 10,2 a 35 km             |
+| Recta de ruta legítima | `276I`, `307F`                         | 3,8 a 6,5 km             |
+
+Un salto no siempre queda entero en un tramo. El cosido de `129H`/1 sigue
+después del salto de 18,8 km con dos rectas de dos puntos: una de 4,05 km
+(Calchaquí 1999 → Calchaquí 450, tramo 48) y otra de 11,6 km (tramo 49), que la
+regla de 8 km descarta. Los tramos 47 y 49 quedan en `NULL` y el 48 quedaría
+como una isla recta en el mapa. Por eso además se descarta un tramo con un
+segmento recto de más de **3 km** que linda con un tramo ya descartado (el
+anterior o el siguiente; el `NULL` de la última parada no cuenta). Una recta de
+ruta legítima nunca linda con uno: en el feed vigente la regla alcanza sólo al
+tramo 48 de `129H`/1. Las rectas de más de 3 km que siguen quedando
+(`79J`/0, `123A`/0, `257A`/1, `276I`, `307F`) no tocan ningún tramo
+descartado.
+
+La regla descarta el tramo y no intenta recomponer el viaje: reordenar las
+paradas o inventar la geometría faltante sería adivinar la ruta real.
+
+### Lazos del shape sin paradas
+
+Otros shapes recorren un lazo que ninguna parada del viaje usa. En `79J`
+dirección 0 («J - Burzaco») el shape 326 da una vuelta completa Constitución →
+Burzaco → Barracas entre las paradas 7 (889 Pinedo) y 8 (2382 Australia), que
+están a 300 m, y recién después hace el recorrido con paradas: el tramo mide 46
+km. No es un error de ubicación de la parada: el `shape_dist_traveled` de
+`stop_times.txt` ubica la parada 8 en 48.272 m, el mismo lugar que la ubicación
+monótona, y en los ocho recorridos afectados las dos ubicaciones difieren en
+menos de 100 m sobre 30 a 93 km. Ubicar cada parada en la primera pasada del
+shape en vez de la más cercana tampoco sirve: el lazo sobrante no desaparece,
+se muda a otro tramo. El horario tampoco lo recorre: implica velocidades de 83
+a 646 km/h en siete de los ocho tramos, contra 17-63 km/h en el resto de cada
+línea.
+
+Un tramo de más de **4,5 km** que mide más de **cinco veces** la distancia en
+línea recta entre sus paradas se guarda en `NULL`, con la misma consecuencia que
+un salto. En el feed vigente:
+
+| Caso                      | Recorridos                                                                     | Tramo        | Cociente  |
+|---------------------------|--------------------------------------------------------------------------------|--------------|-----------|
+| Lazo sin paradas          | `79J`/0, `257A`/1, `395B`/1, `395C`/0, `395C`/1, `463A`/0, `463A`/1, `721B`/0 | 5,1 a 46 km  | 9,9 a 156 |
+| Rulo de cabecera legítimo | `79E`/1, `177A`/0, `315A`/0, `371N`, `723B`/1 y otros                          | hasta 3,9 km | hasta 266 |
+| Tramo largo legítimo      | `365R5`/0                                                                      | 6,8 km       | 3,1       |
+
 ### Tiempo comercial por tramo
 
 Los percentiles se calculan solamente con viajes cuya secuencia completa de

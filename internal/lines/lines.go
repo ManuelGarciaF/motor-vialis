@@ -59,6 +59,12 @@ type Detail struct {
 	Line  Summary           `json:"line"`
 	Route route.Route       `json:"route"`
 	Stops []StopDescription `json:"stops"`
+	// Simulable is false when the ETL dropped some segment of the stored line:
+	// the route still carries every stop and every segment that exists, so the
+	// line can be drawn, but POST /simulations would reject it as it is.
+	Simulable bool `json:"simulable"`
+	// NotSimulableReason explains a false Simulable; it is empty otherwise.
+	NotSimulableReason string `json:"notSimulableReason,omitempty"`
 }
 
 // Bounds is a geographic rectangle in WGS 84, used to list only the lines a
@@ -196,6 +202,7 @@ func (service *Service) Get(ctx context.Context, id int64) (Detail, error) {
 	stopIDs := uniqueStopIDs(stored.Stops)
 	exported := route.Route{Stops: make([]route.Stop, len(stored.Stops))}
 	descriptions := make([]StopDescription, len(stored.Stops))
+	var gaps []string
 	for index, stop := range stored.Stops {
 		exported.Stops[index] = route.Stop{
 			ID:       stopIDs[index],
@@ -210,15 +217,11 @@ func (service *Service) Get(ctx context.Context, id int64) (Detail, error) {
 		if index == len(stored.Stops)-1 {
 			continue
 		}
+		// A dropped segment still lets the line be drawn; it only stops it from
+		// being simulated, so it is reported instead of failing the whole line.
 		if stop.PathToNext == nil {
-			return Detail{}, &NotSimulableError{
-				LineID: id,
-				Reason: fmt.Sprintf(
-					"no stored geometry between stops[%d] and stops[%d]",
-					index,
-					index+1,
-				),
-			}
+			gaps = append(gaps, fmt.Sprintf("stops[%d] and stops[%d]", index, index+1))
+			continue
 		}
 		// Alignment mutates endpoints, so keep repository data unchanged.
 		exported.Stops[index].PathToNext = &route.LineString{
@@ -235,17 +238,71 @@ func (service *Service) Get(ctx context.Context, id int64) (Detail, error) {
 	); err != nil {
 		return Detail{}, &NotSimulableError{LineID: id, Reason: err.Error()}
 	}
-	// Use a temporary jurisdiction to validate stored geometry before exporting it.
-	probe := exported
-	probe.Jurisdiction = route.JurisdictionCABA
-	if err := route.Validate(probe); err != nil {
+	if err := validateStoredSegments(exported, len(gaps) > 0); err != nil {
 		return Detail{}, &NotSimulableError{LineID: id, Reason: err.Error()}
 	}
 
 	summary := stored.Summary
 	summary.ID = id
 	summary.StopCount = len(stored.Stops)
-	return Detail{Line: summary, Route: exported, Stops: descriptions}, nil
+	detail := Detail{
+		Line:      summary,
+		Route:     exported,
+		Stops:     descriptions,
+		Simulable: len(gaps) == 0,
+	}
+	if len(gaps) > 0 {
+		detail.NotSimulableReason = (&NotSimulableError{
+			LineID: id,
+			Reason: "no stored geometry between " + strings.Join(gaps, ", "),
+		}).Error()
+	}
+	return detail, nil
+}
+
+// validateStoredSegments checks stored geometry before exporting it, using a
+// temporary jurisdiction. A complete route goes through the same validation as
+// POST /simulations; a route with dropped segments cannot, so each segment it
+// does have is validated on its own, and only the gaps are left unchecked.
+func validateStoredSegments(exported route.Route, hasGaps bool) error {
+	if !hasGaps {
+		probe := exported
+		probe.Jurisdiction = route.JurisdictionCABA
+		return route.Validate(probe)
+	}
+	for index := 0; index < len(exported.Stops)-1; index++ {
+		if exported.Stops[index].PathToNext == nil {
+			continue
+		}
+		next := exported.Stops[index+1]
+		next.PathToNext = nil
+		probe := route.Route{
+			Jurisdiction: route.JurisdictionCABA,
+			Stops:        []route.Stop{exported.Stops[index], next},
+		}
+		if err := route.Validate(probe); err != nil {
+			return rebaseSegmentError(err, index)
+		}
+	}
+	return nil
+}
+
+// rebaseSegmentError renames a two-stop probe's fields to the stops they are
+// in the whole route, so the reason points at the stored segment.
+func rebaseSegmentError(err error, index int) error {
+	var validationError *route.ValidationError
+	if !errors.As(err, &validationError) {
+		return err
+	}
+	field := validationError.Field
+	for offset := range 2 {
+		probeField := fmt.Sprintf("route.stops[%d]", offset)
+		if rest, found := strings.CutPrefix(field, probeField); found {
+			field = fmt.Sprintf("route.stops[%d]%s", index+offset, rest)
+			break
+		}
+	}
+	return &route.ValidationError{Field: field, Message: validationError.Message}
 }
 
 // uniqueStopIDs suffixes repeated GTFS stops with their unique stop_sequence.

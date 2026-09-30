@@ -3,6 +3,7 @@ package lines_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
@@ -175,9 +176,65 @@ func TestGetDisambiguatesRepeatedStops(t *testing.T) {
 	}
 }
 
-func TestGetReportsAGapInStoredGeometry(t *testing.T) {
+func TestGetMarksACompleteLineAsSimulable(t *testing.T) {
+	repository := &fakeRepository{stored: storedLine()}
+	service := lines.NewService(repository, testPolicy())
+
+	detail, err := service.Get(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !detail.Simulable || detail.NotSimulableReason != "" {
+		t.Fatalf(
+			"simulable = %t, reason = %q, want a simulable line with no reason",
+			detail.Simulable,
+			detail.NotSimulableReason,
+		)
+	}
+}
+
+// A dropped segment must not hide the rest of the line: it is still exported
+// for drawing, without inventing the missing geometry, and flagged instead.
+func TestGetExportsALineWithAGapAsNotSimulable(t *testing.T) {
 	stored := storedLine()
 	stored.Stops[1].PathToNext = nil
+	repository := &fakeRepository{stored: stored}
+	service := lines.NewService(repository, testPolicy())
+
+	detail, err := service.Get(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if detail.Simulable {
+		t.Fatal("simulable = true, want false")
+	}
+	want := "line 7 cannot be simulated: no stored geometry between stops[1] and stops[2]"
+	if detail.NotSimulableReason != want {
+		t.Fatalf("reason = %q, want %q", detail.NotSimulableReason, want)
+	}
+	if len(detail.Route.Stops) != 3 {
+		t.Fatalf("stops = %d, want all 3", len(detail.Route.Stops))
+	}
+	if detail.Route.Stops[0].PathToNext == nil {
+		t.Fatal("stops[0].pathToNext = nil, want the stored segment")
+	}
+	if detail.Route.Stops[1].PathToNext != nil {
+		t.Fatal("stops[1].pathToNext was invented for a dropped segment")
+	}
+	// The exported route is exactly what POST /simulations must keep rejecting.
+	if err := route.Validate(simulable(detail.Route)); err == nil {
+		t.Fatal("exported route validation error = nil, want the gap rejected")
+	}
+}
+
+// The segments a gapped line keeps are still checked like any stored segment.
+func TestGetRejectsAGappedLineWithAnInvalidSegment(t *testing.T) {
+	stored := storedLine()
+	stored.Stops[0].PathToNext = nil
+	positions := stored.Stops[1].PathToNext.Positions
+	for left, right := 0, len(positions)-1; left < right; left, right = left+1, right-1 {
+		positions[left], positions[right] = positions[right], positions[left]
+	}
 	repository := &fakeRepository{stored: stored}
 	service := lines.NewService(repository, testPolicy())
 
@@ -186,8 +243,8 @@ func TestGetReportsAGapInStoredGeometry(t *testing.T) {
 	if !errors.As(err, &notSimulable) {
 		t.Fatalf("error = %v, want *NotSimulableError", err)
 	}
-	if notSimulable.LineID != 7 {
-		t.Fatalf("line id = %d, want 7", notSimulable.LineID)
+	if !strings.Contains(notSimulable.Reason, "route.stops[1].pathToNext") {
+		t.Fatalf("reason = %q, want it to name stops[1]", notSimulable.Reason)
 	}
 }
 

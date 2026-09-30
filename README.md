@@ -156,7 +156,9 @@ El contrato completo está en `docs/openapi.yaml`.
   el cliente puede modificarlo y mandarlo como `proposed` de `POST
   /comparisons`. No incluye `jurisdiction`: GTFS no registra qué autoridad
   tarifaria rige una línea y el motor no la deduce de la geometría, así que la
-  agrega quien simula.
+  agrega quien simula. Si la ETL descartó algún tramo, la línea se devuelve
+  igual para dibujarla, con `simulable: false` y sin `pathToNext` en ese tramo;
+  así no se puede simular.
 - `POST /lines/similar`: busca líneas GTFS que cubren el mismo corredor que
   una ruta dibujada y devuelve ambas coberturas por separado.
 - `GET /transfers`: pagina el ranking precalculado de combinaciones de líneas,

@@ -113,6 +113,15 @@ paths:
         actual del AMBA esa proyección coincide con la parada y la corrección no
         mueve nada; existe para feeds cuyas paradas no caigan sobre el `shape`
         (ver `config.LinesAlignmentToleranceMeters`).
+
+
+        Si la ETL descartó algún tramo de la línea —un salto o un lazo del
+        `shape` de origen, ver `sql/recorridos/README.md`— la respuesta sigue
+        siendo 200, con `simulable: false`: `route` trae todas las paradas y
+        todos los tramos que existen, y la parada anterior a cada tramo
+        descartado viene sin `pathToNext`. Sirve para dibujar la línea con sus
+        huecos, no para simularla: el motor no inventa la geometría que falta, y
+        `POST /simulations` rechaza esa ruta tal como viene.
       tags: [lines]
       parameters:
         - name: id
@@ -147,12 +156,12 @@ paths:
                   message: "no stored line has this id"
         "422":
           description: >
-            La línea existe pero su geometría almacenada no describe una ruta
-            válida —un hueco entre dos paradas, menos de dos paradas, o un
-            extremo demasiado lejos de su parada—. Es un problema de los datos,
-            no del pedido: reintentar no cambia nada. No debería ocurrir con el
-            feed actual del AMBA; está previsto para no devolver una ruta que
-            `POST /simulations` rechazaría.
+            La línea existe pero su geometría almacenada no se puede exportar
+            ni para dibujarla —menos de dos paradas, un extremo demasiado lejos
+            de su parada, o un tramo invertido—. Un tramo descartado no llega
+            acá: se informa con `simulable: false` en una respuesta 200. Es un
+            problema de los datos, no del pedido: reintentar no cambia nada. No
+            debería ocurrir con el feed actual del AMBA.
           content:
             application/json:
               schema:
@@ -160,7 +169,7 @@ paths:
               example:
                 error:
                   code: line_not_simulable
-                  message: "line 12 cannot be simulated: no stored geometry between stops[3] and stops[4]"
+                  message: "line 12 cannot be simulated: it has fewer than two stored stops"
         "500":
           description: Error de infraestructura.
           content:
@@ -901,7 +910,8 @@ components:
         Un `Route` sin `jurisdiction`. GTFS no registra qué autoridad tarifaria
         rige una línea y el motor no la deduce de la geometría, así que la elige
         quien simula: hay que agregar el campo antes de mandar esto a `POST
-        /simulations`. El resto ya viene con la forma que ese endpoint acepta.
+        /simulations`. El resto ya viene con la forma que ese endpoint acepta,
+        salvo en una línea con `simulable: false`, a la que le faltan tramos.
       required: [stops]
       properties:
         stops:
@@ -912,7 +922,7 @@ components:
 
     LineDetail:
       type: object
-      required: [line, route, stops]
+      required: [line, route, stops, simulable]
       properties:
         line:
           $ref: "#/components/schemas/LineSummary"
@@ -922,6 +932,19 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/LineStopDescription"
+        simulable:
+          type: boolean
+          description: >
+            `false` cuando la ETL descartó algún tramo de la línea. `route` trae
+            igual todas las paradas, pero la parada anterior a cada tramo
+            descartado viene sin `pathToNext`, así que `POST /simulations`,
+            `POST /comparisons` y `POST /detours` la rechazan tal como viene.
+        notSimulableReason:
+          type: string
+          description: >
+            Qué tramos faltan, con el mismo texto que usa `line_not_simulable`.
+            Sólo viene cuando `simulable` es `false`.
+          example: "line 1650 cannot be simulated: no stored geometry between stops[46] and stops[47], stops[48] and stops[49]"
 
     DrawnRoute:
       type: object

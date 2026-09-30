@@ -424,6 +424,93 @@ WITH RECURSIVE stop_inputs AS (
                 ::GEOMETRY(LineString, 4326)
         END AS tramo_hasta_siguiente
     FROM ordered_stops
+), plausible_segments AS (
+    -- Dos formas de tramo que no son un camino, y que se descartan igual que un
+    -- tramo invertido: como referencia de tiempos o como ruta exportable
+    -- describirian un viaje que el colectivo no hace.
+    --
+    -- Un segmento recto de mas de 8 km es un salto del shape entre dos pedazos
+    -- de recorrido que el feed cosio en un mismo viaje, como en 129F, 129H,
+    -- 179C y 123A. En el feed vigente esos saltos van de 10,2 a 35 km; por
+    -- debajo de 8 km quedan rectas de ruta como las de 276I y 307F, de hasta
+    -- 6,5 km.
+    --
+    -- Un tramo de mas de 4,5 km que mide mas de cinco veces la distancia entre
+    -- sus paradas recorre un lazo del shape que ninguna parada del viaje usa:
+    -- 46 km entre dos paradas a 300 m en 79J. El shape_dist_traveled del feed
+    -- ubica las paradas en el mismo lugar, asi que no hay otra ubicacion que
+    -- elegir. En el feed vigente esos lazos van de 5,1 a 46 km con cocientes de
+    -- 9,9 a 156; los rulos de cabecera legitimos no pasan de 3,9 km y los
+    -- tramos largos legitimos, de un cociente de 3,1.
+    SELECT
+        segment.id_recorrido,
+        segment.route_id,
+        segment.direction_id,
+        segment.id_parada,
+        segment.nro_parada,
+        segment.stop_ordinal,
+        CASE
+            WHEN NOT EXISTS (
+                SELECT 1
+                FROM ST_DumpSegments(segment.tramo_hasta_siguiente) piece
+                WHERE ST_Length(piece.geom::geography) > 8000
+            )
+            AND NOT (
+                ST_Length(segment.tramo_hasta_siguiente::geography) > 4500
+                AND ST_Length(segment.tramo_hasta_siguiente::geography) > 5 * ST_Distance(
+                    ST_StartPoint(segment.tramo_hasta_siguiente)::geography,
+                    ST_EndPoint(segment.tramo_hasta_siguiente)::geography
+                )
+            )
+            THEN segment.tramo_hasta_siguiente
+        END AS tramo_hasta_siguiente
+    FROM stop_segments segment
+), neighbour_segments AS (
+    SELECT
+        segment.*,
+        COALESCE(
+            LAG(segment.tramo_hasta_siguiente IS NULL) OVER stops,
+            FALSE
+        ) AS anterior_descartado,
+        -- La ultima parada nunca tiene tramo, asi que su NULL no cuenta como
+        -- descarte del tramo que llega a ella.
+        COALESCE(
+            LEAD(segment.tramo_hasta_siguiente IS NULL) OVER stops
+                AND LEAD(segment.stop_ordinal) OVER stops
+                    < COUNT(*) OVER (PARTITION BY segment.id_recorrido),
+            FALSE
+        ) AS siguiente_descartado
+    FROM plausible_segments segment
+    WINDOW stops AS (
+        PARTITION BY segment.id_recorrido
+        ORDER BY segment.stop_ordinal
+    )
+), stitch_free_segments AS (
+    -- Un salto no siempre queda entero en un solo tramo: el cosido de 129H
+    -- sigue con una recta de 4 km entre dos tramos ya descartados. Una recta
+    -- de mas de 3 km pegada a un tramo descartado es un resto del mismo
+    -- cosido. Sola, en cambio, es una recta de ruta como las de 276I y 307F,
+    -- de hasta 6,5 km, que nunca lindan con un tramo descartado. En el feed
+    -- vigente la regla alcanza solo al tramo 48 de 129H.
+    SELECT
+        segment.id_recorrido,
+        segment.route_id,
+        segment.direction_id,
+        segment.id_parada,
+        segment.nro_parada,
+        segment.stop_ordinal,
+        CASE
+            WHEN NOT (
+                (segment.anterior_descartado OR segment.siguiente_descartado)
+                AND EXISTS (
+                    SELECT 1
+                    FROM ST_DumpSegments(segment.tramo_hasta_siguiente) piece
+                    WHERE ST_Length(piece.geom::geography) > 3000
+                )
+            )
+            THEN segment.tramo_hasta_siguiente
+        END AS tramo_hasta_siguiente
+    FROM neighbour_segments segment
 )
 INSERT INTO vialis.recorridos_paradas (
     id_recorrido,
@@ -451,7 +538,7 @@ SELECT
     times.tiempo_tipico_segundos,
     times.tiempo_pico_segundos,
     COALESCE(times.cantidad_muestras, 0)
-FROM stop_segments segment
+FROM stitch_free_segments segment
 LEFT JOIN gtfs_route_segment_times times
     ON times.route_id = segment.route_id
     AND times.direction_id = segment.direction_id

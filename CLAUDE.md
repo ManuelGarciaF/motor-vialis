@@ -123,10 +123,21 @@ SQL against a real PostGIS+H3 instance.
    never infers it, so the caller sets it before simulating. This is the only
    place `AlignStoredPathEndpoints` runs: it relaxes the 20m endpoint rule to
    `config.LinesAlignmentToleranceMeters` for the engine's *own* stored
-   geometry, never for caller input. Stored data that cannot form a valid route is
-   reported as `line_not_simulable` (422) rather than repaired; the monotone
-   stop location in `transformar_gtfs.sql` means this should not happen on the
-   current feed. User-designed lines are persisted by a different service;
+   geometry, never for caller input. Stored data is never repaired. A line
+   with a segment the ETL stored as `NULL` is still returned (200) so it can
+   be drawn, with `simulable: false`, a `notSimulableReason`, and no
+   `pathToNext` on that segment; `POST /simulations` keeps rejecting that
+   route as it is. Other invalid stored geometry (fewer than two stops, an
+   endpoint beyond the alignment tolerance, a reversed segment) is still
+   `line_not_simulable` (422). On the current feed the `NULL` segments are
+   exactly twelve lines: four canonical trips the source stitched together with a
+   straight shape jump over 8 km (129F/1, 129H/1, 179C/1, 123A/0) — plus any
+   segment with a straight piece over 3 km next to a dropped one, which is a
+   leftover of the same stitch (only 129H/1 segment 48 today) — and eight
+   whose shape runs a loop no stop uses — a segment over 4.5 km and five times
+   the straight distance between its stops (79J/0, 257A/1, 395B/1, 395C/0,
+   395C/1, 463A/0, 463A/1, 721B/0). See "Saltos del shape" and "Lazos del shape
+   sin paradas" in `sql/recorridos/README.md`. User-designed lines are persisted by a different service;
    nothing here writes. `POST /lines/similar` performs a pure geometric
    mutual-coverage search and runs no estimator.
 4. **Revenue** (`internal/simulation/revenue`): for each demand stop pair,
