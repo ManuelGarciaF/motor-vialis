@@ -93,7 +93,11 @@ JOIN principal p USING (component);
 
 CREATE UNIQUE INDEX componente_principal_node_idx ON componente_principal (node);
 
-TRUNCATE TABLE vialis.calles, vialis.calles_vertices RESTART IDENTITY;
+-- calles_restricciones referencia las dos tablas y transformar_restricciones.sql
+-- la recalcula a continuación; sin ella en la misma sentencia, Postgres rechaza
+-- el TRUNCATE.
+TRUNCATE TABLE vialis.calles_restricciones, vialis.calles, vialis.calles_vertices
+RESTART IDENTITY;
 
 INSERT INTO vialis.calles_vertices (id_vertice, osm_node_id, geom)
 OVERRIDING SYSTEM VALUE

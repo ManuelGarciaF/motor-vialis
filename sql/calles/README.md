@@ -20,7 +20,10 @@ pipeline completo; los comandos siguientes también permiten recargarla a mano.
 
 También crea `configuration`, `osm_nodes`, `osm_relations` y
 `calles_pointsofinterest_raw`. Son staging o auxiliares del importador; el
-ruteo de Vialis no las consulta. Se usa `--addnodes --tags` porque la tabla de
+ruteo de Vialis no las consulta. En particular, `osm_relations` queda vacía:
+osm2pgrouting 3.0 sólo conserva relaciones cuyas etiquetas figuran en
+`mapconfig.xml` y, aun así, guarda los miembros sin rol y sin nodos. Por eso las
+restricciones de giro se leen aparte con `osmium` (sección 5). Se usa `--addnodes --tags` porque la tabla de
 aristas de osm2pgrouting 3.0 no conserva `access`, `motor_vehicle`, `bridge`,
 `tunnel` ni `layer`.
 
@@ -45,6 +48,12 @@ Fuentes:
 
 - definición: <https://www.argentina.gob.ar/dami/centro/amba>;
 - geometrías: <https://apis.datos.gob.ar/georef/api/>.
+
+El extracto conserva los ways de las clases admitidas con sus nodos y, además,
+todas las relaciones `type=restriction` del área, sin sus miembros: los ways y
+nodos que importan ya están en el extracto, y los que no (por ejemplo un
+`highway=service` usado como from) no aportan una arista. `osm2pgrouting` ignora
+esas relaciones, así que la red importada es la misma con o sin ellas.
 
 Para crear el extracto definitivo:
 
@@ -120,11 +129,65 @@ los cortes de RF05 se declaran sobre calles y normalmente no alcanzarán esos
 puntos internos. Un desvío que afecte específicamente uno de esos accesos queda
 sujeto a revisión manual.
 
+## 5. Restricciones de giro
+
+`cmd/initdb` corre este paso inmediatamente después de `transformar_calles.sql`,
+porque las restricciones referencian las aristas y vértices recién publicados.
+La carga manual de las secciones 2 y 3 no lo incluye: el paso 1 necesita el
+parser de OPL de `internal/database/bootstrap`.
+
+1. `osmium tags-filter --omit-referenced -f opl calles.osm r/type=restriction`
+   lista las relaciones, una por línea;
+2. `crear_restricciones_raw.sql` recrea `vialis.calles_restricciones_raw`, donde
+   se copian etiquetas y miembros tal como están en OSM;
+3. `transformar_restricciones.sql` reemplaza `vialis.calles_restricciones`.
+
+`transformar_calles.sql` vacía `calles_restricciones` en su mismo `TRUNCATE`:
+recargar sólo las calles sin volver a correr el paso 3 deja la red sin
+restricciones. Una base anterior a esta tabla se recarga con
+`cmd/initdb --reset`; no hay script de migración, porque poblarla necesita el
+importador de `osmium`.
+
+Cada fila de `calles_restricciones` prohíbe pasar de `id_calle_desde` a
+`id_calle_hacia` en `id_vertice_via`, con el `osm_relation_id` de origen. Reglas:
+
+- **Vehículo.** Se usa `restriction:bus` si está. Si no, la relación no aplica
+  cuando `except` incluye `bus` o `psv`. Si no, se usa
+  `restriction:motor_vehicle` y, por último, `restriction`. Las relaciones que
+  sólo restringen otros vehículos (`restriction:hgv`, `restriction:bicycle`) o
+  que sólo tienen `restriction:conditional` no aplican: el motor no evalúa
+  horarios.
+- **Forma.** Se traducen sólo relaciones con exactamente un way `from`, un nodo
+  `via` y un way `to`. Las que usan ways como `via` quedan fuera (limitación de
+  v1), igual que las que tienen miembros sin rol.
+- **Aristas.** La arista desde es la del way `from` que puede llegar al vértice
+  via respetando su sentido; la arista hacia, la del way `to` que puede salir de
+  él. Si el via quedó fuera de la componente principal, o alguno de los ways no
+  tiene esa arista (clase excluida o sentido incompatible), se descarta. Si hay
+  más de una candidata, se descarta por ambigua en lugar de adivinar.
+- **Tipo.** `no_*` prohíbe el par (desde, hacia). `only_*` prohíbe, desde esa
+  arista, todas las otras salidas del vértice via, incluida la vuelta en U. No se
+  agregan prohibiciones de vuelta en U que OSM no declare.
+
+Sobre el extracto `argentina-latest` del 2026-09-24 hay 6.092 relaciones; se
+traducen 5.606 en 5.915 giros prohibidos. Se descartan 270 con way como via,
+144 cuyos ways no llegan o no salen del via, 28 con el via fuera de la red, 27
+que no aplican a colectivos y 14 con miembros mal formados; tres `only_*` no
+producen filas porque su vértice no tiene otra salida.
+
+`validar_calles.sql` bloquea filas cuyo par no pase por su vértice via y
+reporta relaciones importadas, traducidas y giros prohibidos.
+
+El ruteo de desvíos (`internal/database/postgres/find_detour_paths.sql`) usa
+`pgr_trsp_withPoints` con las restricciones cuyas dos aristas están en el grafo
+local, a costo infinito: un par sin camino legal no tiene camino.
+
 ## Decisiones de v1
 
 - Se excluyen `service`, `track` y vías no vehiculares.
 - `access=no/private` y `motor_vehicle=no/private` se excluyen, salvo que OSM
   habilite explícitamente `bus` o `psv`.
 - `oneway=reversible/alternating` se trata como bidireccional.
-- No se procesan restricciones de giro.
+- Se procesan restricciones de giro con nodo como via (sección 5); las que
+  tienen ways como via no.
 - El costo representa distancia, no tiempo.

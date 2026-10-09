@@ -37,14 +37,17 @@ JOIN LATERAL (
             SELECT
                 edge.id,
                 edge.geom,
+                edge.blocked,
                 clipped.inside_geom,
                 ST_Distance(
                     clipped.inside_geom::geography,
                     requested.geom::geography
                 ) AS distance_meters,
+                -- A blocked edge keeps the directions it had before the cut, so
+                -- it still competes for the points that lie on it.
                 LEAST(
                     CASE
-                        WHEN edge.topology_cost > 0 THEN degrees(acos(GREATEST(-1.0, LEAST(
+                        WHEN edge.topology_cost > 0 OR edge.blocked THEN degrees(acos(GREATEST(-1.0, LEAST(
                             1.0,
                             cos(
                                 ST_Azimuth(ST_StartPoint(edge.geom), ST_EndPoint(edge.geom))
@@ -54,7 +57,8 @@ JOIN LATERAL (
                         ELSE 181
                     END,
                     CASE
-                        WHEN edge.topology_reverse_cost > 0 THEN degrees(acos(GREATEST(-1.0, LEAST(
+                        WHEN edge.topology_reverse_cost > 0
+                          OR edge.blocked AND edge.reverse_allowed THEN degrees(acos(GREATEST(-1.0, LEAST(
                             1.0,
                             cos(
                                 ST_Azimuth(ST_EndPoint(edge.geom), ST_StartPoint(edge.geom))
@@ -71,7 +75,7 @@ JOIN LATERAL (
                     2
                 ) AS inside_geom
             ) clipped
-            WHERE (edge.topology_cost > 0 OR edge.topology_reverse_cost > 0)
+            WHERE (edge.topology_cost > 0 OR edge.topology_reverse_cost > 0 OR edge.blocked)
               AND NOT ST_IsEmpty(clipped.inside_geom)
               AND edge.geom && ST_Expand(
                   requested.geom,
@@ -86,21 +90,32 @@ JOIN LATERAL (
         WHERE candidate.direction_degrees <= $2::double precision
     ) located
     -- A one-centimetre remainder absorbs topology round-off at the generated
-    -- buffer boundary without admitting a meaningful excursion outside it.
-    WHERE ST_Length(ST_Difference(
+    -- buffer boundary without admitting a meaningful excursion outside it. A
+    -- blocked edge skips these checks: it only has to win the ranking to leave
+    -- the point unmatched.
+    WHERE located.blocked OR (
+        ST_Length(ST_Difference(
             ST_MakeLine(requested.geom, located.snapped_geom),
             context.search_area
           )::geography) <= 0.01
-      AND NOT ST_Intersects(
+        AND NOT ST_Intersects(
             ST_MakeLine(requested.geom, located.snapped_geom),
             context.forbidden_area
           )
+    )
+    -- The direction tolerance above already rejects cross streets and the
+    -- opposite carriageway; inside it, the closest edge is where the point is.
+    -- Ranking by angle first let a slightly better-aligned next block win, so
+    -- the path overshot the stop and drove back to it.
     ORDER BY
-        located.direction_degrees,
         located.distance_meters,
+        located.direction_degrees,
         requested.route_order,
         located.id
     LIMIT 1
-) snapped ON true;
+) snapped ON true
+-- The point lies on a closed street: no open edge reaches it, and snapping it to
+-- the next block would draw the bus driving along the closure.
+WHERE snapped.blocked IS NOT TRUE;
 
 CREATE UNIQUE INDEX detour_points_pid_idx ON detour_points (pid);

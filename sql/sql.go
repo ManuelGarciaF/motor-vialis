@@ -40,6 +40,18 @@ var TransformarGTFS string
 //go:embed calles/transformar_calles.sql
 var TransformarCalles string
 
+// CrearRestriccionesRaw recreates the staging table for OSM turn restrictions
+// (vialis.calles_restricciones_raw).
+//
+//go:embed calles/crear_restricciones_raw.sql
+var CrearRestriccionesRaw string
+
+// TransformarRestricciones maps the staged turn restrictions onto the edges of
+// the road graph published by TransformarCalles.
+//
+//go:embed calles/transformar_restricciones.sql
+var TransformarRestricciones string
+
 // CallesMapConfig configures which OSM ways osm2pgrouting imports.
 //
 //go:embed calles/mapconfig.xml

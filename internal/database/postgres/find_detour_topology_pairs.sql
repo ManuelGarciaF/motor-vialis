@@ -1,12 +1,17 @@
 WITH routed AS (
     SELECT *
-    FROM pgr_withPoints(
+    FROM pgr_trsp_withPoints(
         'SELECT id, source, target, topology_cost AS cost, topology_reverse_cost AS reverse_cost FROM detour_graph ORDER BY id',
+        'SELECT ARRAY[from_edge, to_edge] AS path, ''Infinity''::float8 AS cost FROM detour_restrictions ORDER BY from_edge, to_edge',
         'SELECT pid, edge_id, fraction, side FROM detour_points ORDER BY pid',
         'SELECT source, target FROM detour_combinations ORDER BY source, target',
         'r',
         directed => true,
-        details => true
+        -- pgRouting 4.0 drops a restriction when details => true and another
+        -- point splits one of its edges: the path comes back through the
+        -- forbidden turn. Without details the path lists only the vertices
+        -- and its own endpoints, which is all the geometry below needs.
+        details => false
     )
 ), sequenced AS (
     SELECT

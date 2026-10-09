@@ -27,6 +27,22 @@ BEGIN
     ) THEN
         errores := array_append(errores, 'hay aristas con vértices inexistentes');
     END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM vialis.calles_restricciones r
+        JOIN vialis.calles desde ON desde.id_calle = r.id_calle_desde
+        JOIN vialis.calles hacia ON hacia.id_calle = r.id_calle_hacia
+        WHERE NOT (
+            desde.destino = r.id_vertice_via
+            OR desde.origen = r.id_vertice_via AND desde.costo_inverso > 0
+        )
+        OR NOT (
+            hacia.origen = r.id_vertice_via
+            OR hacia.destino = r.id_vertice_via AND hacia.costo_inverso > 0
+        )
+    ) THEN
+        errores := array_append(errores, 'hay restricciones de giro que no pasan por su vértice via');
+    END IF;
     IF cardinality(errores) > 0 THEN
         RAISE EXCEPTION 'Validación estructural fallida: %', array_to_string(errores, '; ');
     END IF;
@@ -41,6 +57,14 @@ SELECT
 FROM vialis.calles;
 
 SELECT count(*) AS vertices FROM vialis.calles_vertices;
+
+-- Las relaciones que no aparecen traducidas se descartaron por alguna de las
+-- reglas de transformar_restricciones.sql (ver sql/calles/README.md).
+SELECT
+    (SELECT count(*) FROM vialis.calles_restricciones_raw) AS relaciones_osm,
+    count(DISTINCT osm_relation_id) AS relaciones_traducidas,
+    count(*) AS giros_prohibidos
+FROM vialis.calles_restricciones;
 
 WITH carga AS (
     SELECT alcance FROM vialis.calles_metadata WHERE activa

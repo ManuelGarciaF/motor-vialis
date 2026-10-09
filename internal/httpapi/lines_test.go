@@ -130,6 +130,48 @@ func TestGetLineReturnsARouteAndItsStops(t *testing.T) {
 	}
 }
 
+// A line with a dropped segment is still a 200: the flag, not the status,
+// tells the client it cannot be resubmitted to simulate.
+func TestGetLineFlagsALineWithAGap(t *testing.T) {
+	stop := func(id string, longitude float64) route.Stop {
+		return route.Stop{ID: id, Position: route.Position{Latitude: -34.6, Longitude: longitude}}
+	}
+	first, second, third := stop("a", -58.38), stop("b", -58.37), stop("c", -58.36)
+	first.PathToNext = &route.LineString{Positions: []route.Position{first.Position, second.Position}}
+	stored := &fakeLines{detail: lines.Detail{
+		Line:               lines.Summary{ID: 12, Line: "132"},
+		Route:              route.Route{Stops: []route.Stop{first, second, third}},
+		NotSimulableReason: "line 12 cannot be simulated: no stored geometry between stops[1] and stops[2]",
+	}}
+
+	response := get(t, newLinesRouter(stored), "/lines/12")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusOK, response.Body)
+	}
+	var body struct {
+		Simulable          *bool  `json:"simulable"`
+		NotSimulableReason string `json:"notSimulableReason"`
+		Route              struct {
+			Stops []struct {
+				PathToNext json.RawMessage `json:"pathToNext"`
+			} `json:"stops"`
+		} `json:"route"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Simulable == nil || *body.Simulable {
+		t.Fatalf("simulable = %v, want an explicit false", body.Simulable)
+	}
+	if body.NotSimulableReason == "" {
+		t.Fatal("notSimulableReason is empty")
+	}
+	if len(body.Route.Stops) != 3 || body.Route.Stops[0].PathToNext == nil ||
+		body.Route.Stops[1].PathToNext != nil {
+		t.Fatalf("route = %s, want a path only after the first stop", response.Body)
+	}
+}
+
 func TestGetLineRejectsANonNumericID(t *testing.T) {
 	response := get(t, newLinesRouter(&fakeLines{}), "/lines/doce")
 	if response.Code != http.StatusBadRequest {
@@ -154,7 +196,7 @@ func TestGetLineReportsAnUnknownID(t *testing.T) {
 func TestGetLineReportsALineItCannotSimulate(t *testing.T) {
 	stored := &fakeLines{err: &lines.NotSimulableError{
 		LineID: 12,
-		Reason: "no stored geometry between stops[3] and stops[4]",
+		Reason: "it has fewer than two stored stops",
 	}}
 
 	response := get(t, newLinesRouter(stored), "/lines/12")

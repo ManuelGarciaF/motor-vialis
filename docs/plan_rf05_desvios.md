@@ -489,10 +489,17 @@ no se ejecuta sin `TOMTOM_LIVE_TEST=1`.
 **Estado: completada.** `postgres.DetourRepository` expone dos operaciones:
 `Analyze` construye buffers, verifica alcance, bloquea calles y obtiene todos los
 intervalos y anclas; `Route` carga costos efímeros en tablas temporales, proyecta
-puntos y ejecuta `pgr_withPoints`. Las tablas usan `ON COMMIT DROP` y permanecen
-aisladas por conexión. Las pruebas contra la base real cubren costos directos,
-`one_side`, sentidos OSM, estimación vecina, bloqueo, puntos virtuales, puntos
-obligatorios/opcionales sin match y reconstrucción orientada dentro del área.
+puntos y ejecuta `pgr_trsp_withPoints` con los giros prohibidos de
+`vialis.calles_restricciones` cuyas dos aristas están en el grafo local
+(`detour_restrictions`), a costo infinito. Se llama con `details => false`:
+pgRouting 4.0 ignora una restricción cuando otro punto parte una de sus aristas
+y `details` está activo. La reconstrucción geométrica sólo necesita los vértices
+y los puntos extremos, que siguen en la salida. Las tablas usan `ON COMMIT DROP`
+y permanecen aisladas por conexión. Las pruebas contra la base real cubren
+costos directos, `one_side`, sentidos OSM, restricciones de giro (también con
+paradas que parten las aristas del giro), estimación vecina, bloqueo, puntos
+virtuales, puntos obligatorios/opcionales sin match y reconstrucción orientada
+dentro del área.
 
 **Salida:** caminos locales válidos sin usar el vértice más cercano.
 
@@ -620,7 +627,8 @@ y conservar el deadline general del request.
   perpendiculares que la cruzan.
 - Nunca modifica geometría fuera del buffer de 1 km.
 - Nunca omite una parada a más de 500 m del corte.
-- Respeta sentidos de circulación y usa puntos virtuales sobre aristas.
+- Respeta sentidos de circulación y restricciones de giro OSM con nodo como via,
+  y usa puntos virtuales sobre aristas.
 - Todos los costos usados para decidir provienen del snapshot TomTom declarado.
 - Si tráfico o matching no alcanzan, devuelve un error explícito.
 - Los dos criterios producen resultados deterministas y respetan sus prioridades
