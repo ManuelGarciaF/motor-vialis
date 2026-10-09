@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
 	"github.com/ManuelGarciaF/vialis-motor/internal/combinaciones"
 	"github.com/ManuelGarciaF/vialis-motor/internal/config"
 	"github.com/ManuelGarciaF/vialis-motor/internal/database/postgres"
@@ -75,6 +76,11 @@ func NewDetourService(
 		comparator,
 		config.DetourPolicy(),
 	)
+}
+
+// NewBunchingService reads current events independently of simulations.
+func NewBunchingService(database *pgxpool.Pool) (*bunching.Service, error) {
+	return bunching.NewService(postgres.NewBunchingRepository(database), config.BunchingPolicy(), config.BunchingHistoryPolicy())
 }
 
 // NewLinesService wires stored-line export to PostgreSQL.

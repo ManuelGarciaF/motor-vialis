@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestFromEnvFallsBackToLocalDefaults(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
@@ -38,6 +41,37 @@ func TestFromEnvReadsEnvironment(t *testing.T) {
 	}
 	if cfg.TomTomAPIKey != tomTomAPIKey {
 		t.Fatalf("TomTomAPIKey = %q, want configured value", cfg.TomTomAPIKey)
+	}
+}
+
+func TestFromEnvReadsGCBACredentials(t *testing.T) {
+	t.Setenv("GCBA_TRANSPORT_CLIENT_ID", "test-client")
+	t.Setenv("GCBA_TRANSPORT_CLIENT_SECRET", "test-secret")
+	cfg := FromEnv()
+	if cfg.GCBATransportClientID != "test-client" || cfg.GCBATransportClientSecret != "test-secret" {
+		t.Fatal("GCBA credentials were not read from the environment")
+	}
+}
+
+func TestBunchingReportingPolicy(t *testing.T) {
+	policy := BunchingPolicy()
+	if err := policy.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if BunchingMinimumDuration != 15*time.Minute {
+		t.Fatalf("default minimum duration = %s, want 15m", BunchingMinimumDuration)
+	}
+	if policy.MinimumDuration != BunchingMinimumDuration {
+		t.Fatalf("minimum duration = %s, want configured %s", policy.MinimumDuration, BunchingMinimumDuration)
+	}
+	if policy.MinimumObservations != BunchingMinimumObservations {
+		t.Fatalf("minimum observations = %d, want %d", policy.MinimumObservations, BunchingMinimumObservations)
+	}
+}
+
+func TestGCBALimitsAreCoherent(t *testing.T) {
+	if GCBARequestTimeout <= 0 || GCBAMaximumBodyBytes <= 0 || GCBAMaximumPositionAge <= 0 || GCBAMaximumFutureSkew < 0 || GCBAMaximumAttempts < 1 || GCBAInitialBackoff <= 0 || GCBAMaximumBackoff < GCBAInitialBackoff {
+		t.Fatal("invalid GCBA policy")
 	}
 }
 

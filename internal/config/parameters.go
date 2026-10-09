@@ -3,6 +3,7 @@ package config
 import (
 	"time"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
 	"github.com/ManuelGarciaF/vialis-motor/internal/combinaciones"
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/demand"
@@ -99,6 +100,50 @@ func TravelTimePolicy() traveltime.Policy {
 		MinimumCommercialSpeedKPH: 2,
 		MaximumCommercialSpeedKPH: 80,
 	}
+}
+
+// GCBA capture limits, calibrated during H0011 phase 0.
+const (
+	GCBARequestTimeout     = 120 * time.Second
+	GCBAMaximumBodyBytes   = 10 << 20
+	GCBAMaximumPositionAge = 5 * time.Minute
+	GCBAMaximumFutureSkew  = time.Minute
+	GCBAMaximumAttempts    = 3
+	GCBAInitialBackoff     = 5 * time.Second
+	GCBAMaximumBackoff     = time.Minute
+)
+
+// Retention is measured in UTC calendar partitions: today plus six past days.
+const (
+	RealtimeRawRetentionDays = 7
+	RealtimePollInterval     = time.Minute
+	RealtimeDatabaseTimeout  = time.Minute
+	// Warn on a fresh-vehicle drop of more than 30% vs the last non-low capture.
+	RealtimeCoverageWarningRatio = 0.7
+)
+
+// Bunching reports proximity, not groups or a service severity level.
+const (
+	BunchingDistanceMeters      = 200.0
+	BunchingMinimumObservations = 2
+	// Report only encounters sustained by GPS evidence for at least this duration.
+	BunchingMinimumDuration         = 15 * time.Minute
+	BunchingMissingCaptureTolerance = 1
+)
+
+const (
+	BunchingHistoryDefaultWindow = 24 * time.Hour
+	BunchingHistoryMaximumWindow = 30 * 24 * time.Hour
+	BunchingHistoryDefaultLimit  = 50
+	BunchingHistoryMaximumLimit  = 200
+)
+
+func BunchingHistoryPolicy() bunching.HistoryPolicy {
+	return bunching.HistoryPolicy{DefaultWindow: BunchingHistoryDefaultWindow, MaximumWindow: BunchingHistoryMaximumWindow, DefaultLimit: BunchingHistoryDefaultLimit, MaximumLimit: BunchingHistoryMaximumLimit}
+}
+
+func BunchingPolicy() bunching.Policy {
+	return bunching.Policy{DistanceMeters: BunchingDistanceMeters, MaximumAge: GCBAMaximumPositionAge, MaximumFutureSkew: GCBAMaximumFutureSkew, MissingCaptureTolerance: BunchingMissingCaptureTolerance, MinimumObservations: BunchingMinimumObservations, MinimumDuration: BunchingMinimumDuration}
 }
 
 // Stored-line export parameters.

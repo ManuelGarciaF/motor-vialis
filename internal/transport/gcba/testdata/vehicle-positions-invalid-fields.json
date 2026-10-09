@@ -1,0 +1,72 @@
+[
+  {
+    "route_id": "",
+    "latitude": -34.6037,
+    "longitude": -58.3816,
+    "speed": 0,
+    "timestamp": 1735689600,
+    "id": "vehicle-empty-route",
+    "direction": 0,
+    "agency_name": "Agency A",
+    "agency_id": 1,
+    "route_short_name": "10A",
+    "tip_id": "trip-001",
+    "trip_headsign": "Destino A"
+  },
+  {
+    "route_id": "route-1",
+    "latitude": -91,
+    "longitude": -58.3816,
+    "speed": 0,
+    "timestamp": 1735689600,
+    "id": "vehicle-bad-latitude",
+    "direction": 0,
+    "agency_name": "Agency A",
+    "agency_id": 1,
+    "route_short_name": "10A",
+    "tip_id": "trip-002",
+    "trip_headsign": "Destino A"
+  },
+  {
+    "route_id": "route-1",
+    "latitude": -34.6037,
+    "longitude": 181,
+    "speed": 0,
+    "timestamp": 1735689600,
+    "id": "vehicle-bad-longitude",
+    "direction": 0,
+    "agency_name": "Agency A",
+    "agency_id": 1,
+    "route_short_name": "10A",
+    "tip_id": "trip-003",
+    "trip_headsign": "Destino A"
+  },
+  {
+    "route_id": "route-1",
+    "latitude": -34.6037,
+    "longitude": -58.3816,
+    "speed": 0,
+    "timestamp": "not-a-timestamp",
+    "id": "vehicle-bad-timestamp",
+    "direction": 0,
+    "agency_name": "Agency A",
+    "agency_id": 1,
+    "route_short_name": "10A",
+    "tip_id": "trip-004",
+    "trip_headsign": "Destino A"
+  },
+  {
+    "route_id": "route-1",
+    "latitude": -34.6037,
+    "longitude": -58.3816,
+    "speed": 0,
+    "timestamp": 1735689600,
+    "id": "",
+    "direction": 2,
+    "agency_name": "Agency A",
+    "agency_id": 1,
+    "route_short_name": "10A",
+    "tip_id": "trip-005",
+    "trip_headsign": "Destino A"
+  }
+]

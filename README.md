@@ -26,7 +26,19 @@ OSM2PGROUTING=/ruta/a/osm2pgrouting go run ./cmd/initdb
 | `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5433/vialis` | Base a inicializar. |
 
 Sin `--reset`, el comando se niega a sobrescribir un esquema existente. Para
-usar la API contra el contenedor:
+actualizar únicamente GTFS en una base ya poblada, preservando viajes, H3,
+matriz O-D y tarifas:
+
+```bash
+go run ./cmd/reload-gtfs \
+  -database-url "$DATABASE_URL" \
+  -data-dir ./colectivos-gtfs
+```
+
+El procedimiento y las tablas derivadas que reconstruye están documentados en
+`sql/recorridos/README.md`.
+
+Para usar la API contra el contenedor:
 
 ```bash
 DATABASE_URL=postgresql://postgres:postgres@localhost:5433/vialis \
@@ -169,6 +181,28 @@ El contrato completo está en `docs/openapi.yaml`.
 
 Las líneas propias de un usuario las persiste otro servicio: acá sólo se leen
 las que cargó la ETL de GTFS.
+
+## Worker realtime (H0011)
+
+`cmd/realtime-worker` ingiere posiciones GCBA en un proceso independiente de la
+API, con captura inmediata, espera entre ciclos, inserciones por lotes y
+retención raw de siete días. Requiere esquema realtime y equivalencias cargados,
+además de `DATABASE_URL`, `GCBA_TRANSPORT_CLIENT_ID` y
+`GCBA_TRANSPORT_CLIENT_SECRET` exportados. No carga `.env` automáticamente.
+
+```bash
+go run ./cmd/realtime-worker -interval=1m
+```
+
+Ejecutar una sola instancia. Con la migración de fase 4 aplicada, también
+mantiene eventos de proximidad. Pasos/headways/CV fueron descartados. Ver
+[alcance y decisiones](docs/plan_h0011_aglutinacion.md) y
+[operación y API](docs/h0011_aglutinaciones.md).
+
+- `GET /lines/{id}/bunching`: pares actuales confirmados del recorrido.
+- `GET /bunching`: eventos confirmados de todas las líneas mapeadas, abiertos e
+  históricos; filtros `from`, `to`, `state`, `limit`, `offset`. Abierto no implica
+  activo: la respuesta distingue frescura y falta de confirmación.
 
 ## Probar una simulación
 

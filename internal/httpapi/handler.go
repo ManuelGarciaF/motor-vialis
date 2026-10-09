@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
 	"github.com/ManuelGarciaF/vialis-motor/internal/combinaciones"
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation"
@@ -55,6 +56,11 @@ type Transfers interface {
 	) (combinaciones.Page, error)
 }
 
+type Bunching interface {
+	Get(context.Context, int64) (bunching.Current, error)
+	List(context.Context, bunching.HistoryQuery) (bunching.EventPage, error)
+}
+
 // Handler exposes the service's endpoints over HTTP.
 type Handler struct {
 	logger     *slog.Logger
@@ -63,6 +69,7 @@ type Handler struct {
 	detours    DetourPlanner
 	lines      Lines
 	transfers  Transfers
+	bunching   Bunching
 	timeout    time.Duration
 }
 
@@ -74,8 +81,14 @@ func NewHandler(
 	storedLines Lines,
 	transfers Transfers,
 	timeout time.Duration,
+	bunchingServices ...Bunching,
 ) *Handler {
+	var bunchingService Bunching
+	if len(bunchingServices) > 0 {
+		bunchingService = bunchingServices[0]
+	}
 	return &Handler{
+		bunching:   bunchingService,
 		logger:     logger,
 		simulator:  simulator,
 		comparator: comparator,
@@ -89,6 +102,7 @@ func NewHandler(
 func (handler *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /lines", handler.listLines)
+	mux.HandleFunc("GET /bunching", handler.listBunching)
 	// "POST /lines/similar" and "GET /lines/{id}" do not compete: a pattern
 	// with a method only matches that method, so no POST ever reaches the
 	// detail lookup and "similar" can never arrive there as an id. A GET of
@@ -98,6 +112,7 @@ func (handler *Handler) Routes() http.Handler {
 	// change any of this; ServeMux prefers the more specific pattern whatever
 	// the order.
 	mux.HandleFunc("GET /lines/{id}", handler.getLine)
+	mux.HandleFunc("GET /lines/{id}/bunching", handler.getBunching)
 	mux.HandleFunc("POST /lines/similar", handler.findSimilarLines)
 	mux.HandleFunc("GET /transfers", handler.listCombinationRanking)
 	mux.HandleFunc("POST /simulations", handler.createSimulation)

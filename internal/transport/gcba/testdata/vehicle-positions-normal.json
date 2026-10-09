@@ -1,0 +1,30 @@
+[
+  {
+    "route_id": "route-1",
+    "latitude": -34.6037,
+    "longitude": -58.3816,
+    "speed": 8.333333,
+    "timestamp": 1735689600,
+    "id": "vehicle-001",
+    "direction": 0,
+    "agency_name": "Agency A",
+    "agency_id": 1,
+    "route_short_name": "10A",
+    "tip_id": "trip-001",
+    "trip_headsign": "Destino A"
+  },
+  {
+    "route_id": "route-1",
+    "latitude": -34.6042,
+    "longitude": -58.3821,
+    "speed": 0,
+    "timestamp": 1735689600,
+    "id": "vehicle-002",
+    "direction": 1,
+    "agency_name": "Agency A",
+    "agency_id": 1,
+    "route_short_name": "10A",
+    "tip_id": "trip-002",
+    "trip_headsign": "Destino B"
+  }
+]

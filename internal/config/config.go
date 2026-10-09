@@ -14,17 +14,21 @@ const (
 
 // Config contains deployment-specific settings and provider credentials.
 type Config struct {
-	DatabaseURL  string
-	HTTPAddress  string
-	TomTomAPIKey string
+	DatabaseURL               string
+	HTTPAddress               string
+	TomTomAPIKey              string
+	GCBATransportClientID     string
+	GCBATransportClientSecret string
 }
 
 // FromEnv reads deployment settings, using local defaults where available.
 func FromEnv() Config {
 	return Config{
-		DatabaseURL:  valueOrDefault("DATABASE_URL", DefaultDatabaseURL),
-		HTTPAddress:  valueOrDefault("HTTP_ADDRESS", DefaultHTTPAddress),
-		TomTomAPIKey: os.Getenv("TOMTOM_API_KEY"),
+		DatabaseURL:               valueOrDefault("DATABASE_URL", DefaultDatabaseURL),
+		HTTPAddress:               valueOrDefault("HTTP_ADDRESS", DefaultHTTPAddress),
+		TomTomAPIKey:              os.Getenv("TOMTOM_API_KEY"),
+		GCBATransportClientID:     os.Getenv("GCBA_TRANSPORT_CLIENT_ID"),
+		GCBATransportClientSecret: os.Getenv("GCBA_TRANSPORT_CLIENT_SECRET"),
 	}
 }
 
