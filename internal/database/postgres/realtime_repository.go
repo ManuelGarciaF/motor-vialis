@@ -61,7 +61,7 @@ func (r *RealtimeRepository) MaintainPartitions(ctx context.Context, now time.Ti
 	}
 	today := utcDay(now)
 	cutoff := today.AddDate(0, 0, 1-r.retentionDays)
-	rows, err := tx.Query(ctx, `SELECT child.relname FROM pg_inherits i JOIN pg_class child ON child.oid=i.inhrelid JOIN pg_namespace ns ON ns.oid=child.relnamespace JOIN pg_class parent ON parent.oid=i.inhparent WHERE ns.nspname=$1 AND parent.relname='posiciones_colectivos_raw'`, r.schema)
+	rows, err := tx.Query(ctx, listRealtimePartitionsSQL, r.schema)
 	if err != nil {
 		return result, err
 	}
@@ -105,7 +105,7 @@ func (r *RealtimeRepository) MaintainPartitions(ctx context.Context, now time.Ti
 			result.Created = append(result.Created, name)
 		}
 	}
-	_, err = tx.Exec(ctx, r.sql(`DELETE FROM vialis.capturas_colectivos c WHERE c.recibido_en<$1 AND NOT EXISTS (SELECT 1 FROM vialis.posiciones_colectivos_raw p WHERE p.id_captura=c.id_captura)`), cutoff)
+	_, err = tx.Exec(ctx, r.sql(deleteExpiredRealtimeCapturesSQL), cutoff)
 	if err != nil {
 		return result, err
 	}
@@ -162,11 +162,11 @@ func (r *RealtimeRepository) StoreCapture(ctx context.Context, capture bunching.
 			return result, err
 		}
 	}
-	err = tx.QueryRow(ctx, r.sql(`INSERT INTO vialis.capturas_colectivos (recibido_en,filas_totales,filas_validas,filas_invalidas,filas_duplicadas,filas_stale,cobertura_parcial) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id_captura`), capture.ReceivedAt, capture.Stats.TotalRows, capture.Stats.ValidRows, capture.Stats.InvalidRows, capture.Stats.DuplicateRows, capture.Stats.StaleRows, capture.Partial).Scan(&result.CaptureID)
+	err = tx.QueryRow(ctx, r.sql(insertRealtimeCaptureSQL), capture.ReceivedAt, capture.Stats.TotalRows, capture.Stats.ValidRows, capture.Stats.InvalidRows, capture.Stats.DuplicateRows, capture.Stats.StaleRows, capture.Partial).Scan(&result.CaptureID)
 	if err != nil {
 		return result, err
 	}
-	_, err = tx.Exec(ctx, `CREATE TEMP TABLE realtime_positions_batch (dia DATE, observado TIMESTAMPTZ, vehiculo TEXT, route_id TEXT, direction SMALLINT, lon DOUBLE PRECISION, lat DOUBLE PRECISION, speed DOUBLE PRECISION) ON COMMIT DROP`)
+	_, err = tx.Exec(ctx, createRealtimeBatchSQL)
 	if err != nil {
 		return result, err
 	}
@@ -174,20 +174,11 @@ func (r *RealtimeRepository) StoreCapture(ctx context.Context, capture bunching.
 	if err != nil {
 		return result, err
 	}
-	err = tx.QueryRow(ctx, r.sql(`SELECT count(*) FROM realtime_positions_batch p WHERE NOT EXISTS (SELECT 1 FROM vialis.equivalencias_recorridos_gcba e JOIN vialis.recorridos r ON r.gtfs_route_id=e.gtfs_route_id AND r.direction_id=e.gtfs_direction_id WHERE e.gcba_route_id=p.route_id AND e.gcba_direction=p.direction)`)).Scan(&result.Unmapped)
+	err = tx.QueryRow(ctx, r.sql(countUnmappedRealtimePositionsSQL)).Scan(&result.Unmapped)
 	if err != nil {
 		return result, err
 	}
-	tag, err := tx.Exec(ctx, r.sql(`WITH targets AS MATERIALIZED (
- SELECT e.gcba_route_id,e.gcba_direction,e.gtfs_route_id,e.gtfs_direction_id,r.gtfs_shape_id,md5(encode(ST_AsEWKB(r.geom),'hex')) AS shape_hash
- FROM (SELECT DISTINCT route_id,direction FROM realtime_positions_batch) p
- JOIN vialis.equivalencias_recorridos_gcba e ON e.gcba_route_id=p.route_id AND e.gcba_direction=p.direction
- JOIN vialis.recorridos r ON r.gtfs_route_id=e.gtfs_route_id AND r.direction_id=e.gtfs_direction_id
- )
- INSERT INTO vialis.posiciones_colectivos_raw (dia_observado,observado_en,recibido_en,id_vehiculo,gcba_route_id,gcba_direction,gtfs_route_id,gtfs_direction_id,gtfs_shape_id,gtfs_shape_hash,posicion,velocidad_metros_segundo,id_captura)
- SELECT p.dia,p.observado,$1,p.vehiculo,p.route_id,p.direction,e.gtfs_route_id,e.gtfs_direction_id,e.gtfs_shape_id,e.shape_hash,ST_SetSRID(ST_MakePoint(p.lon,p.lat),4326),p.speed,$2
- FROM realtime_positions_batch p JOIN targets e ON e.gcba_route_id=p.route_id AND e.gcba_direction=p.direction
- ON CONFLICT (dia_observado,id_vehiculo,observado_en) DO NOTHING`), capture.ReceivedAt, result.CaptureID)
+	tag, err := tx.Exec(ctx, r.sql(insertRealtimePositionsSQL), capture.ReceivedAt, result.CaptureID)
 	if err != nil {
 		return result, err
 	}

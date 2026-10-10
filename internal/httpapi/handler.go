@@ -59,6 +59,7 @@ type Transfers interface {
 type Bunching interface {
 	Get(context.Context, int64) (bunching.Current, error)
 	List(context.Context, bunching.HistoryQuery) (bunching.EventPage, error)
+	Recurrence(context.Context) (bunching.RecurrencePage, error)
 }
 
 // Handler exposes the service's endpoints over HTTP.
@@ -103,6 +104,7 @@ func (handler *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /lines", handler.listLines)
 	mux.HandleFunc("GET /bunching", handler.listBunching)
+	mux.HandleFunc("GET /bunching/recurrence", handler.getBunchingRecurrence)
 	// "POST /lines/similar" and "GET /lines/{id}" do not compete: a pattern
 	// with a method only matches that method, so no POST ever reaches the
 	// detail lookup and "similar" can never arrive there as an id. A GET of

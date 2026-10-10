@@ -8,7 +8,14 @@ Contrato HTTP completo: [`openapi.yaml`](openapi.yaml).
 - `internal/transport/gcba`: cliente y validación del feed.
 - `internal/realtime` / `cmd/realtime-worker`: polling, mantenimiento e ingesta.
 - `internal/bunching`: ciclo de vida y servicios de lectura.
-- `internal/database/postgres`: COPY, detección geográfica y consultas.
+- `internal/database/postgres`: COPY, detección geográfica y consultas. El SQL
+  extenso vive en archivos `.sql` adyacentes, embebidos con `go:embed` desde
+  `bunching_queries.go` y `realtime_queries.go`, como en los demás repositorios.
+  Cada sentencia documenta sus parámetros; no requiere archivos en runtime ni
+  templates SQL. `find_bunching_recurrence.sql` contiene el agregado horario;
+  `check_realtime_schema.sql`, la comprobación de arranque del worker. Los tests
+  verifican que total/página históricos compartan filtros y las lecturas de
+  eventos mantengan el orden de columnas de `scanEvent`.
 - `internal/httpapi` / `cmd/api`: endpoints conectados al servicio de aglutinación.
 
 Detector y endpoints están implementados. La migración se aplicó en la base del
@@ -121,17 +128,38 @@ estimación fiable de filas diarias ni incluye WAL/backups.
 - Sólo analiza GPS de hasta cinco minutos, con skew futuro máximo de un minuto.
 - Separa GCBA ruta/sentido **y** destino GTFS/dirección/versión; identidades GCBA
   distintas no se mezclan aunque compartan destino.
-- Busca con GiST/geography y mide con `ST_Distance`; umbral inclusivo <=200 m.
-  El prefilter se amplía un micrómetro para no perder el borde, pero la distancia
-  final se filtra estrictamente a 200 m.
+- Busca con GiST/geography y mide con `ST_Distance`; umbral inclusivo <=100 m
+  (`config.BunchingDistanceMeters`). El prefilter se amplía un micrómetro para
+  no perder el borde, pero la distancia final se filtra estrictamente al radio
+  configurado. El worker debe recompilarse/reiniciarse para cambiar el radio.
+  Los eventos históricos conservan lo observado con el radio anterior (200 m);
+  cambiar esta constante no reconstruye ni elimina esas series.
 - Un avistamiento abre candidato de una muestra. Se confirma desde dos
   observaciones; para incrementarlas avanzan **ambos** timestamps GPS.
   **La API sólo publica encuentros de al menos 15 minutos de duración GPS**,
   mediante `config.BunchingMinimumDuration` en `internal/config/parameters.go`.
   El umbral es inclusivo y aplica al estado actual, histórico, total y paginación.
+  También exige que **ambas unidades hayan alcanzado >=1 m/s (3,6 km/h)** al menos
+  una vez en las muestras admitidas del encuentro. Se persisten los máximos en
+  `velocidad_maxima_a_metros_segundo` y `velocidad_maxima_b_metros_segundo`,
+  inicializados en la apertura y actualizados sólo en confirmaciones con ambos
+  timestamps nuevos, dentro del radio, misma identidad y GPS frescos. Se usa la
+  velocidad canónica de raw, no correcciones posteriores del mismo timestamp.
+  Capturas parciales, muestras repetidas y posiciones de cierre por separación
+  no actualizan máximos; éstos nunca disminuyen dentro del evento. Cada unidad
+  puede alcanzar su máximo en muestras distintas. No exige movimiento sostenido.
   No retrasa la captura ni borra los encuentros cortos; cero deshabilita el filtro.
   No se cuenta tiempo desde ahora ni hasta el cierre para alcanzar el mínimo.
-  Cambiarlo requiere recompilar/reiniciar la API, sin migración ni reinicio del worker.
+  `config.BunchingMinimumSpeedMetersPerSecond` controla el umbral de movimiento;
+  cero deshabilita sólo ese filtro. Cambiar umbrales requiere recompilar/reiniciar
+  la API, sin modificar los máximos persistidos ni reiniciar el worker.
+  Al incorporar las columnas sí debe migrarse la base y actualizarse el worker.
+  No hay backfill automático: registros anteriores reciben máximos 0 y no pasan
+  el umbral de movimiento hasta que haya nuevas muestras admitidas que lo acrediten.
+  Para recuperar evidencia histórica de raw existe el one-off administrado
+  `scripts/backfill-bunching-speeds.sql` (preview por defecto, aplicación explícita).
+  Sus límites y comandos están en [`scripts/README.md`](../scripts/README.md):
+  es una aproximación conservadora, no un replay exacto de las muestras del detector.
 - Pares independientes: A–B y B–C no implican A–C ni un grupo transitivo.
 - Respuestas repetidas no suman muestras ni duración ni confirmación. Fingerprint
   del proveedor completo, incluidos vehículos no mapeados; cero inserts no basta
@@ -143,7 +171,7 @@ Motivos de cierre:
 
 | Motivo | Evidencia |
 |---|---|
-| `separated` | Ambos presentes/frescos, timestamps nuevos y distancia >200 m |
+| `separated` | Ambos presentes/frescos, timestamps nuevos y distancia >100 m (radio configurado) |
 | `missing` | Falta una unidad en dos revisiones completas distintas; tolera una |
 | `expired` | Más de cinco minutos sin recepción confirmatoria o hueco de GPS >5 min |
 | `identity_changed` | Una unidad cambia de identidad/versión con un timestamp nuevo |
@@ -165,6 +193,7 @@ Una fila abierta puede quedar obsoleta durante una caída: `open` no equivale a
 
 ```sh
 curl 'http://localhost:8080/lines/123/bunching'
+curl 'http://localhost:8080/bunching/recurrence'
 curl 'http://localhost:8080/bunching?state=all&limit=50&offset=0'
 curl 'http://localhost:8080/bunching?state=closed&from=2026-10-08T21:00:00Z&to=2026-10-08T23:00:00Z'
 ```
@@ -178,7 +207,67 @@ Estado actual del recorrido: línea/ramal/sentido, `mapped`, `latestCaptureAt`,
 Sin captura analizada, parcial o stale: `pairs: []` con indicadores, no una
 aseveración de que no existen encuentros. Con datos recientes, los pares de menos
 de 15 minutos también quedan fuera. `confirmationPending` señala la revisión
-faltante tolerada. ID inválido: 400; recorrido inexistente: 404.
+faltante tolerada. Los pares publicados también requieren máximos >=1 m/s en
+ambas unidades. Incluye `recurrence` con el resumen semanal aun si `pairs` está
+vacío por falta de captura reciente. ID inválido: 400; recorrido inexistente: 404.
+
+### `GET /bunching/recurrence`
+
+Resumen por **ruta GTFS y sentido** de los encuentros observados en las últimas
+168 horas, desglosados por **franjas locales fijas de una hora** (00:00–01:00,
+01:00–02:00, …, 23:00–24:00) en `America/Argentina/Buenos_Aires`. Una franja es
+recurrente si hubo encuentros en ella en **dos o más fechas distintas**. El
+`recurrent` del recorrido es true si alguna franja lo es, no simplemente por tener
+eventos en varios días. Ventana `[from,to)`, donde `to` es ahora y `from` es ahora
+menos siete días. Al ser móvil, puede tocar partes de ocho fechas locales.
+
+- Cuenta eventos con al menos dos observaciones, duración GPS >=15 minutos y
+  máximos de velocidad de **ambas unidades >=1 m/s**, usando la misma política
+  de publicación que las consultas actuales/históricas.
+- Intersecta la evidencia `[firstObservedAt,lastObservedAt)` con la ventana de
+  consulta y cada franja. Un evento de 08:50 a 09:20 cuenta en las franjas 8 y 9;
+  si termina exactamente a las 09:00, sólo cuenta en la franja 8. No se extiende
+  hasta `closedAt` ni hasta ahora. Eventos iniciados antes de la semana sí cuentan
+  por la parte observada dentro de ella; la duración mínima se evalúa completa.
+- Al cruzar medianoche, cada franja lleva la fecha local que corresponde. Incluso
+  un evento de varios días puede aportar fechas distintas a la misma franja,
+  pero se cuenta una sola vez por franja y en el total semanal.
+- Agrega vehículos, zonas, identidades GCBA y versiones geométricas distintas del
+  mismo destino GTFS/sentido. No mezcla sentidos ni cambia el detector por pares.
+- Expone `hours`, sólo con las franjas con evidencia, ordenadas por `hour` (0–23).
+  Cada una trae `eventCount` (eventos únicos), `daysWithEvents`, `dates` locales
+  únicas/ordenadas y `recurrent`. Los mismos conteos a nivel del recorrido son
+  totales únicos de toda la semana: **no se suman** los conteos de las franjas,
+  porque un evento puede aparecer en varias. También incluye `from`, `to`,
+  `timeZone` y `minimumDays` efectivos.
+
+  Ejemplo de una franja recurrente de 08:00 a 09:00:
+
+  ```json
+  {"hour":8,"eventCount":3,"daysWithEvents":2,"dates":["2026-10-08","2026-10-09"],"recurrent":true}
+  ```
+
+- `lines` incluye sólo recorridos con al menos un evento elegible en la ventana,
+  incluidos históricos ya fuera del catálogo (`lineId: null`). No exige que el
+  encuentro siga activo ahora ni que sea recurrente. Orden por `eventCount`
+  descendente, con desempate por `gtfsRouteId`, `direction` ascendentes;
+  sin paginación ni query parameters.
+  Los nombres del catálogo prevalecen; sin catálogo se usan los del último evento.
+- `mapped` describe la equivalencia vigente, no la cobertura de la semana.
+  **Cero eventos o `recurrent: false` no prueban ausencia de aglutinaciones**:
+  pueden faltar días de captura. No hay backfill ni inferencia durante caídas.
+  La recurrencia no mide frecuencia, regularidad, severidad ni pasajeros.
+
+`GET /lines/{id}/bunching` incluye el mismo resumen en `recurrence` para el
+recorrido solicitado, incluso si tiene cero eventos (`hours: []`). Estado actual
+y resumen se leen en snapshots independientes
+con un mismo corte temporal; una captura concurrente puede verse en uno y no en
+el otro. Los flags `stale`/`partial` siguen describiendo sólo el estado actual.
+
+Los parámetros están en `config.BunchingRecurrencePolicy()`. Para bases existentes,
+reaplicar `sql/recorridos/migrar_aglutinaciones.sql` agrega de forma idempotente el
+índice por inicio, complementario al índice existente por última observación
+para la intersección temporal; no cambia ni reconstruye eventos.
 
 ### `GET /bunching`
 
@@ -193,7 +282,9 @@ La ventana [from,to) intersecta inicio hasta cierre; para abiertos, hasta últim
 observación, sin extender evidencia obsoleta hasta infinito. Orden estable:
 `firstObservedAt DESC, id DESC`. Incluye total y filtros efectivos; no lista
 candidatos de una única muestra ni encuentros de duración GPS menor al mínimo
-configurado (15 minutos por defecto).
+configurado (15 minutos por defecto), ni encuentros donde alguna unidad no
+alcanzó el mínimo de movimiento (1 m/s por defecto). Los eventos publicados
+exponen `maximumSpeedAMetersPerSecond` y `maximumSpeedBMetersPerSecond`.
 
 Cada evento expone scope, nombres, vehículos, posiciones/punto representativo,
 distancias mínima/última, muestras, duración, estado, `closedAt`, `closeReason` y

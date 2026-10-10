@@ -38,14 +38,14 @@ func (r *BunchingRepository) FindCurrent(ctx context.Context, id int64, now time
 	// Begin() supports nested transactions in integration tests.
 	sql := (&RealtimeRepository{schema: r.schema}).sql
 	var route, hash string
-	err = tx.QueryRow(ctx, sql(`SELECT r.gtfs_route_id,r.direction_id,r.linea,r.ramal,md5(encode(ST_AsEWKB(r.geom),'hex')),EXISTS(SELECT 1 FROM vialis.equivalencias_recorridos_gcba e WHERE e.gtfs_route_id=r.gtfs_route_id AND e.gtfs_direction_id=r.direction_id) FROM vialis.recorridos r WHERE r.id_recorrido=$1`), id).Scan(&route, &result.Direction, &result.Line, &result.Branch, &hash, &result.Mapped)
+	err = tx.QueryRow(ctx, sql(findBunchingLineSQL), id).Scan(&route, &result.Direction, &result.Line, &result.Branch, &hash, &result.Mapped)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, lines.ErrNotFound
 	}
 	if err != nil {
 		return result, err
 	}
-	err = tx.QueryRow(ctx, sql(`SELECT recibido_en,cobertura_parcial FROM vialis.capturas_colectivos WHERE aglutinaciones_analizadas ORDER BY recibido_en DESC,id_captura DESC LIMIT 1`)).Scan(&result.LatestCaptureAt, &result.Partial)
+	err = tx.QueryRow(ctx, sql(findLatestBunchingCaptureSQL)).Scan(&result.LatestCaptureAt, &result.Partial)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, tx.Commit(ctx)
 	}
@@ -61,7 +61,11 @@ func (r *BunchingRepository) FindCurrent(ctx context.Context, id int64, now time
 	if result.Partial || result.Stale || !result.Mapped {
 		return result, tx.Commit(ctx)
 	}
-	rows, err := tx.Query(ctx, sql(`SELECT `+eventColumns+` FROM vialis.aglutinaciones_colectivos WHERE cerrado_en IS NULL AND gtfs_route_id=$1 AND gtfs_direction_id=$2 AND gtfs_shape_hash=$3 AND observaciones>=$4 AND EXTRACT(EPOCH FROM (ultimo_observado_en-primero_observado_en)) >= $7::double precision AND LEAST(COALESCE(observado_a_en,ultimo_observado_en),COALESCE(observado_b_en,ultimo_observado_en))>=$5 AND GREATEST(COALESCE(observado_a_en,ultimo_observado_en),COALESCE(observado_b_en,ultimo_observado_en))<=$6 AND COALESCE(ultima_confirmacion_en,ultimo_observado_en)>=$5 AND EXISTS(SELECT 1 FROM vialis.equivalencias_recorridos_gcba e WHERE e.gcba_route_id=aglutinaciones_colectivos.gcba_route_id AND e.gcba_direction=aglutinaciones_colectivos.gcba_direction AND e.gtfs_route_id=aglutinaciones_colectivos.gtfs_route_id AND e.gtfs_direction_id=aglutinaciones_colectivos.gtfs_direction_id) ORDER BY primero_observado_en,id_evento`), route, result.Direction, hash, policy.MinimumObservations, now.Add(-policy.MaximumAge), now.Add(policy.MaximumFutureSkew), policy.MinimumDuration.Seconds())
+	rows, err := tx.Query(ctx, sql(findCurrentBunchingSQL),
+		route, result.Direction, hash, policy.MinimumObservations,
+		now.Add(-policy.MaximumAge), now.Add(policy.MaximumFutureSkew),
+		policy.MinimumDuration.Seconds(), policy.MinimumSpeedMetersPerSecond,
+	)
 	if err != nil {
 		return result, err
 	}

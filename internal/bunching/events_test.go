@@ -53,20 +53,24 @@ func TestMinimumDurationDoesNotDelayEventCapture(t *testing.T) {
 
 func TestDistanceBoundariesAndCanonicalPair(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for _, d := range []float64{199.99, 200, 200.01} {
-		events, err := Advance(nil, testSnapshot(now, d), testPolicy())
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := 1
-		if d > 200 {
-			want = 0
-		}
-		if len(events) != want {
-			t.Fatalf("distance=%v count=%d", d, len(events))
-		}
-		if want == 1 && (events[0].VehicleA != "a" || events[0].VehicleB != "b" || events[0].Observations != 1) {
-			t.Fatal(events)
+	for _, radius := range []float64{100, 200} {
+		policy := testPolicy()
+		policy.DistanceMeters = radius
+		for _, d := range []float64{radius - 0.01, radius, radius + 0.01} {
+			events, err := Advance(nil, testSnapshot(now, d), policy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := 1
+			if d > radius {
+				want = 0
+			}
+			if len(events) != want {
+				t.Fatalf("radius=%v distance=%v count=%d", radius, d, len(events))
+			}
+			if want == 1 && (events[0].VehicleA != "a" || events[0].VehicleB != "b" || events[0].Observations != 1) {
+				t.Fatal(events)
+			}
 		}
 	}
 }

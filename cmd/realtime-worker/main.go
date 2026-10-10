@@ -68,8 +68,7 @@ func run(ctx context.Context, args []string, logger *slog.Logger, output io.Writ
 	}
 	defer pool.Close()
 	checkContext, cancelCheck := context.WithTimeout(ctx, config.DatabaseConnectTimeout)
-	var ready bool
-	err = pool.QueryRow(checkContext, `SELECT to_regclass('vialis.capturas_colectivos') IS NOT NULL AND to_regclass('vialis.posiciones_colectivos_raw') IS NOT NULL AND to_regclass('vialis.equivalencias_recorridos_gcba') IS NOT NULL AND to_regclass('vialis.recorridos') IS NOT NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='vialis' AND table_name='aglutinaciones_colectivos' AND column_name='ultima_confirmacion_en') AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='vialis' AND table_name='capturas_colectivos' AND column_name='hash_posiciones')`).Scan(&ready)
+	ready, err := postgres.RealtimeSchemaReady(checkContext, pool)
 	cancelCheck()
 	if err != nil || !ready {
 		if ctx.Err() != nil {

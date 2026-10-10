@@ -80,7 +80,7 @@ func NewDetourService(
 
 // NewBunchingService reads current events independently of simulations.
 func NewBunchingService(database *pgxpool.Pool) (*bunching.Service, error) {
-	return bunching.NewService(postgres.NewBunchingRepository(database), config.BunchingPolicy(), config.BunchingHistoryPolicy())
+	return bunching.NewService(postgres.NewBunchingRepository(database), config.BunchingPolicy(), config.BunchingHistoryPolicy(), config.BunchingRecurrencePolicy())
 }
 
 // NewLinesService wires stored-line export to PostgreSQL.

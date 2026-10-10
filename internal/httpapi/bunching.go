@@ -10,6 +10,25 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
 )
 
+func (h *Handler) getBunchingRecurrence(w http.ResponseWriter, r *http.Request) {
+	if r.URL.RawQuery != "" {
+		writeError(w, http.StatusBadRequest, errorCodeValidation, "query", "this endpoint accepts no query parameters")
+		return
+	}
+	if h.bunching == nil {
+		writeError(w, http.StatusServiceUnavailable, "bunching_unavailable", "", "bunching is not configured")
+		return
+	}
+	ctx, cancel := h.withTimeout(r)
+	defer cancel()
+	page, err := h.bunching.Recurrence(ctx)
+	if err != nil {
+		h.writeLineError(w, r, "read bunching recurrence", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
 func (h *Handler) listBunching(w http.ResponseWriter, r *http.Request) {
 	query, err := parseBunchingQuery(r)
 	if err != nil {

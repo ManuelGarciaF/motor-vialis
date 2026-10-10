@@ -12,12 +12,15 @@ type Policy struct {
 	MaximumAge, MaximumFutureSkew time.Duration
 	// MinimumDuration filters API reads, not event capture or continuity.
 	// Zero disables the duration filter; negative values are invalid.
-	MinimumDuration                              time.Duration
+	MinimumDuration time.Duration
+	// MinimumSpeedMetersPerSecond filters reads using each vehicle's maximum
+	// speed during accepted encounter samples. Zero disables this filter.
+	MinimumSpeedMetersPerSecond                  float64
 	MissingCaptureTolerance, MinimumObservations int
 }
 
 func (p Policy) Validate() error {
-	if math.IsNaN(p.DistanceMeters) || math.IsInf(p.DistanceMeters, 0) || p.DistanceMeters <= 0 || p.MaximumAge <= 0 || p.MaximumFutureSkew < 0 || p.MissingCaptureTolerance < 0 || p.MinimumObservations < 2 || p.MinimumDuration < 0 {
+	if math.IsNaN(p.DistanceMeters) || math.IsInf(p.DistanceMeters, 0) || p.DistanceMeters <= 0 || p.MaximumAge <= 0 || p.MaximumFutureSkew < 0 || p.MissingCaptureTolerance < 0 || p.MinimumObservations < 2 || p.MinimumDuration < 0 || math.IsNaN(p.MinimumSpeedMetersPerSecond) || math.IsInf(p.MinimumSpeedMetersPerSecond, 0) || p.MinimumSpeedMetersPerSecond < 0 {
 		return fmt.Errorf("invalid bunching policy")
 	}
 	return nil
@@ -39,11 +42,12 @@ type Point struct {
 	Latitude  float64 `json:"latitude"`
 }
 type Observation struct {
-	Line, Branch string
-	Scope        Scope
-	VehicleID    string
-	ObservedAt   time.Time
-	Point        Point
+	Line, Branch         string
+	Scope                Scope
+	VehicleID            string
+	ObservedAt           time.Time
+	Point                Point
+	SpeedMetersPerSecond float64
 }
 type PairKey struct {
 	Scope Scope
@@ -58,25 +62,27 @@ func Key(scope Scope, a, b string) PairKey {
 }
 
 type Event struct {
-	Line                  string     `json:"line"`
-	Branch                string     `json:"branch"`
-	ID                    int64      `json:"id"`
-	Scope                 Scope      `json:"scope"`
-	VehicleA              string     `json:"vehicleA"`
-	VehicleB              string     `json:"vehicleB"`
-	FirstObservedAt       time.Time  `json:"firstObservedAt"`
-	LastObservedAt        time.Time  `json:"lastObservedAt"`
-	ConfirmedAt           time.Time  `json:"lastConfirmedCaptureAt"`
-	ObservedA             time.Time  `json:"observedAAt"`
-	ObservedB             time.Time  `json:"observedBAt"`
-	ClosedAt              *time.Time `json:"-"`
-	CloseReason           string     `json:"-"`
-	MinimumDistanceMeters float64    `json:"minimumDistanceMeters"`
-	LastDistanceMeters    float64    `json:"distanceMeters"`
-	PointA                Point      `json:"positionA"`
-	PointB                Point      `json:"positionB"`
-	Observations          int        `json:"observations"`
-	MissingCaptures       int        `json:"-"`
+	Line                         string     `json:"line"`
+	Branch                       string     `json:"branch"`
+	ID                           int64      `json:"id"`
+	Scope                        Scope      `json:"scope"`
+	VehicleA                     string     `json:"vehicleA"`
+	VehicleB                     string     `json:"vehicleB"`
+	FirstObservedAt              time.Time  `json:"firstObservedAt"`
+	LastObservedAt               time.Time  `json:"lastObservedAt"`
+	ConfirmedAt                  time.Time  `json:"lastConfirmedCaptureAt"`
+	ObservedA                    time.Time  `json:"observedAAt"`
+	ObservedB                    time.Time  `json:"observedBAt"`
+	ClosedAt                     *time.Time `json:"-"`
+	CloseReason                  string     `json:"-"`
+	MinimumDistanceMeters        float64    `json:"minimumDistanceMeters"`
+	LastDistanceMeters           float64    `json:"distanceMeters"`
+	PointA                       Point      `json:"positionA"`
+	PointB                       Point      `json:"positionB"`
+	Observations                 int        `json:"observations"`
+	MissingCaptures              int        `json:"-"`
+	MaximumSpeedAMetersPerSecond float64    `json:"maximumSpeedAMetersPerSecond"`
+	MaximumSpeedBMetersPerSecond float64    `json:"maximumSpeedBMetersPerSecond"`
 }
 
 func (e Event) key() PairKey { return Key(e.Scope, e.VehicleA, e.VehicleB) }
@@ -184,6 +190,8 @@ func Advance(open []Event, s Snapshot, p Policy) ([]Event, error) {
 				event.MinimumDistanceMeters = math.Min(event.MinimumDistanceMeters, distance)
 				event.PointA = a.Point
 				event.PointB = b.Point
+				event.MaximumSpeedAMetersPerSecond = math.Max(event.MaximumSpeedAMetersPerSecond, a.SpeedMetersPerSecond)
+				event.MaximumSpeedBMetersPerSecond = math.Max(event.MaximumSpeedBMetersPerSecond, b.SpeedMetersPerSecond)
 				event.Observations++
 				event.MissingCaptures = 0
 				changes = append(changes, event)
@@ -210,7 +218,7 @@ func Advance(open []Event, s Snapshot, p Policy) ([]Event, error) {
 			continue
 		}
 		observed := maximumTime(a.ObservedAt, b.ObservedAt)
-		changes = append(changes, Event{Line: a.Line, Branch: a.Branch, Scope: key.Scope, VehicleA: key.A, VehicleB: key.B, FirstObservedAt: observed, LastObservedAt: observed, ConfirmedAt: s.ReceivedAt, ObservedA: a.ObservedAt, ObservedB: b.ObservedAt, MinimumDistanceMeters: distance, LastDistanceMeters: distance, PointA: a.Point, PointB: b.Point, Observations: 1})
+		changes = append(changes, Event{Line: a.Line, Branch: a.Branch, Scope: key.Scope, VehicleA: key.A, VehicleB: key.B, FirstObservedAt: observed, LastObservedAt: observed, ConfirmedAt: s.ReceivedAt, ObservedA: a.ObservedAt, ObservedB: b.ObservedAt, MinimumDistanceMeters: distance, LastDistanceMeters: distance, PointA: a.Point, PointB: b.Point, Observations: 1, MaximumSpeedAMetersPerSecond: a.SpeedMetersPerSecond, MaximumSpeedBMetersPerSecond: b.SpeedMetersPerSecond})
 	}
 	sort.SliceStable(changes, func(i, j int) bool {
 		a, b := changes[i], changes[j]

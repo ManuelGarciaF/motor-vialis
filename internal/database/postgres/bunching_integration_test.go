@@ -56,7 +56,7 @@ func TestBunchingIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy := bunching.Policy{DistanceMeters: 200, MaximumAge: 5 * time.Minute, MaximumFutureSkew: time.Minute, MissingCaptureTolerance: 1, MinimumObservations: 2}
+	policy := bunching.Policy{DistanceMeters: 200, MaximumAge: 5 * time.Minute, MaximumFutureSkew: time.Minute, MissingCaptureTolerance: 1, MinimumObservations: 2, MinimumSpeedMetersPerSecond: 1}
 	if err = repo.EnableBunching(policy); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestBunchingIntegration(t *testing.T) {
 			route = "another"
 			lon = -58.4
 		}
-		capture.Positions = append(capture.Positions, bunching.Position{VehicleID: id, ProviderRouteID: route, Latitude: -34.6, Longitude: lon, ObservedAt: now, Fresh: true})
+		capture.Positions = append(capture.Positions, bunching.Position{VehicleID: id, ProviderRouteID: route, Latitude: -34.6, Longitude: lon, ObservedAt: now, Fresh: true, SpeedMetersPerSecond: 2})
 	}
 	store := func(c bunching.Capture) bunching.StoreResult {
 		t.Helper()
@@ -97,6 +97,7 @@ func TestBunchingIntegration(t *testing.T) {
 	capture.ReceivedAt = now.Add(time.Minute)
 	for i := range capture.Positions {
 		capture.Positions[i].ObservedAt = capture.ReceivedAt
+		capture.Positions[i].SpeedMetersPerSecond = 3
 	}
 	store(capture)
 	result := current(capture.ReceivedAt)
@@ -104,6 +105,9 @@ func TestBunchingIntegration(t *testing.T) {
 		t.Fatalf("current: %+v", result)
 	}
 	for _, p := range result.Pairs {
+		if p.MaximumSpeedAMetersPerSecond != 3 || p.MaximumSpeedBMetersPerSecond != 3 {
+			t.Fatalf("maximum speeds not persisted: %+v", p)
+		}
 		if p.Observations != 2 || p.DurationSeconds != 60 || p.VehicleB == "d" || p.VehicleA == "d" {
 			t.Fatal(p)
 		}
@@ -127,10 +131,16 @@ func TestBunchingIntegration(t *testing.T) {
 	// Full response repeats old observations: all vehicles remain present, even
 	// though no raw rows are assigned to this capture's ID.
 	capture.ReceivedAt = now.Add(2 * time.Minute)
+	for i := range capture.Positions {
+		capture.Positions[i].SpeedMetersPerSecond = 100
+	}
 	if store(capture).Inserted != 0 {
 		t.Fatal("duplicate raw inserted")
 	}
 	for _, p := range current(capture.ReceivedAt).Pairs {
+		if p.MaximumSpeedAMetersPerSecond != 3 || p.MaximumSpeedBMetersPerSecond != 3 {
+			t.Fatal("cached speed changed encounter maxima")
+		}
 		if p.Observations != 2 || !p.LastObservedAt.Equal(now.Add(time.Minute)) {
 			t.Fatal("duplicate prolonged event")
 		}
@@ -181,6 +191,9 @@ func TestBunchingIntegration(t *testing.T) {
 		t.Fatalf("global closed: %+v %v", page, err)
 	}
 	for _, e := range page.Events {
+		if e.MaximumSpeedAMetersPerSecond != 3 || e.MaximumSpeedBMetersPerSecond != 3 {
+			t.Fatal("partial/separated speeds changed maxima")
+		}
 		if e.State != "closed" || e.CloseReason != "separated" || e.ClosedAt == nil || e.Active || e.DurationSeconds != 60 {
 			t.Fatal(e)
 		}

@@ -41,15 +41,16 @@ GCBA → cmd/realtime-worker → capturas/raw/eventos en PostgreSQL/PostGIS
 |---|---|
 | Proveedor | GCBA `vehiclePositionsSimple`, JSON, feed completo |
 | Polling | Un minuto de espera después de cada ciclo; flag `-interval`; una instancia |
-| Proximidad | Distancia geodésica directa <=200 m; H3 no interviene |
+| Proximidad | Distancia geodésica directa <=100 m (`config.BunchingDistanceMeters`); H3 no interviene |
 | Confirmación | Al menos dos observaciones; avanzan ambos timestamps GPS |
-| Publicación en API | Duración GPS >=15 minutos (`config.BunchingMinimumDuration`); los encuentros cortos siguen almacenados |
+| Publicación en API | Duración GPS >=15 minutos y máximos de velocidad de ambas unidades >=1 m/s (`config.BunchingMinimumDuration`, `config.BunchingMinimumSpeedMetersPerSecond`); los encuentros no elegibles siguen almacenados |
 | Identidad | GCBA ruta/sentido + GTFS ruta/sentido + versión geométrica |
 | Agrupación | Pares independientes; A–B y B–C no implican A–C |
 | Frescura | GPS de hasta cinco minutos; skew futuro máximo de un minuto |
 | Cobertura parcial | Conserva captura/raw, sin abrir, actualizar ni cerrar encuentros |
 | Raw | Siete fechas UTC; particiones completas, mañana precreada |
-| Salida | Actual por recorrido y global actual/histórica, sin colores |
+| Salida | Actual por recorrido, global actual/histórica y resumen de recurrencia semanal, sin colores |
+| Recurrencia | Franjas locales fijas de una hora por ruta GTFS/sentido, con encuentros elegibles en >=2 fechas distintas dentro de las últimas 168 horas; cuenta cada franja que solapa la evidencia GPS, sin exigir los mismos vehículos o zona |
 | Regularidad | Pasos/headways/CV descartados |
 
 Los parámetros analíticos y límites defensivos están versionados en

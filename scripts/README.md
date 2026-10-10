@@ -1,7 +1,7 @@
 # Herramientas administrativas
 
 No forman parte de la API ni del worker. Se conservan sólo las herramientas de
-auditoría y mantenimiento de las equivalencias GCBA–GTFS.
+auditoría, backfills one-off y mantenimiento de las equivalencias GCBA–GTFS.
 
 ## Auditoría de aglutinaciones
 
@@ -10,6 +10,34 @@ Snapshot consistente, sin escrituras, compatible con el worker en ejecución:
 ```sh
 psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/audit-h0011-bunching.sql
 ```
+
+## Backfill one-off de máximos de velocidad
+
+`backfill-bunching-speeds.sql` completa los máximos de cada unidad desde raw
+canónico de la misma identidad GCBA/GTFS, sentido y versión geométrica. Usa sólo
+posiciones entre el comienzo del evento y el último GPS admitido de esa unidad,
+no hasta el cierre. Excluye capturas parciales/no analizadas y posiciones fuera
+de los límites de frescura (5 minutos, skew de 1 minuto).
+
+```sh
+# Preview: calcula cobertura y cambios, sin actualizar eventos (ROLLBACK).
+psql "$DATABASE_URL" -X -f scripts/backfill-bunching-speeds.sql
+# Aplicación explícita, transaccional y sin disminuir máximos existentes:
+psql "$DATABASE_URL" -X -v apply=true -f scripts/backfill-bunching-speeds.sql
+```
+
+La aplicación comparte el advisory lock del worker/mantenimiento; puede hacerlos
+esperar brevemente. Reporta filas actualizadas, cobertura de ambas unidades y
+conteos elegibles antes/después con los defaults del motor (2 muestras, 15 minutos,
+1 m/s por unidad). Sólo escribe las dos columnas de velocidad; no modifica
+observaciones, tiempos, posiciones ni cierres. Puede reaplicarse sin disminuir
+máximos; nuevos datos del worker pueden producir nuevos cambios.
+
+**Es una aproximación histórica, no un replay exacto**: raw no conserva todos los
+snapshots admitidos del par. Una posición guardada por primera vez en una captura
+parcial se excluye aunque luego pudiera haberse reutilizado en una completa.
+No inventa velocidades para períodos fuera de retención ni interpola muestras;
+si falta evidencia, conserva el máximo existente (0 si nunca se registró).
 
 ## Captura para revisar equivalencias
 

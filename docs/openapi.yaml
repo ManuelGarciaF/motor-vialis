@@ -93,7 +93,9 @@ paths:
       summary: Eventos confirmados de todas las líneas, abiertos e históricos
       description: >
         Eventos con al menos dos observaciones y duración GPS no menor a
-        config.BunchingMinimumDuration (15 minutos por defecto), paginados y ordenados por
+        config.BunchingMinimumDuration (15 minutos por defecto), con velocidad máxima
+        de ambas unidades >=config.BunchingMinimumSpeedMetersPerSecond (1 m/s por defecto),
+        paginados y ordenados por
         firstObservedAt e id descendentes. La ventana [from,to) intersecta el
         ciclo de vida del evento: firstObservedAt hasta closedAt o, para abiertos,
         lastObservedAt. La duración confirmada sigue siendo lastObservedAt menos
@@ -137,20 +139,66 @@ paths:
           description: Servicio no configurado.
         "504":
           description: Tiempo de consulta agotado.
+  /bunching/recurrence:
+    get:
+      operationId: getBunchingRecurrence
+      summary: Recurrencia semanal de aglutinaciones por recorrido y sentido
+      description: >
+        Resumen sin paginación sólo de recorridos con al menos un evento elegible
+        en la ventana, incluidos históricos aunque ya no existan (lineId null).
+        No exige encuentros activos ahora ni recurrencia. Orden por eventCount
+        descendente, con desempate por gtfsRouteId y direction ascendentes. Ventana móvil
+        [ahora menos 168 horas, ahora), intersectada con la evidencia
+        [firstObservedAt,lastObservedAt), sin extender hasta closedAt o ahora.
+        Sólo cuenta eventos con al menos dos observaciones y duración GPS mínima
+        de 15 minutos por defecto, y exige que ambas unidades hayan registrado
+        velocidad máxima >=1 m/s en muestras admitidas del encuentro (umbral configurable
+        en código). No exige movimiento simultáneo ni sostenido. hours desglosa las franjas fijas de una hora
+        en America/Argentina/Buenos_Aires con evidencia, ordenadas por hour (0–23).
+        Una franja es recurrente desde dos fechas distintas con encuentros en esa
+        misma hora; el recorrido es recurrente si alguna franja lo es. Un evento
+        cuenta en todas las franjas que ocupa, pero una sola vez por franja y en
+        el total semanal. Un evento terminado a las 09:00 no ocupa la franja 9.
+        Agrupa por ruta GTFS y sentido,
+        incluyendo distintas versiones geométricas e identidades GCBA, sin modificar
+        la detección de pares. No prueba regularidad ni severidad. Cero eventos no
+        acredita cobertura completa; las caídas y capturas parciales no se reconstruyen.
+        No acepta query parameters. Parámetros versionados en internal/config/parameters.go.
+      tags: [lines]
+      responses:
+        "200":
+          description: Recorridos con eventos observados; eventCount descendente, luego gtfsRouteId y direction ascendentes.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BunchingRecurrencePage"}
+        "400":
+          description: No acepta parámetros de query.
+        "500":
+          description: Error de consulta.
+        "503":
+          description: Servicio no configurado.
+        "504":
+          description: Tiempo de consulta agotado.
   /lines/{id}/bunching:
     get:
       operationId: getLineBunching
       summary: Pares de vehículos próximos del recorrido y sentido
       description: >
-        Pares independientes a <=200 m, confirmados por al menos dos muestras
+        Pares independientes detectados a <=100 m (config.BunchingDistanceMeters),
+        confirmados por al menos dos muestras
         donde avanzaron ambos timestamps y duración GPS no menor a
         config.BunchingMinimumDuration (15 minutos por defecto). Los encuentros más
-        cortos siguen almacenados pero no se publican. No produce grupos, colores ni severidad.
+        cortos siguen almacenados pero no se publican. También exige máximos de velocidad
+        de ambas unidades >=config.BunchingMinimumSpeedMetersPerSecond (1 m/s por defecto).
+        No exige movimiento simultáneo ni sostenido. No produce grupos, colores ni severidad.
         Las identidades GCBA distintas no se mezclan aunque compartan destino GTFS.
         Devuelve pairs vacío si no hay datos analizados, la captura es parcial o
         tiene más de cinco minutos. Una línea sin equivalencia devuelve mapped=false.
         confirmationPending identifica la tolerancia ante una revisión sin un vehículo;
-        la ausencia no demuestra separación. No acepta parámetros de query.
+        la ausencia no demuestra separación. Incluye recurrence, el mismo resumen
+        semanal del endpoint /bunching/recurrence, incluso con captura stale o parcial
+        o cero eventos semanales (hours vacío).
+        No acepta parámetros de query.
       tags: [lines]
       parameters:
         - name: id
@@ -673,7 +721,7 @@ components:
         shapeHash: {type: string, description: Huella operacional de la versión geométrica.}
     BunchingPair:
       type: object
-      required: [id, line, branch, scope, vehicleA, vehicleB, firstObservedAt, lastObservedAt, lastConfirmedCaptureAt, observedAAt, observedBAt, minimumDistanceMeters, distanceMeters, positionA, positionB, observations, representativePoint, durationSeconds, confirmationPending]
+      required: [id, line, branch, scope, vehicleA, vehicleB, firstObservedAt, lastObservedAt, lastConfirmedCaptureAt, observedAAt, observedBAt, minimumDistanceMeters, distanceMeters, positionA, positionB, observations, representativePoint, durationSeconds, confirmationPending, maximumSpeedAMetersPerSecond, maximumSpeedBMetersPerSecond]
       properties:
         id: {type: integer, format: int64}
         line: {type: string}
@@ -689,8 +737,19 @@ components:
           description: Recepción de la última captura que aportó dos timestamps GPS nuevos; las respuestas repetidas no lo prolongan.
         observedAAt: {type: string, format: date-time}
         observedBAt: {type: string, format: date-time}
+        maximumSpeedAMetersPerSecond:
+          type: number
+          minimum: 0
+          description: Máximo de velocidad canónica de vehicleA en muestras admitidas del encuentro. La API exige >=1 m/s por defecto.
+        maximumSpeedBMetersPerSecond:
+          type: number
+          minimum: 0
+          description: Máximo de velocidad canónica de vehicleB en muestras admitidas del encuentro. La API exige >=1 m/s por defecto.
         minimumDistanceMeters: {type: number, minimum: 0}
-        distanceMeters: {type: number, minimum: 0, maximum: 200}
+        distanceMeters:
+          type: number
+          minimum: 0
+          description: Última distancia confirmada dentro del encuentro. El radio actual de detección es 100 m; los eventos anteriores conservan las distancias admitidas con su política original.
         positionA: {$ref: "#/components/schemas/BunchingPoint"}
         positionB: {$ref: "#/components/schemas/BunchingPoint"}
         observations: {type: integer, minimum: 2}
@@ -735,9 +794,77 @@ components:
         events:
           type: array
           items: {$ref: "#/components/schemas/BunchingHistoricalEvent"}
+    BunchingHourRecurrence:
+      type: object
+      required: [hour, eventCount, daysWithEvents, dates, recurrent]
+      properties:
+        hour:
+          type: integer
+          minimum: 0
+          maximum: 23
+          example: 8
+          description: Inicio de la franja local fija [hour:00, (hour+1):00). 8 representa 08:00–09:00.
+        eventCount:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Eventos únicos que solapan esta franja; un evento de varios días cuenta sólo una vez.
+        daysWithEvents: {type: integer, minimum: 1}
+        dates:
+          type: array
+          description: Fechas locales con evidencia en esta hora, únicas y ordenadas.
+          items: {type: string, format: date}
+        recurrent:
+          type: boolean
+          description: daysWithEvents alcanza minimumDays en esta misma franja horaria.
+    BunchingRecurrenceSummary:
+      type: object
+      required: [from, to, timeZone, minimumDays, eventCount, daysWithEvents, dates, recurrent, hours]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        timeZone: {type: string, example: America/Argentina/Buenos_Aires}
+        minimumDays: {type: integer, minimum: 2, example: 2}
+        eventCount: {type: integer, format: int64, minimum: 0}
+        daysWithEvents: {type: integer, minimum: 0}
+        dates:
+          type: array
+          description: Fechas locales con evidencia en cualquier franja, únicas y ordenadas.
+          items: {type: string, format: date}
+        recurrent:
+          type: boolean
+          description: Hay al menos una franja horaria recurrente; no basta con eventos en distintos días a distintas horas.
+        hours:
+          type: array
+          maxItems: 24
+          description: Sólo franjas con evidencia, ordenadas por hour. Los totales semanales son únicos, no la suma de estas franjas.
+          items: {$ref: "#/components/schemas/BunchingHourRecurrence"}
+    BunchingLineRecurrence:
+      allOf:
+        - $ref: "#/components/schemas/BunchingRecurrenceSummary"
+        - type: object
+          required: [lineId, gtfsRouteId, direction, line, branch, mapped]
+          properties:
+            lineId: {type: integer, format: int64, nullable: true}
+            gtfsRouteId: {type: string}
+            direction: {type: integer, enum: [0, 1]}
+            line: {type: string}
+            branch: {type: string}
+            mapped: {type: boolean}
+    BunchingRecurrencePage:
+      type: object
+      required: [from, to, timeZone, minimumDays, lines]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        timeZone: {type: string}
+        minimumDays: {type: integer, minimum: 2}
+        lines:
+          type: array
+          items: {$ref: "#/components/schemas/BunchingLineRecurrence"}
     BunchingCurrent:
       type: object
-      required: [lineId, line, branch, direction, mapped, latestCaptureAt, captureAgeSeconds, partial, stale, pairs]
+      required: [lineId, line, branch, direction, mapped, latestCaptureAt, captureAgeSeconds, partial, stale, pairs, recurrence]
       properties:
         lineId: {type: integer, format: int64}
         line: {type: string}
@@ -751,6 +878,7 @@ components:
         pairs:
           type: array
           items: {$ref: "#/components/schemas/BunchingPair"}
+        recurrence: {$ref: "#/components/schemas/BunchingRecurrenceSummary"}
     TransferRanking:
       type: object
       description: >

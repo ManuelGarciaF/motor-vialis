@@ -129,11 +129,12 @@ const (
 
 // Bunching reports proximity, not groups or a service severity level.
 const (
-	BunchingDistanceMeters      = 200.0
+	BunchingDistanceMeters      = 100.0
 	BunchingMinimumObservations = 2
 	// Report only encounters sustained by GPS evidence for at least this duration.
-	BunchingMinimumDuration         = 15 * time.Minute
-	BunchingMissingCaptureTolerance = 1
+	BunchingMinimumDuration             = 15 * time.Minute
+	BunchingMinimumSpeedMetersPerSecond = 1.0
+	BunchingMissingCaptureTolerance     = 1
 )
 
 const (
@@ -143,12 +144,22 @@ const (
 	BunchingHistoryMaximumLimit  = 200
 )
 
+const (
+	BunchingRecurrenceWindow      = 7 * 24 * time.Hour
+	BunchingRecurrenceMinimumDays = 2
+	BunchingRecurrenceTimeZone    = "America/Argentina/Buenos_Aires"
+)
+
+func BunchingRecurrencePolicy() bunching.RecurrencePolicy {
+	return bunching.RecurrencePolicy{Window: BunchingRecurrenceWindow, MinimumDays: BunchingRecurrenceMinimumDays, TimeZone: BunchingRecurrenceTimeZone}
+}
+
 func BunchingHistoryPolicy() bunching.HistoryPolicy {
 	return bunching.HistoryPolicy{DefaultWindow: BunchingHistoryDefaultWindow, MaximumWindow: BunchingHistoryMaximumWindow, DefaultLimit: BunchingHistoryDefaultLimit, MaximumLimit: BunchingHistoryMaximumLimit}
 }
 
 func BunchingPolicy() bunching.Policy {
-	return bunching.Policy{DistanceMeters: BunchingDistanceMeters, MaximumAge: GCBAMaximumPositionAge, MaximumFutureSkew: GCBAMaximumFutureSkew, MissingCaptureTolerance: BunchingMissingCaptureTolerance, MinimumObservations: BunchingMinimumObservations, MinimumDuration: BunchingMinimumDuration}
+	return bunching.Policy{DistanceMeters: BunchingDistanceMeters, MaximumAge: GCBAMaximumPositionAge, MaximumFutureSkew: GCBAMaximumFutureSkew, MissingCaptureTolerance: BunchingMissingCaptureTolerance, MinimumObservations: BunchingMinimumObservations, MinimumDuration: BunchingMinimumDuration, MinimumSpeedMetersPerSecond: BunchingMinimumSpeedMetersPerSecond}
 }
 
 // Stored-line export parameters.

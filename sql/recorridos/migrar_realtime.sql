@@ -69,6 +69,8 @@ CREATE TABLE IF NOT EXISTS vialis.aglutinaciones_colectivos (
     primero_observado_en TIMESTAMPTZ NOT NULL,
     ultimo_observado_en TIMESTAMPTZ NOT NULL,
     cerrado_en TIMESTAMPTZ,
+    velocidad_maxima_a_metros_segundo DOUBLE PRECISION NOT NULL DEFAULT 0 CHECK (velocidad_maxima_a_metros_segundo >= 0 AND velocidad_maxima_a_metros_segundo < 'Infinity'::DOUBLE PRECISION),
+    velocidad_maxima_b_metros_segundo DOUBLE PRECISION NOT NULL DEFAULT 0 CHECK (velocidad_maxima_b_metros_segundo >= 0 AND velocidad_maxima_b_metros_segundo < 'Infinity'::DOUBLE PRECISION),
     distancia_minima_metros DOUBLE PRECISION NOT NULL CHECK (distancia_minima_metros >= 0),
     ultima_distancia_metros DOUBLE PRECISION NOT NULL CHECK (ultima_distancia_metros >= 0),
     ultima_posicion_a GEOMETRY(Point, 4326) NOT NULL,
@@ -82,6 +84,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_aglutinaciones_colectivos_abiertas
 ON vialis.aglutinaciones_colectivos (gcba_route_id, gcba_direction, gtfs_route_id, gtfs_direction_id, gtfs_shape_hash, id_vehiculo_a, id_vehiculo_b)
 WHERE cerrado_en IS NULL;
 CREATE INDEX IF NOT EXISTS idx_aglutinaciones_colectivos_ultimo ON vialis.aglutinaciones_colectivos (ultimo_observado_en);
+CREATE INDEX IF NOT EXISTS idx_aglutinaciones_colectivos_inicio
+ON vialis.aglutinaciones_colectivos (primero_observado_en,gtfs_route_id,gtfs_direction_id);
 CREATE INDEX IF NOT EXISTS idx_aglutinaciones_colectivos_historia
 ON vialis.aglutinaciones_colectivos ((COALESCE(cerrado_en,ultimo_observado_en)),primero_observado_en DESC,id_evento DESC);
 

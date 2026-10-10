@@ -83,6 +83,10 @@ INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'gtfs',0);`))
 		{"closed-exact", minimum, 16, time.Minute, true},
 		{"single-long", minimum + 5*time.Minute, 1, 0, false},
 		{"stale-long", minimum + 5*time.Minute, 21, 6 * time.Minute, false},
+		{"stationary", minimum, 16, 0, false},
+		{"only-a-moving", minimum, 16, 0, false},
+		{"only-b-moving", minimum, 16, 0, false},
+		{"below-speed", minimum, 16, 0, false},
 	}
 	batch := &pgx.Batch{}
 	for _, tc := range cases {
@@ -94,9 +98,20 @@ INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'gtfs',0);`))
 			FirstObservedAt: last.Add(-tc.duration), LastObservedAt: last,
 			ConfirmedAt: last, ObservedA: last, ObservedB: last,
 			MinimumDistanceMeters: 50, LastDistanceMeters: 50,
-			PointA:       bunching.Point{Longitude: -58.4, Latitude: -34.6},
-			PointB:       bunching.Point{Longitude: -58.4005, Latitude: -34.6},
-			Observations: tc.observations,
+			PointA:                       bunching.Point{Longitude: -58.4, Latitude: -34.6},
+			PointB:                       bunching.Point{Longitude: -58.4005, Latitude: -34.6},
+			Observations:                 tc.observations,
+			MaximumSpeedAMetersPerSecond: 1, MaximumSpeedBMetersPerSecond: 1,
+		}
+		switch tc.name {
+		case "stationary":
+			e.MaximumSpeedAMetersPerSecond, e.MaximumSpeedBMetersPerSecond = 0, 0
+		case "only-a-moving":
+			e.MaximumSpeedBMetersPerSecond = 0
+		case "only-b-moving":
+			e.MaximumSpeedAMetersPerSecond = 0
+		case "below-speed":
+			e.MaximumSpeedAMetersPerSecond = 1 - 0.000001
 		}
 		if tc.closed {
 			e.ClosedAt = &now
@@ -113,6 +128,9 @@ INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'gtfs',0);`))
 		t.Fatalf("current should include only exact/over: %+v %v", current, err)
 	}
 	for _, pair := range current.Pairs {
+		if pair.MaximumSpeedAMetersPerSecond != 1 || pair.MaximumSpeedBMetersPerSecond != 1 {
+			t.Fatalf("speed scan: %+v", pair)
+		}
 		if pair.DurationSeconds < minimum.Seconds() || (pair.VehicleA != "exact-a" && pair.VehicleA != "over-a") {
 			t.Fatalf("unexpected current pair: %+v", pair)
 		}
@@ -163,5 +181,22 @@ INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'gtfs',0);`))
 	current, err = reader.FindCurrent(ctx, 1, now, policy)
 	if err != nil || len(current.Pairs) != 3 {
 		t.Fatalf("disabled current filter: %+v %v", current, err)
+	}
+	// Raising the speed threshold excludes even the exact 1 m/s cases.
+	policy.MinimumDuration = minimum
+	policy.MinimumSpeedMetersPerSecond = 1.000001
+	page, err = reader.FindHistory(ctx, query, now, policy)
+	if err != nil || page.Total != 0 {
+		t.Fatalf("raised speed threshold: %+v %v", page, err)
+	}
+	// Zero disables movement filtering independently of the duration filter.
+	policy.MinimumSpeedMetersPerSecond = 0
+	page, err = reader.FindHistory(ctx, query, now, policy)
+	if err != nil || page.Total != 8 {
+		t.Fatalf("disabled speed history: %+v %v", page, err)
+	}
+	current, err = reader.FindCurrent(ctx, 1, now, policy)
+	if err != nil || len(current.Pairs) != 6 {
+		t.Fatalf("disabled speed current: %+v %v", current, err)
 	}
 }

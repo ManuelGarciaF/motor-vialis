@@ -201,7 +201,16 @@ mantiene eventos de proximidad. Pasos/headways/CV fueron descartados. Ver
 [alcance y decisiones](docs/plan_h0011_aglutinacion.md) y
 [operación y API](docs/h0011_aglutinaciones.md).
 
-- `GET /lines/{id}/bunching`: pares actuales confirmados del recorrido.
+- `GET /lines/{id}/bunching`: pares actuales confirmados y resumen de recurrencia semanal del recorrido/sentido.
+- `GET /bunching/recurrence`: sólo recorridos con eventos en las últimas 168 horas,
+  ordenados por cantidad de eventos descendente;
+  desglosado por franjas fijas de una hora (Buenos Aires). Una franja es
+  recurrente desde dos fechas distintas con encuentros en esa misma hora.
+  El detector usa proximidad <=100 m; cambiar el radio requiere actualizar el
+  worker y no recalcula históricos capturados con el radio anterior.
+  Las tres consultas de aglutinaciones sólo publican encuentros de >=15 minutos
+  donde ambas unidades alcanzaron >=1 m/s en alguna muestra válida; se guardan
+  los máximos para poder cambiar el umbral posteriormente.
 - `GET /bunching`: eventos confirmados de todas las líneas mapeadas, abiertos e
   históricos; filtros `from`, `to`, `state`, `limit`, `offset`. Abierto no implica
   activo: la respuesta distingue frescura y falta de confirmación.

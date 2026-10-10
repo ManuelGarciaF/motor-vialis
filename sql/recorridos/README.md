@@ -21,6 +21,11 @@ desde el repositorio realtime, no desde el ETL GTFS. Ver
 pruebas, retención y preservación de identidad histórica. La tabla preparatoria
 `pasos_colectivos` no se utiliza: la regularidad fue descartada.
 
+`migrar_aglutinaciones.sql` agrega también el índice por inicio de evento usado
+por el resumen de recurrencia semanal y los máximos de velocidad por unidad
+usados por el filtro de publicación (ambos >=1 m/s). Puede reaplicarse en bases
+existentes; los máximos anteriores quedan en 0, sin reconstrucción de históricos.
+
 `migrar_aglutinaciones.sql` extiende ese esquema para fase 4: cobertura y
 fingerprints de capturas, timestamps confirmatorios y motivos de cierre de
 eventos, nombres históricos e índice de consulta global. Aplicar antes de

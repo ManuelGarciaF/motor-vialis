@@ -17,7 +17,7 @@ func (r *BunchingRepository) FindHistory(ctx context.Context, q bunching.History
 	}
 	defer tx.Rollback(context.Background())
 	sql := (&RealtimeRepository{schema: r.schema}).sql
-	err = tx.QueryRow(ctx, sql(`SELECT recibido_en,cobertura_parcial FROM vialis.capturas_colectivos WHERE aglutinaciones_analizadas ORDER BY recibido_en DESC,id_captura DESC LIMIT 1`)).Scan(&page.LatestCaptureAt, &page.Partial)
+	err = tx.QueryRow(ctx, sql(findLatestBunchingCaptureSQL)).Scan(&page.LatestCaptureAt, &page.Partial)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return page, err
 	}
@@ -32,13 +32,15 @@ func (r *BunchingRepository) FindHistory(ctx context.Context, q bunching.History
 	// Intersects the lifecycle interval with [from,to). Open events end at the
 	// last confirmation for filtering, not infinity; confirmed duration remains
 	// last-first even when the lifecycle ends later due to missing evidence.
-	where := ` WHERE observaciones >= $1 AND EXTRACT(EPOCH FROM (ultimo_observado_en-primero_observado_en)) >= $5::double precision AND primero_observado_en < $2 AND COALESCE(cerrado_en,ultimo_observado_en) >= $3 AND ($4='all' OR ($4='open' AND cerrado_en IS NULL) OR ($4='closed' AND cerrado_en IS NOT NULL))`
-	args := []any{policy.MinimumObservations, q.To, q.From, q.State, policy.MinimumDuration.Seconds()}
-	if err = tx.QueryRow(ctx, sql(`SELECT count(*) FROM vialis.aglutinaciones_colectivos`+where), args...).Scan(&page.Total); err != nil {
+	args := []any{
+		policy.MinimumObservations, q.To, q.From, q.State,
+		policy.MinimumDuration.Seconds(), policy.MinimumSpeedMetersPerSecond,
+	}
+	if err = tx.QueryRow(ctx, sql(countBunchingHistorySQL), args...).Scan(&page.Total); err != nil {
 		return page, err
 	}
 	args = append(args, q.Limit, q.Offset)
-	rows, err := tx.Query(ctx, sql(`SELECT `+eventColumns+`,(SELECT r.id_recorrido FROM vialis.recorridos r WHERE r.gtfs_route_id=e.gtfs_route_id AND r.direction_id=e.gtfs_direction_id AND md5(encode(ST_AsEWKB(r.geom),'hex'))=e.gtfs_shape_hash AND EXISTS(SELECT 1 FROM vialis.equivalencias_recorridos_gcba m WHERE m.gcba_route_id=e.gcba_route_id AND m.gcba_direction=e.gcba_direction AND m.gtfs_route_id=e.gtfs_route_id AND m.gtfs_direction_id=e.gtfs_direction_id)) AS current_line_id FROM vialis.aglutinaciones_colectivos e`+where+` ORDER BY primero_observado_en DESC,id_evento DESC LIMIT $6 OFFSET $7`), args...)
+	rows, err := tx.Query(ctx, sql(findBunchingHistorySQL), args...)
 	if err != nil {
 		return page, err
 	}

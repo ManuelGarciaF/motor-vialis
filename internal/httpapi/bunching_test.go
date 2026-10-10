@@ -17,8 +17,13 @@ import (
 )
 
 type fakeBunching struct {
-	get  func(context.Context, int64) (bunching.Current, error)
-	list func(context.Context, bunching.HistoryQuery) (bunching.EventPage, error)
+	get        func(context.Context, int64) (bunching.Current, error)
+	list       func(context.Context, bunching.HistoryQuery) (bunching.EventPage, error)
+	recurrence func(context.Context) (bunching.RecurrencePage, error)
+}
+
+func (f fakeBunching) Recurrence(ctx context.Context) (bunching.RecurrencePage, error) {
+	return f.recurrence(ctx)
 }
 
 func (f fakeBunching) List(ctx context.Context, q bunching.HistoryQuery) (bunching.EventPage, error) {
@@ -50,7 +55,7 @@ func TestBunchingHTTP(t *testing.T) {
 				if _, ok := ctx.Deadline(); !ok {
 					t.Fatal("no backend timeout")
 				}
-				return bunching.Current{LineID: id, Stale: true, Partial: true, Pairs: []bunching.ActivePair{}}, test.err
+				return bunching.Current{LineID: id, Stale: true, Partial: true, Pairs: []bunching.ActivePair{}, Recurrence: bunching.RecurrenceSummary{EventCount: 3, DaysWithEvents: 2, Recurrent: true, Dates: []string{"2026-10-08", "2026-10-09"}, Hours: []bunching.HourRecurrence{{Hour: 8, EventCount: 3, DaysWithEvents: 2, Dates: []string{"2026-10-08", "2026-10-09"}, Recurrent: true}}}}, test.err
 			}}
 			h := httpapi.NewHandler(slog.New(slog.NewJSONHandler(io.Discard, nil)), nil, nil, nil, nil, nil, time.Second, service)
 			w := httptest.NewRecorder()
@@ -62,7 +67,7 @@ func TestBunchingHTTP(t *testing.T) {
 				t.Fatal("called backend on bad input")
 			}
 			if test.status == 200 {
-				for _, field := range []string{`"stale":true`, `"partial":true`, `"pairs":[]`} {
+				for _, field := range []string{`"stale":true`, `"partial":true`, `"pairs":[]`, `"recurrence":`, `"recurrent":true`, `"daysWithEvents":2`, `"hours":[`, `"hour":8`} {
 					if !strings.Contains(w.Body.String(), field) {
 						t.Fatal(w.Body.String())
 					}

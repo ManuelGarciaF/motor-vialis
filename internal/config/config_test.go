@@ -58,6 +58,12 @@ func TestBunchingReportingPolicy(t *testing.T) {
 	if err := policy.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	if BunchingDistanceMeters != 100 || policy.DistanceMeters != BunchingDistanceMeters {
+		t.Fatal("invalid bunching detection radius: want 100 m")
+	}
+	if BunchingMinimumSpeedMetersPerSecond != 1 || policy.MinimumSpeedMetersPerSecond != BunchingMinimumSpeedMetersPerSecond {
+		t.Fatal("invalid movement publication threshold")
+	}
 	if BunchingMinimumDuration != 15*time.Minute {
 		t.Fatalf("default minimum duration = %s, want 15m", BunchingMinimumDuration)
 	}
