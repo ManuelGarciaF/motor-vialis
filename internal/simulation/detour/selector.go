@@ -62,6 +62,14 @@ func Select(
 				if previous == nil {
 					continue
 				}
+				// Conservar esta parada no puede obligar al trazado a darse
+				// vuelta sobre ella: eso es un giro en U (aunque use la calzada
+				// opuesta de una avenida dividida, que es otra arista y por eso
+				// el filtro de aristas no lo ve). Nunca es legal para un bondi;
+				// si la única forma de tocar la parada es volver, se omite.
+				if reversesAtJunction(previous, connection) {
+					continue
+				}
 				candidate := &selectionState{
 					kept:        appendCopy(previous.kept, end),
 					connections: appendConnection(previous.connections, connection),
@@ -120,6 +128,121 @@ func Select(
 		TravelSeconds:     best.seconds,
 		Connections:       cloneConnections(best.connections),
 	}, nil
+}
+
+// reversalMinimumAngleDegrees: si el rumbo de marcha se invierte más que esto al
+// pasar por una parada, el trazado está volviendo sobre sí mismo (un giro en U
+// en la parada). 150° deja pasar giros cerrados reales de esquina y sólo frena
+// la vuelta franca.
+const reversalMinimumAngleDegrees = 150.0
+
+// reversesAtJunction informa si encadenar la conexión `next` después de `previous`
+// hace que el trazado se dé vuelta en la parada que comparten.
+func reversesAtJunction(previous *selectionState, next Connection) bool {
+	if len(previous.connections) == 0 {
+		return false
+	}
+	last := previous.connections[len(previous.connections)-1]
+	arriving, ok1 := arrivingBearing(last.Path)
+	leaving, ok2 := leavingBearing(next.Path)
+	if !ok1 || !ok2 {
+		return false
+	}
+	return angularDifference(arriving, leaving) >= reversalMinimumAngleDegrees
+}
+
+// bearingBaselineMeters: distancia sobre la que se mide el rumbo de marcha en
+// cada punta, para que sea estable y no lo domine el ruido vértice a vértice.
+const bearingBaselineMeters = 20.0
+
+// Cada conexión arranca y termina con un "piolín" parada→calle (el primer y
+// último segmento: la parada y su proyección sobre la calzada). Ese stub apunta
+// de costado, no en el sentido de marcha, así que se saltea: el rumbo se toma
+// desde el segundo vértice (leaving) y hasta el anteúltimo (arriving), sobre una
+// base de ~20 m.
+func leavingBearing(path route.LineString) (float64, bool) {
+	p := path.Positions
+	if len(p) < 3 {
+		return rawLeavingBearing(p)
+	}
+	base := p[1]       // saltea el stub de origen (p[0]→p[1])
+	last := len(p) - 2 // saltea el stub de destino (p[n-2]→p[n-1])
+	acc := 0.0
+	for i := 2; i <= last; i++ {
+		acc += metersBetween(p[i-1], p[i])
+		if acc >= bearingBaselineMeters {
+			return bearingBetween(base, p[i])
+		}
+	}
+	return bearingBetween(base, p[last])
+}
+
+func arrivingBearing(path route.LineString) (float64, bool) {
+	p := path.Positions
+	if len(p) < 3 {
+		return rawArrivingBearing(p)
+	}
+	end := p[len(p)-2] // saltea el stub de destino
+	first := 1         // saltea el stub de origen
+	acc := 0.0
+	for i := len(p) - 3; i >= first; i-- {
+		acc += metersBetween(p[i], p[i+1])
+		if acc >= bearingBaselineMeters {
+			return bearingBetween(p[i], end)
+		}
+	}
+	return bearingBetween(p[first], end)
+}
+
+// Caminos muy cortos (sin tramo de calzada entre los stubs): se usa punta a punta.
+func rawLeavingBearing(p []route.Position) (float64, bool) {
+	for i := 1; i < len(p); i++ {
+		if bearing, ok := bearingBetween(p[0], p[i]); ok {
+			return bearing, true
+		}
+	}
+	return 0, false
+}
+
+func rawArrivingBearing(p []route.Position) (float64, bool) {
+	for i := len(p) - 2; i >= 0; i-- {
+		if bearing, ok := bearingBetween(p[i], p[len(p)-1]); ok {
+			return bearing, true
+		}
+	}
+	return 0, false
+}
+
+func metersBetween(a, b route.Position) float64 {
+	const metersPerDegree = 111_320.0
+	north := (b.Latitude - a.Latitude) * metersPerDegree
+	east := (b.Longitude - a.Longitude) * metersPerDegree * math.Cos(math.Pi/180*(a.Latitude+b.Latitude)/2)
+	return math.Hypot(north, east)
+}
+
+// bearingBetween devuelve el rumbo de marcha a→b en grados [0,360), con una
+// corrección por latitud para que el ángulo sea real a escala urbana. ok es
+// falso cuando los dos puntos coinciden.
+func bearingBetween(a, b route.Position) (float64, bool) {
+	north := b.Latitude - a.Latitude
+	east := (b.Longitude - a.Longitude) * math.Cos(math.Pi/180*(a.Latitude+b.Latitude)/2)
+	if math.Abs(north) < 1e-12 && math.Abs(east) < 1e-12 {
+		return 0, false
+	}
+	degrees := math.Atan2(east, north) * 180 / math.Pi
+	if degrees < 0 {
+		degrees += 360
+	}
+	return degrees, true
+}
+
+// angularDifference es la diferencia mínima entre dos rumbos, en [0,180].
+func angularDifference(a, b float64) float64 {
+	diff := math.Mod(math.Abs(a-b), 360)
+	if diff > 180 {
+		diff = 360 - diff
+	}
+	return diff
 }
 
 func validateCriterion(criterion Criterion) error {

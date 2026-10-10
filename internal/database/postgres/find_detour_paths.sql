@@ -45,6 +45,31 @@ WITH routed AS (
     LEFT JOIN detour_points current_point ON current_point.pid = abs(step.node)
     LEFT JOIN detour_points next_point ON next_point.pid = abs(step.next_node)
     WHERE step.edge <> -1
+), giros_en_u AS (
+    -- Una conexión hace un giro en U cuando dos pasos CONSECUTIVOS recorren la
+    -- MISMA arista en sentidos opuestos: el camino entra a una calle y vuelve
+    -- por ella (la maniobra imposible/ilegal que aparecía al priorizar paradas).
+    -- No marca: recorrer una arista al revés en sentido único (un solo paso),
+    -- partir una arista en tramos por puntos de paso (mismo sentido), ni volver
+    -- a usar una arista más tarde por otro lado (no consecutiva). Se descarta la
+    -- conexión entera para que ningún criterio pueda apoyarse en el U-turn.
+    SELECT DISTINCT start_vid, end_vid
+    FROM (
+        SELECT
+            start_vid,
+            end_vid,
+            edge,
+            sign(end_fraction - start_fraction) AS sentido,
+            lag(edge) OVER w AS arista_previa,
+            lag(sign(end_fraction - start_fraction)) OVER w AS sentido_previo
+        FROM traversed
+        WHERE start_fraction IS NOT NULL
+          AND end_fraction IS NOT NULL
+          AND start_fraction <> end_fraction
+        WINDOW w AS (PARTITION BY start_vid, end_vid ORDER BY path_seq)
+    ) consecutivos
+    WHERE edge = arista_previa
+      AND sentido <> sentido_previo
 ), pieces AS (
     SELECT
         start_vid,
@@ -77,6 +102,11 @@ WITH routed AS (
         array_agg(edge ORDER BY path_seq) AS edge_ids,
         ST_MakeLine(geom ORDER BY path_seq) AS geom
     FROM pieces
+    WHERE NOT EXISTS (
+        SELECT 1 FROM giros_en_u g
+        WHERE g.start_vid = pieces.start_vid
+          AND g.end_vid = pieces.end_vid
+    )
     GROUP BY start_vid, end_vid
 ), connected AS (
     SELECT
