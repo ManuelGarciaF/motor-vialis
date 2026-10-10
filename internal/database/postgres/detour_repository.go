@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/detour"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
@@ -255,6 +256,7 @@ func (repository *DetourRepository) Route(
 		policy.TrafficEstimateRadiusMeters,
 		policy.TrafficEstimateMaximumSamples,
 		policy.TrafficEstimateMinimumSamples,
+		defaultSpeedKPH(request.Traffic, policy.DefaultSpeedKPH),
 	); err != nil {
 		return detour.RoutingResult{}, fmt.Errorf("create detour traffic graph: %w", err)
 	}
@@ -329,6 +331,8 @@ func (repository *DetourRepository) Route(
 		&result.Trace.ReverseDirectEdges,
 		&result.Trace.ForwardEstimatedEdges,
 		&result.Trace.ReverseEstimatedEdges,
+		&result.Trace.ForwardDefaultEdges,
+		&result.Trace.ReverseDefaultEdges,
 	); err != nil {
 		return detour.RoutingResult{}, fmt.Errorf("read detour graph trace: %w", err)
 	}
@@ -402,6 +406,29 @@ func encodeTraffic(segments []traffic.Segment) ([]byte, error) {
 		return nil, fmt.Errorf("encode detour traffic: %w", err)
 	}
 	return encoded, nil
+}
+
+// defaultSpeedKPH is the fallback speed for edges no traffic data covers. It is
+// the median of the snapshot's usable speeds so the fallback tracks the current
+// conditions of the area; when the snapshot carries no usable speed at all it
+// uses the policy constant. The result is always positive so pricing never
+// divides by zero.
+func defaultSpeedKPH(segments []traffic.Segment, fallback float64) float64 {
+	speeds := make([]float64, 0, len(segments))
+	for _, segment := range segments {
+		if segment.HasSpeed && !segment.Closure && segment.SpeedKPH > 0 {
+			speeds = append(speeds, segment.SpeedKPH)
+		}
+	}
+	if len(speeds) == 0 {
+		return fallback
+	}
+	sort.Float64s(speeds)
+	middle := len(speeds) / 2
+	if len(speeds)%2 == 1 {
+		return speeds[middle]
+	}
+	return (speeds[middle-1] + speeds[middle]) / 2
 }
 
 func encodeRoutingPoints(points []detour.RoutingPoint) ([]byte, error) {

@@ -179,41 +179,47 @@ SELECT
         WHEN blocked OR NOT reverse_allowed THEN -1::double precision
         ELSE original_reverse_cost
     END AS topology_reverse_cost,
+    -- A real closure keeps cost -1 (never route a bus through a closed street).
+    -- Everything else that lacks a usable speed — a match without speed, or an
+    -- edge TomTom simply does not cover — falls back to $10 (a default speed, the
+    -- snapshot median) so a detour through small streets without flow data can
+    -- still be priced instead of failing. Source 'default_fallback' keeps this
+    -- honest: the time is an estimate, not a measurement.
     CASE
         WHEN blocked THEN -1::double precision
-        WHEN forward_traffic_id IS NOT NULL THEN
-            CASE
-                WHEN forward_closure OR NOT forward_has_speed OR forward_speed_kph <= 0
-                THEN -1::double precision
-                ELSE length_meters / (forward_speed_kph / 3.6)
-            END
-        WHEN sample_count >= $9::integer
+        WHEN forward_traffic_id IS NOT NULL AND NOT forward_closure
+             AND forward_has_speed AND forward_speed_kph > 0
+        THEN length_meters / (forward_speed_kph / 3.6)
+        WHEN sample_count >= $9::integer AND estimated_speed_kph > 0
         THEN length_meters / (estimated_speed_kph / 3.6)
-        ELSE -1::double precision
+        ELSE length_meters / ($10::double precision / 3.6)
     END AS cost,
     CASE
         WHEN blocked OR NOT reverse_allowed THEN -1::double precision
-        WHEN reverse_traffic_id IS NOT NULL THEN
-            CASE
-                WHEN reverse_closure OR NOT reverse_has_speed OR reverse_speed_kph <= 0
-                THEN -1::double precision
-                ELSE length_meters / (reverse_speed_kph / 3.6)
-            END
-        WHEN sample_count >= $9::integer
+        WHEN reverse_traffic_id IS NOT NULL AND NOT reverse_closure
+             AND reverse_has_speed AND reverse_speed_kph > 0
+        THEN length_meters / (reverse_speed_kph / 3.6)
+        WHEN sample_count >= $9::integer AND estimated_speed_kph > 0
         THEN length_meters / (estimated_speed_kph / 3.6)
-        ELSE -1::double precision
+        ELSE length_meters / ($10::double precision / 3.6)
     END AS reverse_cost,
     CASE
         WHEN blocked THEN 'blocked'
-        WHEN forward_traffic_id IS NOT NULL THEN 'tomtom_direct'
-        WHEN sample_count >= $9::integer THEN 'tomtom_nearby_estimate'
-        ELSE 'uncovered'
+        WHEN forward_traffic_id IS NOT NULL AND NOT forward_closure
+             AND forward_has_speed AND forward_speed_kph > 0
+        THEN 'tomtom_direct'
+        WHEN sample_count >= $9::integer AND estimated_speed_kph > 0
+        THEN 'tomtom_nearby_estimate'
+        ELSE 'default_fallback'
     END AS forward_source,
     CASE
         WHEN blocked OR NOT reverse_allowed THEN 'not_allowed'
-        WHEN reverse_traffic_id IS NOT NULL THEN 'tomtom_direct'
-        WHEN sample_count >= $9::integer THEN 'tomtom_nearby_estimate'
-        ELSE 'uncovered'
+        WHEN reverse_traffic_id IS NOT NULL AND NOT reverse_closure
+             AND reverse_has_speed AND reverse_speed_kph > 0
+        THEN 'tomtom_direct'
+        WHEN sample_count >= $9::integer AND estimated_speed_kph > 0
+        THEN 'tomtom_nearby_estimate'
+        ELSE 'default_fallback'
     END AS reverse_source,
     blocked,
     reverse_allowed,

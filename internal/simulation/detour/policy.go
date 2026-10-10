@@ -17,6 +17,9 @@ type Policy struct {
 	TrafficEstimateMinimumSamples    int
 	TrafficEstimateMaximumSamples    int
 	PointDirectionToleranceDegrees   float64
+	// DefaultSpeedKPH prices an edge no traffic data covers, so a detour through
+	// streets without flow data is still computable instead of failing.
+	DefaultSpeedKPH float64
 }
 
 func (policy Policy) validate() error {
@@ -33,7 +36,8 @@ func (policy Policy) validate() error {
 		policy.TrafficEstimateRadiusMeters <= 0 ||
 		policy.TrafficEstimateMinimumSamples <= 0 ||
 		policy.TrafficEstimateMaximumSamples < policy.TrafficEstimateMinimumSamples ||
-		policy.PointDirectionToleranceDegrees <= 0 {
+		policy.PointDirectionToleranceDegrees <= 0 ||
+		policy.DefaultSpeedKPH <= 0 {
 		return &ValidationError{
 			Field:   "policy",
 			Message: "contains incoherent detour limits",

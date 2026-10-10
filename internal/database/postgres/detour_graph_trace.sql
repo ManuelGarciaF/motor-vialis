@@ -12,5 +12,11 @@ SELECT
     )::integer AS forward_estimated_edges,
     count(*) FILTER (
         WHERE reverse_source = 'tomtom_nearby_estimate' AND reverse_cost > 0
-    )::integer AS reverse_estimated_edges
+    )::integer AS reverse_estimated_edges,
+    count(*) FILTER (
+        WHERE forward_source = 'default_fallback' AND cost > 0
+    )::integer AS forward_default_edges,
+    count(*) FILTER (
+        WHERE reverse_source = 'default_fallback' AND reverse_cost > 0
+    )::integer AS reverse_default_edges
 FROM detour_graph;

@@ -56,6 +56,11 @@ type GraphTrace struct {
 	ReverseDirectEdges    int
 	ForwardEstimatedEdges int
 	ReverseEstimatedEdges int
+	// Default edges are priced with a fallback speed because no traffic data
+	// (direct or nearby) covered them. Surfaced so callers can flag the detour
+	// as partly estimated instead of treating its time as measured.
+	ForwardDefaultEdges int
+	ReverseDefaultEdges int
 }
 
 // RoutingResult contains every resolvable requested path and graph coverage

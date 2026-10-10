@@ -454,6 +454,7 @@ func serviceTestPolicy() Policy {
 		TrafficEstimateMinimumSamples:    3,
 		TrafficEstimateMaximumSamples:    5,
 		PointDirectionToleranceDegrees:   60,
+		DefaultSpeedKPH:                  20,
 	}
 }
 

@@ -63,6 +63,8 @@ type graphTraceResponse struct {
 	ReverseDirectEdges    int `json:"reverseDirectEdges"`
 	ForwardEstimatedEdges int `json:"forwardEstimatedEdges"`
 	ReverseEstimatedEdges int `json:"reverseEstimatedEdges"`
+	ForwardDefaultEdges   int `json:"forwardDefaultEdges"`
+	ReverseDefaultEdges   int `json:"reverseDefaultEdges"`
 }
 
 type stopTraceResponse struct {
@@ -159,6 +161,8 @@ func newDetourResponse(result detour.Result) detourResponse {
 				ReverseDirectEdges:    trace.Graph.ReverseDirectEdges,
 				ForwardEstimatedEdges: trace.Graph.ForwardEstimatedEdges,
 				ReverseEstimatedEdges: trace.Graph.ReverseEstimatedEdges,
+				ForwardDefaultEdges:   trace.Graph.ForwardDefaultEdges,
+				ReverseDefaultEdges:   trace.Graph.ReverseDefaultEdges,
 			},
 			Stops: stopTraceResponse{
 				Forced:   trace.ForcedStops,

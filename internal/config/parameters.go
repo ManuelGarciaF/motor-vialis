@@ -58,6 +58,10 @@ const (
 	DetourTrafficEstimateMinimumSamples    = 3
 	DetourTrafficEstimateMaximumSamples    = 5
 	DetourPointDirectionToleranceDegrees   = 60.0
+	// Fallback speed (km/h) for edges with no traffic coverage, used only when
+	// the snapshot carries no usable speed to take a median from. ~20 km/h is a
+	// conservative urban speed for the residential streets a detour falls back to.
+	DetourDefaultSpeedKPH = 20.0
 
 	TomTomTrafficTTL          = 30 * time.Minute
 	TomTomRequestTimeout      = 10 * time.Second
@@ -87,6 +91,7 @@ func DetourPolicy() detour.Policy {
 		TrafficEstimateMinimumSamples:    DetourTrafficEstimateMinimumSamples,
 		TrafficEstimateMaximumSamples:    DetourTrafficEstimateMaximumSamples,
 		PointDirectionToleranceDegrees:   DetourPointDirectionToleranceDegrees,
+		DefaultSpeedKPH:                  DetourDefaultSpeedKPH,
 	}
 }
 
