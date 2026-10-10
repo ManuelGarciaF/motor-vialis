@@ -87,6 +87,92 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /bunching:
+    get:
+      operationId: listBunchingEvents
+      summary: Eventos confirmados de todas las líneas, abiertos e históricos
+      description: >
+        Eventos con al menos dos observaciones y duración GPS no menor a
+        config.BunchingMinimumDuration (15 minutos por defecto), paginados y ordenados por
+        firstObservedAt e id descendentes. La ventana [from,to) intersecta el
+        ciclo de vida del evento: firstObservedAt hasta closedAt o, para abiertos,
+        lastObservedAt. La duración confirmada sigue siendo lastObservedAt menos
+        firstObservedAt; un cierre por falta de evidencia no inventa continuidad.
+        Por defecto consulta las últimas 24 horas, estado all, limit 50 y offset 0.
+        El intervalo máximo solicitado es 30 días. state=open no significa
+        active=true: active requiere evidencia reciente, captura no parcial y
+        versión vigente del catálogo. Conserva históricos aunque desaparezca el
+        recorrido; lineId es null en ese caso y línea/ramal son los originales.
+        Los indicadores de captura describen el estado actual, no todo el período.
+      tags: [lines]
+      parameters:
+        - name: from
+          in: query
+          schema: {type: string, format: date-time}
+          description: RFC3339; por defecto to menos 24 horas.
+        - name: to
+          in: query
+          schema: {type: string, format: date-time}
+          description: RFC3339; por defecto ahora. No permite futuro salvo el skew de un minuto.
+        - name: state
+          in: query
+          schema: {type: string, enum: [all, open, closed], default: all}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+        - name: offset
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        "200":
+          description: Página de eventos confirmados; incluye motivos de cierre y estado actual de captura.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BunchingEventPage"}
+        "400":
+          description: Filtros desconocidos, repetidos, fechas, estado o paginación inválidos.
+        "500":
+          description: Error de consulta.
+        "503":
+          description: Servicio no configurado.
+        "504":
+          description: Tiempo de consulta agotado.
+  /lines/{id}/bunching:
+    get:
+      operationId: getLineBunching
+      summary: Pares de vehículos próximos del recorrido y sentido
+      description: >
+        Pares independientes a <=200 m, confirmados por al menos dos muestras
+        donde avanzaron ambos timestamps y duración GPS no menor a
+        config.BunchingMinimumDuration (15 minutos por defecto). Los encuentros más
+        cortos siguen almacenados pero no se publican. No produce grupos, colores ni severidad.
+        Las identidades GCBA distintas no se mezclan aunque compartan destino GTFS.
+        Devuelve pairs vacío si no hay datos analizados, la captura es parcial o
+        tiene más de cinco minutos. Una línea sin equivalencia devuelve mapped=false.
+        confirmationPending identifica la tolerancia ante una revisión sin un vehículo;
+        la ausencia no demuestra separación. No acepta parámetros de query.
+      tags: [lines]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: integer, format: int64, minimum: 1}
+      responses:
+        "200":
+          description: Estado realtime y pares confirmados; nunca confunde falta de datos con cero eventos medidos.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BunchingCurrent"}
+        "400":
+          description: ID o parámetros inválidos.
+        "404":
+          description: La línea no existe.
+        "500":
+          description: Error de consulta.
+        "503":
+          description: Servicio no configurado.
+        "504":
+          description: Tiempo de consulta agotado.
   /lines/{id}:
     get:
       operationId: getLine
@@ -569,6 +655,102 @@ paths:
 
 components:
   schemas:
+    BunchingPoint:
+      type: object
+      required: [longitude, latitude]
+      properties:
+        longitude: {type: number, minimum: -180, maximum: 180}
+        latitude: {type: number, minimum: -90, maximum: 90}
+    BunchingScope:
+      type: object
+      required: [gcbaRouteId, gcbaDirection, gtfsRouteId, gtfsDirectionId, shapeId, shapeHash]
+      properties:
+        gcbaRouteId: {type: string}
+        gcbaDirection: {type: integer, enum: [0, 1]}
+        gtfsRouteId: {type: string}
+        gtfsDirectionId: {type: integer, enum: [0, 1]}
+        shapeId: {type: string}
+        shapeHash: {type: string, description: Huella operacional de la versión geométrica.}
+    BunchingPair:
+      type: object
+      required: [id, line, branch, scope, vehicleA, vehicleB, firstObservedAt, lastObservedAt, lastConfirmedCaptureAt, observedAAt, observedBAt, minimumDistanceMeters, distanceMeters, positionA, positionB, observations, representativePoint, durationSeconds, confirmationPending]
+      properties:
+        id: {type: integer, format: int64}
+        line: {type: string}
+        branch: {type: string}
+        scope: {$ref: "#/components/schemas/BunchingScope"}
+        vehicleA: {type: string}
+        vehicleB: {type: string}
+        firstObservedAt: {type: string, format: date-time}
+        lastObservedAt: {type: string, format: date-time}
+        lastConfirmedCaptureAt:
+          type: string
+          format: date-time
+          description: Recepción de la última captura que aportó dos timestamps GPS nuevos; las respuestas repetidas no lo prolongan.
+        observedAAt: {type: string, format: date-time}
+        observedBAt: {type: string, format: date-time}
+        minimumDistanceMeters: {type: number, minimum: 0}
+        distanceMeters: {type: number, minimum: 0, maximum: 200}
+        positionA: {$ref: "#/components/schemas/BunchingPoint"}
+        positionB: {$ref: "#/components/schemas/BunchingPoint"}
+        observations: {type: integer, minimum: 2}
+        representativePoint: {$ref: "#/components/schemas/BunchingPoint"}
+        durationSeconds:
+          type: number
+          minimum: 0
+          description: Diferencia entre último y primer instante confirmado, no tiempo desde ahora ni hasta el cierre. La API exige config.BunchingMinimumDuration (900 segundos por defecto).
+        confirmationPending: {type: boolean}
+    BunchingHistoricalEvent:
+      allOf:
+        - $ref: "#/components/schemas/BunchingPair"
+        - type: object
+          required: [lineId, state, active, closedAt, closeReason]
+          properties:
+            lineId:
+              type: integer
+              format: int64
+              nullable: true
+              description: Recorrido vinculado sólo si geometría y equivalencia RT-GTFS siguen vigentes.
+            state: {type: string, enum: [open, closed]}
+            active: {type: boolean}
+            closedAt: {type: string, format: date-time, nullable: true}
+            closeReason:
+              type: string
+              enum: ["", separated, missing, expired, identity_changed]
+              description: separated requiere ambas posiciones frescas y nuevas; los demás motivos no prueban separación.
+    BunchingEventPage:
+      type: object
+      required: [from, to, state, total, limit, offset, latestCaptureAt, captureAgeSeconds, partial, stale, events]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        state: {type: string, enum: [all, open, closed]}
+        total: {type: integer, format: int64, minimum: 0}
+        limit: {type: integer, minimum: 1, maximum: 200}
+        offset: {type: integer, minimum: 0}
+        latestCaptureAt: {type: string, format: date-time, nullable: true}
+        captureAgeSeconds: {type: number, nullable: true, minimum: 0}
+        partial: {type: boolean}
+        stale: {type: boolean}
+        events:
+          type: array
+          items: {$ref: "#/components/schemas/BunchingHistoricalEvent"}
+    BunchingCurrent:
+      type: object
+      required: [lineId, line, branch, direction, mapped, latestCaptureAt, captureAgeSeconds, partial, stale, pairs]
+      properties:
+        lineId: {type: integer, format: int64}
+        line: {type: string}
+        branch: {type: string}
+        direction: {type: integer, enum: [0, 1]}
+        mapped: {type: boolean}
+        latestCaptureAt: {type: string, format: date-time, nullable: true}
+        captureAgeSeconds: {type: number, nullable: true, minimum: 0}
+        partial: {type: boolean}
+        stale: {type: boolean}
+        pairs:
+          type: array
+          items: {$ref: "#/components/schemas/BunchingPair"}
     TransferRanking:
       type: object
       description: >

@@ -52,18 +52,23 @@ WHERE NOT EXISTS (
 CREATE UNIQUE INDEX idx_gtfs_eligible_routes_route_id
 ON gtfs_eligible_routes (route_id);
 
--- El modelo final define un recorrido como route_id + direction_id. Abortamos
--- si otro feed rompe esa condición en vez de mezclar geometrías silenciosamente.
+-- El modelo final define un recorrido como route_id + direction_id. El feed
+-- marca con exceptional=1 desvíos temporales que pueden tener otros shapes; no
+-- forman la topología estable. Validamos y transformamos sólo los viajes
+-- regulares, y abortamos si esos viajes rompen la identidad del modelo.
 DO $$
 BEGIN
     IF EXISTS (
         SELECT 1
         FROM vialis.gtfs_trips_raw trip
         JOIN gtfs_eligible_routes eligible ON eligible.route_id = trip.route_id
-        WHERE direction_id IS NULL
-            OR direction_id NOT IN (0, 1)
-            OR shape_id IS NULL
-            OR shape_id = ''
+        WHERE trip.exceptional = 0
+          AND (
+              direction_id IS NULL
+              OR direction_id NOT IN (0, 1)
+              OR shape_id IS NULL
+              OR shape_id = ''
+          )
     ) THEN
         RAISE EXCEPTION
             'El feed contiene direction_id inválido o shape_id vacío';
@@ -73,6 +78,7 @@ BEGIN
         SELECT 1
         FROM vialis.gtfs_trips_raw trip
         JOIN gtfs_eligible_routes eligible ON eligible.route_id = trip.route_id
+        WHERE trip.exceptional = 0
         GROUP BY trip.route_id, trip.direction_id
         HAVING COUNT(DISTINCT shape_id) <> 1
     ) THEN
@@ -120,6 +126,7 @@ JOIN gtfs_eligible_routes eligible
     ON eligible.route_id = t.route_id
 JOIN gtfs_stop_times_seconds st
     ON st.trip_id = t.trip_id
+WHERE t.exceptional = 0
 GROUP BY
     t.route_id,
     t.direction_id,

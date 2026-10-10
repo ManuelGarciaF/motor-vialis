@@ -44,6 +44,11 @@ func main() {
 	}
 	linesService := app.NewLinesService(database)
 	transfersService := app.NewCombinacionesService(database)
+	bunchingService, err := app.NewBunchingService(database)
+	if err != nil {
+		logger.Error("could not configure bunching")
+		os.Exit(1)
+	}
 
 	handler := httpapi.NewHandler(
 		logger,
@@ -53,6 +58,7 @@ func main() {
 		linesService,
 		transfersService,
 		config.SimulationTimeout,
+		bunchingService,
 	)
 
 	server := &http.Server{

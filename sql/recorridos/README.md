@@ -10,6 +10,24 @@ o se obtiene como snapshot externo compatible, y se extrae en
 `colectivos-gtfs/`. La carga requiere juntos los siete archivos enumerados más
 abajo; no puede reconstruir los faltantes a partir de los demás.
 
+## Esquema operacional realtime (H0011)
+
+`migrar_realtime.sql` agrega capturas, posiciones raw particionadas, eventos y
+pasos a una base existente. No modifica GTFS ni equivalencias. Se aplica con
+`psql "$DATABASE_URL" -f sql/recorridos/migrar_realtime.sql`; las bases nuevas ya
+incluyen las tablas en `sql/ddl.sql`. Las particiones y su retención se mantienen
+desde el repositorio realtime, no desde el ETL GTFS. Ver
+[`docs/h0011_aglutinaciones.md`](../../docs/h0011_aglutinaciones.md) para operación,
+pruebas, retención y preservación de identidad histórica. La tabla preparatoria
+`pasos_colectivos` no se utiliza: la regularidad fue descartada.
+
+`migrar_aglutinaciones.sql` extiende ese esquema para fase 4: cobertura y
+fingerprints de capturas, timestamps confirmatorios y motivos de cierre de
+eventos, nombres históricos e índice de consulta global. Aplicar antes de
+actualizar el worker/API; ver
+[`docs/h0011_aglutinaciones.md`](../../docs/h0011_aglutinaciones.md). No reconstruye
+eventos de raw histórico ni modifica las equivalencias.
+
 ## Jerarquía de GTFS
 
 GTFS no relaciona una línea directamente con sus paradas. La relación atraviesa
@@ -119,12 +137,18 @@ Ejemplos:
 La separación es una convención de Vialis, no una regla definida por GTFS. Por
 eso `nombre_publico` conserva siempre el valor original.
 
-### `trip_id`
+### `trip_id` y `exceptional`
 
-Identifica una salida programada. Diferentes `trip_id` pueden repetir exactamente
-la misma geometría y secuencia de paradas, cambiando solamente sus horarios. No
-se guarda como entidad final porque el objetivo de este módulo es obtener la
-topología del recorrido, no cada servicio horario.
+`trip_id` identifica una salida programada. Diferentes `trip_id` pueden repetir
+exactamente la misma geometría y secuencia de paradas, cambiando solamente sus
+horarios. No se guarda como entidad final porque el objetivo de este módulo es
+obtener la topología del recorrido, no cada servicio horario.
+
+`exceptional` es una extensión del feed: `1` identifica servicios o desvíos
+temporales, que pueden publicar shapes distintos para el mismo
+`route_id + direction_id`. Las filas raw se conservan, pero la transformación
+final usa únicamente `exceptional = 0`; una excepción no reemplaza la topología
+estable del recorrido.
 
 ### `direction_id`
 
@@ -166,9 +190,11 @@ Representa un ramal en una dirección. Su identidad lógica es:
 gtfs_route_id + direction_id
 ```
 
-Para este feed, cada combinación tiene exactamente un `shape_id`. La
-transformación valida esa condición y se detiene si un feed futuro contiene más
-de una geometría para la misma combinación.
+Para los viajes regulares (`exceptional = 0`), cada combinación tiene
+exactamente un `shape_id`. La transformación valida esa condición y se detiene
+si un feed futuro contiene más de una geometría regular para la misma
+combinación. Los shapes excepcionales permanecen auditables en staging, pero no
+compiten para elegir el recorrido canónico.
 
 Como existen muchos viajes programados por recorrido, se elige un viaje
 canónico con estas prioridades:
@@ -180,6 +206,22 @@ canónico con estas prioridades:
 `tiempo_total_minutos` no se toma solamente del viaje canónico: se calcula como
 la mediana de las duraciones de todos los viajes del mismo
 `route_id + direction_id`.
+
+### `vialis.equivalencias_recorridos_gcba`
+
+Guarda el resultado final del matching entre la identidad
+`gcba_route_id + gcba_direction` de la API realtime y la identidad lógica
+`gtfs_route_id + gtfs_direction_id`. Cada identidad GCBA tiene un único destino,
+pero varias pueden apuntar al mismo recorrido GTFS.
+
+No referencia `id_recorrido`: ese ID interno se reinicia al reconstruir GTFS.
+Para resolverlo, las consultas unen las dos columnas GTFS con
+`vialis.recorridos`.
+
+La fuente versionada es `cargar_equivalencias_gcba.sql`: reemplaza todo el
+contenido con `TRUNCATE` e `INSERT`. No guarda cómo se obtuvo cada match; sólo el
+resultado definitivo. En bases existentes, la tabla se crea una vez con
+`migrar_equivalencias_gcba.sql`.
 
 ### `vialis.paradas`
 
@@ -391,6 +433,21 @@ Los cuatro pasos los ejecuta el inicializador, que arma la base entera:
 docker compose up -d --build
 go run ./cmd/initdb
 ```
+
+Para reemplazar sólo GTFS en una base existente se usa:
+
+```bash
+go run ./cmd/reload-gtfs \
+  -database-url "$DATABASE_URL" \
+  -data-dir ./colectivos-gtfs
+```
+
+El comando valida los siete encabezados y las migraciones requeridas antes de
+modificar staging. Después de transformar recorridos reconstruye
+`conexiones_recorridos`, `combinaciones_lineas` y
+`combinaciones_lineas_flujos`; conserva viajes, H3, matriz O-D y tarifas. Antes
+de usarlo sobre una base antigua deben estar aplicadas
+`migrar_tiempos_tramos.sql` y `../migrar_combinaciones.sql`.
 
 La importación del paso 2 la hace `internal/database/bootstrap`, que copia cada
 archivo con `COPY` en la tabla que le asigna la tabla de correspondencias de más

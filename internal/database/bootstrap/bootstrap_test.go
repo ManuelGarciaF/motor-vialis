@@ -223,6 +223,38 @@ func TestEmbeddedScriptsAreExecutable(t *testing.T) {
 	}
 }
 
+func TestDDLModelsGCBAEquivalencesByStableGTFSIdentity(t *testing.T) {
+	start := strings.Index(scripts.DDL, "CREATE TABLE vialis.equivalencias_recorridos_gcba")
+	if start < 0 {
+		t.Fatal("ddl.sql no define la tabla de equivalencias GCBA")
+	}
+	end := strings.Index(scripts.DDL[start:], ");")
+	if end < 0 {
+		t.Fatal("la definición de equivalencias GCBA no termina")
+	}
+
+	table := scripts.DDL[start : start+end]
+	for _, required := range []string{
+		"gcba_route_id",
+		"gcba_direction",
+		"gtfs_route_id",
+		"gtfs_direction_id",
+		"PRIMARY KEY (gcba_route_id, gcba_direction)",
+	} {
+		if !strings.Contains(table, required) {
+			t.Errorf("la tabla de equivalencias no contiene %q", required)
+		}
+	}
+	for _, removed := range []string{"confianza", "evidencia", "metodo", "creado_en"} {
+		if strings.Contains(table, removed) {
+			t.Errorf("la tabla de equivalencias conserva la columna innecesaria %q", removed)
+		}
+	}
+	if strings.Contains(table, "REFERENCES vialis.recorridos") {
+		t.Error("la equivalencia no sobreviviría una recarga GTFS si referencia recorridos")
+	}
+}
+
 // Los scripts terminan en VACUUM ANALYZE, y PostgreSQL no lo acepta dentro de
 // una cadena de varias sentencias: cada uno tiene que viajar solo.
 func TestSplitStandaloneStatementsIsolatesVacuum(t *testing.T) {
