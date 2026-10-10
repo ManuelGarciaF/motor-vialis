@@ -19,13 +19,12 @@ func (r *BunchingRepository) FindRecurrence(ctx context.Context, id *int64, now 
 		return page, err
 	}
 	defer tx.Rollback(context.Background())
-	sql := (&RealtimeRepository{schema: r.schema}).sql
 	// Clip evidence to [from,to), then expand its local hours. Endpoints are
 	// half-open: an encounter ending exactly at 09:00 does not occupy 09–10.
 	// ClosedAt is deliberately ignored: missing/expired closures cannot extend
 	// the time for which proximity was observed. Duration qualification uses the
 	// complete encounter, not the clipped fragment.
-	rows, err := tx.Query(ctx, sql(findBunchingRecurrenceSQL),
+	rows, err := tx.Query(ctx, r.sql(findBunchingRecurrenceSQL),
 		page.From, page.To, recurrence.TimeZone, policy.MinimumObservations,
 		policy.MinimumDuration.Seconds(), id, recurrence.MinimumDays, policy.MinimumSpeedMetersPerSecond,
 	)

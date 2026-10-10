@@ -1,55 +1,21 @@
 package postgres
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestBunchingIntegration(t *testing.T) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback(context.Background())
-	schema := fmt.Sprintf("bunching_test_%d", time.Now().UnixNano())
-	if _, err = tx.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize()); err != nil {
-		t.Fatal(err)
-	}
-	repo := &RealtimeRepository{database: tx, retentionDays: 7, schema: schema}
-	for _, path := range []string{"migrar_realtime.sql", "migrar_aglutinaciones.sql", "migrar_aglutinaciones.sql"} {
-		data, err := os.ReadFile("../../../sql/recorridos/" + path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		script := strings.ReplaceAll(string(data), "\\set ON_ERROR_STOP on", "")
-		script = strings.ReplaceAll(script, "BEGIN;", "")
-		script = strings.ReplaceAll(script, "COMMIT;", "")
-		if _, err = tx.Exec(ctx, repo.sql(script)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	_, err = tx.Exec(ctx, repo.sql(`CREATE TABLE vialis.recorridos(id_recorrido bigint,gtfs_route_id text,direction_id smallint,gtfs_shape_id text,geom geometry(LineString,4326),linea text,ramal text);
+	fixture := newRealtimeFixture(t, time.Minute)
+	fixture.migrate("migrar_realtime.sql", "migrar_aglutinaciones.sql", "migrar_aglutinaciones.sql")
+	ctx, tx := fixture.ctx, fixture.tx
+	repo := fixture.realtimeRepository()
+	_, err := tx.Exec(ctx, repo.sql(`CREATE TABLE vialis.recorridos(id_recorrido bigint,gtfs_route_id text,direction_id smallint,gtfs_shape_id text,geom geometry(LineString,4326),linea text,ramal text);
  CREATE TABLE vialis.equivalencias_recorridos_gcba(gcba_route_id text,gcba_direction smallint,gtfs_route_id text,gtfs_direction_id smallint);
  INSERT INTO vialis.recorridos VALUES(1,'gtfs',0,'shape',ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.5 -34.6)',4326),'TEST','A');
  INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'gtfs',0),('another',0,'gtfs',0)`))
@@ -60,7 +26,7 @@ func TestBunchingIntegration(t *testing.T) {
 	if err = repo.EnableBunching(policy); err != nil {
 		t.Fatal(err)
 	}
-	reader := &BunchingRepository{database: tx, schema: schema}
+	reader := fixture.bunchingRepository()
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	capture := bunching.Capture{ReceivedAt: now, Stats: bunching.CaptureStats{TotalRows: 4, ValidRows: 4}}
 	for i, id := range []string{"a", "b", "c", "d"} {

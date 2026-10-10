@@ -2,11 +2,9 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
-	"github.com/jackc/pgx/v5"
 )
 
 func (r *BunchingRepository) FindHistory(ctx context.Context, q bunching.HistoryRequest, now time.Time, policy bunching.Policy) (bunching.EventPage, error) {
@@ -16,19 +14,12 @@ func (r *BunchingRepository) FindHistory(ctx context.Context, q bunching.History
 		return page, err
 	}
 	defer tx.Rollback(context.Background())
-	sql := (&RealtimeRepository{schema: r.schema}).sql
-	err = tx.QueryRow(ctx, sql(findLatestBunchingCaptureSQL)).Scan(&page.LatestCaptureAt, &page.Partial)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	capture, err := readBunchingCaptureState(ctx, tx, r.schema, now, policy)
+	if err != nil {
 		return page, err
 	}
-	if page.LatestCaptureAt != nil {
-		age := now.Sub(*page.LatestCaptureAt).Seconds()
-		if age < 0 {
-			age = 0
-		}
-		page.CaptureAgeSeconds = &age
-		page.Stale = now.Sub(*page.LatestCaptureAt) > policy.MaximumAge || page.LatestCaptureAt.After(now.Add(policy.MaximumFutureSkew))
-	}
+	page.LatestCaptureAt, page.CaptureAgeSeconds = capture.latestCaptureAt, capture.captureAgeSeconds
+	page.Partial, page.Stale = capture.partial, capture.stale
 	// Intersects the lifecycle interval with [from,to). Open events end at the
 	// last confirmation for filtering, not infinity; confirmed duration remains
 	// last-first even when the lifecycle ends later due to missing evidence.
@@ -36,11 +27,11 @@ func (r *BunchingRepository) FindHistory(ctx context.Context, q bunching.History
 		policy.MinimumObservations, q.To, q.From, q.State,
 		policy.MinimumDuration.Seconds(), policy.MinimumSpeedMetersPerSecond,
 	}
-	if err = tx.QueryRow(ctx, sql(countBunchingHistorySQL), args...).Scan(&page.Total); err != nil {
+	if err = tx.QueryRow(ctx, r.sql(countBunchingHistorySQL), args...).Scan(&page.Total); err != nil {
 		return page, err
 	}
 	args = append(args, q.Limit, q.Offset)
-	rows, err := tx.Query(ctx, sql(findBunchingHistorySQL), args...)
+	rows, err := tx.Query(ctx, r.sql(findBunchingHistorySQL), args...)
 	if err != nil {
 		return page, err
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
@@ -35,7 +34,7 @@ func NewRealtimeRepository(pool *pgxpool.Pool, retentionDays int) (*RealtimeRepo
 }
 
 func (r *RealtimeRepository) sql(query string) string {
-	return strings.ReplaceAll(query, "vialis.", pgx.Identifier{r.schema}.Sanitize()+".")
+	return queryInSchema(query, r.schema)
 }
 func utcDay(t time.Time) time.Time {
 	t = t.UTC()

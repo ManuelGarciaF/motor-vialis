@@ -1,54 +1,21 @@
 package postgres
 
 import (
-	"context"
 	"fmt"
-	"os"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
 	"github.com/ManuelGarciaF/vialis-motor/internal/config"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestBunchingRecurrenceIntegration(t *testing.T) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback(context.Background())
-	schema := fmt.Sprintf("bunching_recurrence_%d", time.Now().UnixNano())
-	if _, err := tx.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize()); err != nil {
-		t.Fatal(err)
-	}
-	writer := &RealtimeRepository{database: tx, schema: schema}
-	for _, path := range []string{"migrar_realtime.sql", "migrar_aglutinaciones.sql", "migrar_aglutinaciones.sql"} {
-		data, err := os.ReadFile("../../../sql/recorridos/" + path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		script := strings.ReplaceAll(string(data), "\\set ON_ERROR_STOP on", "")
-		script = strings.ReplaceAll(script, "BEGIN;", "")
-		script = strings.ReplaceAll(script, "COMMIT;", "")
-		if _, err := tx.Exec(ctx, writer.sql(script)); err != nil {
-			t.Fatal(err)
-		}
-	}
+	fixture := newRealtimeFixture(t, time.Minute)
+	fixture.migrate("migrar_realtime.sql", "migrar_aglutinaciones.sql", "migrar_aglutinaciones.sql")
+	ctx, tx, schema := fixture.ctx, fixture.tx, fixture.schema
+	writer := fixture.realtimeRepository()
 	if _, err := tx.Exec(ctx, writer.sql(`
  CREATE TABLE vialis.recorridos(id_recorrido bigint,gtfs_route_id text,direction_id smallint,gtfs_shape_id text,geom geometry(LineString,4326),linea text,ramal text);
  CREATE TABLE vialis.equivalencias_recorridos_gcba(gcba_route_id text,gcba_direction smallint,gtfs_route_id text,gtfs_direction_id smallint);
@@ -145,7 +112,7 @@ func TestBunchingRecurrenceIntegration(t *testing.T) {
 	if _, err := tx.Exec(ctx, "SET LOCAL TIME ZONE 'Pacific/Auckland'"); err != nil {
 		t.Fatal(err)
 	}
-	reader := &BunchingRepository{database: tx, schema: schema}
+	reader := fixture.bunchingRepository()
 	page, err := reader.FindRecurrence(ctx, nil, now, policy, recurrence)
 	if err != nil {
 		t.Fatal(err)

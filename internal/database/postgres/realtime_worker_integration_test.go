@@ -3,7 +3,6 @@ package postgres
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -16,8 +15,6 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
 	"github.com/ManuelGarciaF/vialis-motor/internal/realtime"
 	"github.com/ManuelGarciaF/vialis-motor/internal/transport/gcba"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type stoppingRealtimeRepository struct {
@@ -40,45 +37,18 @@ func (r *stoppingRealtimeRepository) StoreCapture(ctx context.Context, c bunchin
 // Exercises HTTP decoding -> worker -> COPY/mapping -> partitioned raw, without
 // contacting GCBA or retaining data in the user's schema.
 func TestRealtimeWorkerIntegration(t *testing.T) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback(context.Background())
-	schema := fmt.Sprintf("worker_test_%d", time.Now().UnixNano())
-	if _, err = tx.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize()); err != nil {
-		t.Fatal(err)
-	}
-	repo := &RealtimeRepository{database: tx, retentionDays: 7, schema: schema}
-	migration, err := os.ReadFile("../../../sql/recorridos/migrar_realtime.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := strings.ReplaceAll(string(migration), "\\set ON_ERROR_STOP on", "")
-	script = strings.ReplaceAll(script, "BEGIN;", "")
-	script = strings.ReplaceAll(script, "COMMIT;", "")
-	if _, err = tx.Exec(ctx, repo.sql(script)); err != nil {
-		t.Fatal(err)
-	}
-	_, err = tx.Exec(ctx, repo.sql(`CREATE TABLE vialis.recorridos(gtfs_route_id text,direction_id smallint,gtfs_shape_id text,geom geometry(LineString,4326));
+	fixture := newRealtimeFixture(t, 30*time.Second)
+	fixture.migrate("migrar_realtime.sql")
+	ctx, tx := fixture.ctx, fixture.tx
+	repo := fixture.realtimeRepository()
+	_, err := tx.Exec(ctx, repo.sql(`CREATE TABLE vialis.recorridos(gtfs_route_id text,direction_id smallint,gtfs_shape_id text,geom geometry(LineString,4326));
  CREATE TABLE vialis.equivalencias_recorridos_gcba(gcba_route_id text,gcba_direction smallint,gtfs_route_id text,gtfs_direction_id smallint);
  INSERT INTO vialis.recorridos VALUES('gtfs',0,'shape',ST_GeomFromText('LINESTRING(-58.38 -34.60,-58.39 -34.61)',4326));
  INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('route-1',0,'gtfs',0),('route-1',1,'gtfs',0)`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture, err := os.ReadFile("../../transport/gcba/testdata/vehicle-positions-normal.json")
+	payload, err := os.ReadFile("../../transport/gcba/testdata/vehicle-positions-normal.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +56,7 @@ func TestRealtimeWorkerIntegration(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(fixture)
+		_, _ = w.Write(payload)
 	}))
 	defer server.Close()
 	now := time.Date(2025, 1, 1, 0, 0, 30, 0, time.UTC)

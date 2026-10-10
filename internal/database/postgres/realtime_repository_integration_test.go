@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -10,45 +9,14 @@ import (
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestRealtimeRepositoryIntegration(t *testing.T) {
-	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback(context.Background())
-	schema := fmt.Sprintf("realtime_test_%d", time.Now().UnixNano())
-	_, err = tx.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize())
-	if err != nil {
-		t.Fatal(err)
-	}
-	repo := &RealtimeRepository{database: tx, retentionDays: 7, schema: schema}
-	script, err := os.ReadFile("../../../sql/recorridos/migrar_realtime.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	sql := strings.ReplaceAll(string(script), "\\set ON_ERROR_STOP on", "")
-	sql = strings.ReplaceAll(sql, "BEGIN;", "")
-	sql = strings.ReplaceAll(sql, "COMMIT;", "")
-	for range 2 {
-		if _, err := tx.Exec(ctx, repo.sql(sql)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	_, err = tx.Exec(ctx, repo.sql(`CREATE TABLE vialis.recorridos(id_recorrido bigint,gtfs_route_id text,direction_id smallint,gtfs_shape_id text,geom geometry(LineString,4326),UNIQUE(gtfs_route_id,direction_id));
+	fixture := newRealtimeFixture(t, 2*time.Minute)
+	fixture.migrate("migrar_realtime.sql", "migrar_realtime.sql")
+	ctx, tx, schema := fixture.ctx, fixture.tx, fixture.schema
+	repo := fixture.realtimeRepository()
+	_, err := tx.Exec(ctx, repo.sql(`CREATE TABLE vialis.recorridos(id_recorrido bigint,gtfs_route_id text,direction_id smallint,gtfs_shape_id text,geom geometry(LineString,4326),UNIQUE(gtfs_route_id,direction_id));
  CREATE TABLE vialis.equivalencias_recorridos_gcba(gcba_route_id text,gcba_direction smallint,gtfs_route_id text,gtfs_direction_id smallint,PRIMARY KEY(gcba_route_id,gcba_direction));
  INSERT INTO vialis.recorridos VALUES(1,'gtfs',1,'shape-original',ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.5 -34.7)',4326));
  INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'gtfs',1),('orphan',0,'absent',0)`))

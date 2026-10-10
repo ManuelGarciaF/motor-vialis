@@ -1,8 +1,6 @@
 package postgres
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -10,41 +8,13 @@ import (
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestBunchingSpeedBackfillIntegration(t *testing.T) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback(context.Background())
-	schema := fmt.Sprintf("bunching_backfill_%d", time.Now().UnixNano())
-	if _, err := tx.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize()); err != nil {
-		t.Fatal(err)
-	}
-	repo := &RealtimeRepository{database: tx, schema: schema}
-	for _, file := range []string{"migrar_realtime.sql", "migrar_aglutinaciones.sql"} {
-		data, err := os.ReadFile("../../../sql/recorridos/" + file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		script := strings.NewReplacer("\\set ON_ERROR_STOP on", "", "BEGIN;", "", "COMMIT;", "").Replace(string(data))
-		if _, err := tx.Exec(ctx, repo.sql(script)); err != nil {
-			t.Fatal(err)
-		}
-	}
+	fixture := newRealtimeFixture(t, time.Minute)
+	fixture.migrate("migrar_realtime.sql", "migrar_aglutinaciones.sql")
+	ctx, tx := fixture.ctx, fixture.tx
+	repo := fixture.realtimeRepository()
 	start := time.Date(2026, 10, 8, 23, 50, 0, 0, time.UTC)
 	end := start.Add(20 * time.Minute)
 	if _, err := tx.Exec(ctx, repo.sql(`CREATE TABLE vialis.posiciones_colectivos_raw_test PARTITION OF vialis.posiciones_colectivos_raw FOR VALUES FROM ('2026-10-08') TO ('2026-10-10')`)); err != nil {

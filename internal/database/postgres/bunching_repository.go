@@ -26,6 +26,10 @@ func NewBunchingRepository(pool *pgxpool.Pool) *BunchingRepository {
 
 var _ bunching.CurrentRepository = (*BunchingRepository)(nil)
 
+func (r *BunchingRepository) sql(query string) string {
+	return queryInSchema(query, r.schema)
+}
+
 func (r *BunchingRepository) FindCurrent(ctx context.Context, id int64, now time.Time, policy bunching.Policy) (bunching.Current, error) {
 	result := bunching.Current{LineID: id, Stale: true, Partial: true, Pairs: []bunching.ActivePair{}}
 	tx, err := r.database.Begin(ctx)
@@ -36,32 +40,24 @@ func (r *BunchingRepository) FindCurrent(ctx context.Context, id int64, now time
 	// Consistent read of line metadata, capture flags and event state in one
 	// statement would be possible too; use a read-only repeatable-read tx in API.
 	// Begin() supports nested transactions in integration tests.
-	sql := (&RealtimeRepository{schema: r.schema}).sql
 	var route, hash string
-	err = tx.QueryRow(ctx, sql(findBunchingLineSQL), id).Scan(&route, &result.Direction, &result.Line, &result.Branch, &hash, &result.Mapped)
+	err = tx.QueryRow(ctx, r.sql(findBunchingLineSQL), id).Scan(&route, &result.Direction, &result.Line, &result.Branch, &hash, &result.Mapped)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, lines.ErrNotFound
 	}
 	if err != nil {
 		return result, err
 	}
-	err = tx.QueryRow(ctx, sql(findLatestBunchingCaptureSQL)).Scan(&result.LatestCaptureAt, &result.Partial)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return result, tx.Commit(ctx)
-	}
+	capture, err := readBunchingCaptureState(ctx, tx, r.schema, now, policy)
 	if err != nil {
 		return result, err
 	}
-	age := now.Sub(*result.LatestCaptureAt).Seconds()
-	if age < 0 {
-		age = 0
-	}
-	result.CaptureAgeSeconds = &age
-	result.Stale = now.Sub(*result.LatestCaptureAt) > policy.MaximumAge || result.LatestCaptureAt.After(now.Add(policy.MaximumFutureSkew))
+	result.LatestCaptureAt, result.CaptureAgeSeconds = capture.latestCaptureAt, capture.captureAgeSeconds
+	result.Partial, result.Stale = capture.partial, capture.stale
 	if result.Partial || result.Stale || !result.Mapped {
 		return result, tx.Commit(ctx)
 	}
-	rows, err := tx.Query(ctx, sql(findCurrentBunchingSQL),
+	rows, err := tx.Query(ctx, r.sql(findCurrentBunchingSQL),
 		route, result.Direction, hash, policy.MinimumObservations,
 		now.Add(-policy.MaximumAge), now.Add(policy.MaximumFutureSkew),
 		policy.MinimumDuration.Seconds(), policy.MinimumSpeedMetersPerSecond,

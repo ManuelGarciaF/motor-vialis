@@ -314,6 +314,12 @@ TEST_DATABASE_URL="$DATABASE_URL" go test ./internal/database/postgres \
 psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/audit-h0011-bunching.sql
 ```
 
+Los tests realtime/aglutinaciones comparten `realtime_fixture_test.go`: conexión,
+contexto, transacción y schema aislado, con rollback mediante `t.Cleanup` antes de
+cerrar el pool. Cada test aplica explícitamente las migraciones que necesita;
+los casos legacy y de idempotencia conservan su orden y repeticiones. No se
+comparten datos entre fixtures ni se modifica el schema `vialis` del proyecto.
+
 Las pruebas cubren cliente defensivo, recuperación/shutdown, particiones,
 idempotencia, borde geodésico 199,99/200/200,01 m, confirmación, repeticiones,
 stale/parciales, cierres, recarga de catálogo, filtros/paginación y errores HTTP.
