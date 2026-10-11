@@ -44,12 +44,12 @@ func ValidateCut(cut Cut, policy Policy) error {
 			continue
 		}
 
+		// Un punto repetido (segmento de largo 0) es redundante, no invalido: lo
+		// agrega cualquier editor al pegar un trazado sobre una calle, y PostGIS
+		// lo ignora al bufferar el corte. Se saltea en vez de rechazar todo.
 		segmentLength := route.DistanceMeters(positions[index-1], position)
 		if segmentLength == 0 {
-			return invalidCut(fmt.Sprintf(
-				"cut.coordinates[%d] must differ from the previous position",
-				index,
-			))
+			continue
 		}
 		lengthMeters += segmentLength
 		if lengthMeters > policy.MaximumCutLengthMeters {
@@ -58,6 +58,10 @@ func ValidateCut(cut Cut, policy Policy) error {
 				policy.MaximumCutLengthMeters,
 			))
 		}
+	}
+	// Un corte sin largo (todos los puntos en el mismo lugar) si es degenerado.
+	if lengthMeters == 0 {
+		return invalidCut("cut must have a positive length")
 	}
 	return nil
 }
