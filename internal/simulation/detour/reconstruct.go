@@ -245,7 +245,13 @@ func stopDirection(input route.Route, order int) float64 {
 }
 
 func neighboringPosition(input route.Route, order int, forward bool) (route.Position, bool) {
-	const minimumSeparationMeters = 0.1
+	// La separacion minima tiene que ser suficiente para salir del entorno de la
+	// parada: los tramos que llegan y salen suelen compartir un vertice a pocos
+	// metros de la parada, y con un umbral chico (0.1 m) se tomaba ESE mismo
+	// punto como vecino de los dos lados -> before == after -> rumbo 0 espurio,
+	// que despues no engancha con la calle real (bug observado en paradas sobre
+	// avenidas con calzadas separadas). 5 m deja un vecino a cada lado de verdad.
+	const minimumSeparationMeters = 5.0
 	stop := input.Stops[order].Position
 	if forward && order < len(input.Stops)-1 && input.Stops[order].PathToNext != nil {
 		for _, position := range input.Stops[order].PathToNext.Positions {
