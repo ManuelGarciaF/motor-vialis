@@ -89,15 +89,20 @@ JOIN LATERAL (
         ) candidate
         WHERE candidate.direction_degrees <= $2::double precision
     ) located
-    -- A one-centimetre remainder absorbs topology round-off at the generated
-    -- buffer boundary without admitting a meaningful excursion outside it. A
-    -- blocked edge skips these checks: it only has to win the ranking to leave
-    -- the point unmatched.
+    -- La linea punto->enganche puede asomarse un poco fuera del area: los anclas
+    -- de un intervalo caen JUSTO sobre el borde del area (es, por definicion,
+    -- donde el recorrido entra/sale), asi que su enganche a la calle de al lado
+    -- casi siempre se sale unos centimetros. Con la tolerancia vieja de 1 cm eso
+    -- rechazaba la calle correcta y el ancla quedaba sin enganchar
+    -- (anchor_not_matched) aunque hubiera una calle perfecta a 0.5 m. 2 m absorbe
+    -- ese borde sin admitir un enganche que de verdad se vaya del area (esos se
+    -- van muchos metros). Una arista bloqueada saltea estos checks: solo tiene
+    -- que ganar el ranking para dejar al punto sin enganchar.
     WHERE located.blocked OR (
         ST_Length(ST_Difference(
             ST_MakeLine(requested.geom, located.snapped_geom),
             context.search_area
-          )::geography) <= 0.01
+          )::geography) <= 2.0
         AND NOT ST_Intersects(
             ST_MakeLine(requested.geom, located.snapped_geom),
             context.forbidden_area

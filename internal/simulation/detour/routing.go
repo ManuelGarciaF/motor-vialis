@@ -37,6 +37,10 @@ type RoutingRequest struct {
 	Traffic  []traffic.Segment
 	Points   []RoutingPoint
 	Pairs    []PointPair
+	// GraphMarginMeters agranda el area SOLO para construir el grafo local (no
+	// mueve las anclas), para reconectar un ancla que cayo sobre el borde. 0 = sin
+	// margen (intento normal). Ver Service.Plan.
+	GraphMarginMeters float64
 }
 
 // GraphPath is the fastest traffic-priced path for one point pair.

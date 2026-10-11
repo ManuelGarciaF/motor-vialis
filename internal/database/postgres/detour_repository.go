@@ -257,6 +257,7 @@ func (repository *DetourRepository) Route(
 		policy.TrafficEstimateMaximumSamples,
 		policy.TrafficEstimateMinimumSamples,
 		defaultSpeedKPH(request.Traffic, policy.DefaultSpeedKPH),
+		request.GraphMarginMeters,
 	); err != nil {
 		return detour.RoutingResult{}, fmt.Errorf("create detour traffic graph: %w", err)
 	}
