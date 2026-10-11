@@ -1,7 +1,11 @@
 WITH input AS (
     SELECT
+        -- The cut arrives as a GeoJSON MultiLineString (a single-branch cut is
+        -- encoded as a MultiLineString with one line), so the geometry is left
+        -- untyped instead of forced to geometry(LineString). ST_Buffer and
+        -- ST_Intersects below operate on both line and multiline geometries.
         ST_SetSRID(ST_GeomFromGeoJSON($1::jsonb), 4326)
-            ::geometry(LineString, 4326) AS cut,
+            ::geometry AS cut,
         $2::double precision AS forbidden_radius_meters,
         $3::double precision AS search_radius_meters
 ), active_graph AS (

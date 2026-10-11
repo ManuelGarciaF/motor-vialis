@@ -15,48 +15,60 @@ func ValidateCut(cut Cut, policy Policy) error {
 	if err := policy.validate(); err != nil {
 		return err
 	}
-	positions := cut.LineString.Positions
-	if len(positions) < 2 {
-		return invalidCut("cut.coordinates must contain at least two positions")
-	}
-	if len(positions) > policy.MaximumCutPositions {
-		return invalidCut(fmt.Sprintf(
-			"cut.coordinates must contain at most %d positions",
-			policy.MaximumCutPositions,
-		))
+	if len(cut.Lines) == 0 {
+		return invalidCut("cut must contain at least one line")
 	}
 
+	// La longitud se acumula a traves de todas las ramas: el limite acota el
+	// corte completo, no cada rama por separado. El conteo de posiciones si se
+	// aplica por rama (MaximumCutPositions es holgado).
 	var lengthMeters float64
-	for index, position := range positions {
-		if !finite(position.Latitude) || position.Latitude < -90 || position.Latitude > 90 {
+	for lineIndex, line := range cut.Lines {
+		positions := line.Positions
+		if len(positions) < 2 {
 			return invalidCut(fmt.Sprintf(
-				"cut.coordinates[%d].latitude must be between -90 and 90",
-				index,
+				"cut.lines[%d].coordinates must contain at least two positions",
+				lineIndex,
 			))
 		}
-		if !finite(position.Longitude) || position.Longitude < -180 || position.Longitude > 180 {
+		if len(positions) > policy.MaximumCutPositions {
 			return invalidCut(fmt.Sprintf(
-				"cut.coordinates[%d].longitude must be between -180 and 180",
-				index,
+				"cut.lines[%d].coordinates must contain at most %d positions",
+				lineIndex, policy.MaximumCutPositions,
 			))
-		}
-		if index == 0 {
-			continue
 		}
 
-		// Un punto repetido (segmento de largo 0) es redundante, no invalido: lo
-		// agrega cualquier editor al pegar un trazado sobre una calle, y PostGIS
-		// lo ignora al bufferar el corte. Se saltea en vez de rechazar todo.
-		segmentLength := route.DistanceMeters(positions[index-1], position)
-		if segmentLength == 0 {
-			continue
-		}
-		lengthMeters += segmentLength
-		if lengthMeters > policy.MaximumCutLengthMeters {
-			return invalidCut(fmt.Sprintf(
-				"cut length must not exceed %.0f meters",
-				policy.MaximumCutLengthMeters,
-			))
+		for index, position := range positions {
+			if !finite(position.Latitude) || position.Latitude < -90 || position.Latitude > 90 {
+				return invalidCut(fmt.Sprintf(
+					"cut.lines[%d].coordinates[%d].latitude must be between -90 and 90",
+					lineIndex, index,
+				))
+			}
+			if !finite(position.Longitude) || position.Longitude < -180 || position.Longitude > 180 {
+				return invalidCut(fmt.Sprintf(
+					"cut.lines[%d].coordinates[%d].longitude must be between -180 and 180",
+					lineIndex, index,
+				))
+			}
+			if index == 0 {
+				continue
+			}
+
+			// Un punto repetido (segmento de largo 0) es redundante, no invalido: lo
+			// agrega cualquier editor al pegar un trazado sobre una calle, y PostGIS
+			// lo ignora al bufferar el corte. Se saltea en vez de rechazar todo.
+			segmentLength := route.DistanceMeters(positions[index-1], position)
+			if segmentLength == 0 {
+				continue
+			}
+			lengthMeters += segmentLength
+			if lengthMeters > policy.MaximumCutLengthMeters {
+				return invalidCut(fmt.Sprintf(
+					"cut length must not exceed %.0f meters",
+					policy.MaximumCutLengthMeters,
+				))
+			}
 		}
 	}
 	// Un corte sin largo (todos los puntos en el mismo lugar) si es degenerado.
@@ -68,7 +80,7 @@ func ValidateCut(cut Cut, policy Policy) error {
 
 // ClassifyStops applies the forced, optional, and required stop radii to an
 // already validated cut. Distance is measured to the closest great-circle
-// segment rather than to its vertices.
+// segment of any branch rather than to its vertices.
 func ClassifyStops(
 	input route.Route,
 	cut Cut,
@@ -76,7 +88,7 @@ func ClassifyStops(
 ) []ClassifiedStop {
 	result := make([]ClassifiedStop, len(input.Stops))
 	for index, stop := range input.Stops {
-		distance := distanceToLineString(stop.Position, cut.LineString)
+		distance := distanceToCut(stop.Position, cut)
 		availability := StopRequired
 		switch {
 		case distance <= policy.ForcedStopRadiusMeters:
@@ -92,6 +104,15 @@ func ClassifyStops(
 		}
 	}
 	return result
+}
+
+// distanceToCut is the distance from a point to the nearest branch of the cut.
+func distanceToCut(point route.Position, cut Cut) float64 {
+	minimum := math.Inf(1)
+	for _, line := range cut.Lines {
+		minimum = math.Min(minimum, distanceToLineString(point, line))
+	}
+	return minimum
 }
 
 func distanceToLineString(point route.Position, line route.LineString) float64 {

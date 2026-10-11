@@ -13,9 +13,9 @@ import (
 )
 
 type detourRequest struct {
-	Route     *route.Route      `json:"route"`
-	Cut       *route.LineString `json:"cut"`
-	Criterion *detour.Criterion `json:"criterion"`
+	Route     *route.Route           `json:"route"`
+	Cut       *route.MultiLineString `json:"cut"`
+	Criterion *detour.Criterion      `json:"criterion"`
 }
 
 type detourResponse struct {
@@ -109,7 +109,7 @@ func (handler *Handler) createDetour(writer http.ResponseWriter, request *http.R
 	defer cancel()
 	result, err := handler.detours.Plan(ctx, detour.Input{
 		Route:     *body.Route,
-		Cut:       detour.Cut{LineString: *body.Cut},
+		Cut:       detour.Cut{Lines: body.Cut.Lines},
 		Criterion: *body.Criterion,
 	})
 	if err != nil {

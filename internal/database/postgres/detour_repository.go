@@ -32,6 +32,12 @@ var createDetourCombinationsSQL string
 //go:embed find_detour_paths.sql
 var findDetourPathsSQL string
 
+//go:embed find_detour_paths_retry.sql
+var findDetourPathsRetrySQL string
+
+//go:embed find_detour_uturn_pairs.sql
+var findDetourUturnPairsSQL string
+
 //go:embed find_detour_topology_pairs.sql
 var findDetourTopologyPairsSQL string
 
@@ -66,7 +72,7 @@ func (repository *DetourRepository) Analyze(
 	cut detour.Cut,
 	policy detour.Policy,
 ) (detour.Analysis, error) {
-	encodedCut, err := json.Marshal(cut.LineString)
+	encodedCut, err := json.Marshal(route.MultiLineString{Lines: cut.Lines})
 	if err != nil {
 		return detour.Analysis{}, fmt.Errorf("encode detour cut: %w", err)
 	}
@@ -325,6 +331,52 @@ func (repository *DetourRepository) Route(
 	}
 	topologyRows.Close()
 
+	// Segunda pasada. Los pares que la pasada principal descartó por un giro en U
+	// (sólo ésos; no los que se cayeron por otro motivo, como servir un solo lado)
+	// se re-rutean aislados. En la llamada bulk (todos los puntos juntos) ese giro
+	// suele ser espurio: un punto intermedio parte una arista e impone su lado
+	// sobre el camino de otro par. Re-ruteados con sólo sus dos puntos esos desvíos
+	// legales salen limpios; los que aun así giran en U son un U-turn real y el
+	// retry los descarta de nuevo.
+	retryPairs, err := readUturnPairs(ctx, transaction)
+	if err != nil {
+		return detour.RoutingResult{}, err
+	}
+	if len(retryPairs) > 0 {
+		retryJSON, err := json.Marshal(retryPairs)
+		if err != nil {
+			return detour.RoutingResult{}, fmt.Errorf("encode detour retry pairs: %w", err)
+		}
+		retryRows, err := transaction.Query(ctx, findDetourPathsRetrySQL, string(retryJSON))
+		if err != nil {
+			return detour.RoutingResult{}, fmt.Errorf("retry detour paths: %w", err)
+		}
+		for retryRows.Next() {
+			var path detour.GraphPath
+			var encodedGeometry []byte
+			if err := retryRows.Scan(
+				&path.From,
+				&path.To,
+				&path.TravelSeconds,
+				&path.EdgeIDs,
+				&encodedGeometry,
+			); err != nil {
+				retryRows.Close()
+				return detour.RoutingResult{}, fmt.Errorf("scan retried detour path: %w", err)
+			}
+			if err := json.Unmarshal(encodedGeometry, &path.Geometry); err != nil {
+				retryRows.Close()
+				return detour.RoutingResult{}, fmt.Errorf("decode retried detour path geometry: %w", err)
+			}
+			result.Paths = append(result.Paths, path)
+		}
+		if err := retryRows.Err(); err != nil {
+			retryRows.Close()
+			return detour.RoutingResult{}, fmt.Errorf("iterate retried detour paths: %w", err)
+		}
+		retryRows.Close()
+	}
+
 	if err := transaction.QueryRow(ctx, detourGraphTraceSQL).Scan(
 		&result.Trace.CandidateEdges,
 		&result.Trace.BlockedEdges,
@@ -341,6 +393,37 @@ func (repository *DetourRepository) Route(
 		return detour.RoutingResult{}, fmt.Errorf("commit detour routing transaction: %w", err)
 	}
 	return result, nil
+}
+
+// retryPair es un par a reintentar en la segunda pasada del ruteo. Las claves
+// JSON `from`/`to` son las que espera find_detour_paths_retry.sql.
+type retryPair struct {
+	From int64 `json:"from"`
+	To   int64 `json:"to"`
+}
+
+// readUturnPairs devuelve los pares que la pasada principal descartó por un giro
+// en U cuya vuelta no es sobre un extremo propio del par (los únicos que se
+// re-rutean en la segunda pasada). Corre sobre las mismas tablas temporales del
+// grafo ya creadas en la transacción.
+func readUturnPairs(ctx context.Context, tx pgx.Tx) ([]retryPair, error) {
+	rows, err := tx.Query(ctx, findDetourUturnPairsSQL)
+	if err != nil {
+		return nil, fmt.Errorf("find detour u-turn pairs: %w", err)
+	}
+	defer rows.Close()
+	var pairs []retryPair
+	for rows.Next() {
+		var pair retryPair
+		if err := rows.Scan(&pair.From, &pair.To); err != nil {
+			return nil, fmt.Errorf("scan detour u-turn pair: %w", err)
+		}
+		pairs = append(pairs, pair)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate detour u-turn pairs: %w", err)
+	}
+	return pairs, nil
 }
 
 func validateRoutingRequest(request detour.RoutingRequest) error {

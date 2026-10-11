@@ -155,8 +155,8 @@ func TestServicePlanCanOmitOptionalTerminalStops(t *testing.T) {
 func TestServicePlanAlwaysOmitsStopReachedByCut(t *testing.T) {
 	input := serviceTestInput()
 	input.Criterion = CriterionFewestLostStops
-	input.Cut.LineString.Positions[0].Longitude = input.Route.Stops[1].Position.Longitude
-	input.Cut.LineString.Positions[1].Longitude = input.Route.Stops[1].Position.Longitude
+	input.Cut.Lines[0].Positions[0].Longitude = input.Route.Stops[1].Position.Longitude
+	input.Cut.Lines[0].Positions[1].Longitude = input.Route.Stops[1].Position.Longitude
 	repository := &scriptedDetourRepository{
 		analysis: serviceTestAnalysis(),
 		routeResult: func(request RoutingRequest) RoutingResult {
@@ -414,10 +414,10 @@ func serviceTestInput() Input {
 	}
 	return Input{
 		Route: route.Route{Jurisdiction: route.JurisdictionCABA, Stops: stops},
-		Cut: Cut{LineString: route.LineString{Positions: []route.Position{
+		Cut: Cut{Lines: []route.LineString{{Positions: []route.Position{
 			{Latitude: -34.6001, Longitude: -58.400},
 			{Latitude: -34.5999, Longitude: -58.400},
-		}}},
+		}}}},
 	}
 }
 

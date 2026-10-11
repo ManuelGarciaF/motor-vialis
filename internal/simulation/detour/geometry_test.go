@@ -54,6 +54,59 @@ func TestValidateCutRejectsInvalidGeometryAndLimits(t *testing.T) {
 	}
 }
 
+func TestValidateCutAcceptsMultipleBranches(t *testing.T) {
+	// A T-shaped cut: a trunk plus a branch leaving its middle.
+	cut := cutWith(
+		[]route.Position{position(0, 0), position(0, 0.01)},
+		[]route.Position{position(0, 0.005), position(0.005, 0.005)},
+	)
+	if err := ValidateCut(cut, testPolicy()); err != nil {
+		t.Fatalf("ValidateCut multi-branch error = %v, want nil", err)
+	}
+}
+
+func TestValidateCutRejectsEmptyCut(t *testing.T) {
+	err := ValidateCut(Cut{Lines: nil}, testPolicy())
+	var detourError *Error
+	if !errors.As(err, &detourError) || detourError.Code != ErrorInvalidCut {
+		t.Fatalf("ValidateCut empty error = %v, want invalid_cut", err)
+	}
+}
+
+func TestValidateCutSumsLengthAcrossBranches(t *testing.T) {
+	// Each branch is ~1.1 km; the policy cap sits between one and two branches,
+	// so the pair must be rejected even though each branch fits alone.
+	cut := cutWith(
+		[]route.Position{position(0, 0), position(0, 0.01)},
+		[]route.Position{position(0, 0.02), position(0, 0.03)},
+	)
+	policy := testPolicy()
+	policy.MaximumCutLengthMeters = 1500
+	err := ValidateCut(cut, policy)
+	var detourError *Error
+	if !errors.As(err, &detourError) || detourError.Code != ErrorInvalidCut {
+		t.Fatalf("ValidateCut summed length error = %v, want invalid_cut", err)
+	}
+}
+
+func TestClassifyStopsUsesNearestBranch(t *testing.T) {
+	// The stop sits far from the first branch but on top of the second, so the
+	// minimum-distance classification must treat it as reached by the cut.
+	cut := cutWith(
+		[]route.Position{position(0, 0), position(0, 0.01)},
+		[]route.Position{position(0.05, 0.05), position(0.05, 0.06)},
+	)
+	input := route.Route{Stops: []route.Stop{
+		{ID: "on-second-branch", Position: position(0.05, 0.055)},
+	}}
+
+	got := ClassifyStops(input, cut, testPolicy())
+	if got[0].Availability != StopForcedUnavailable {
+		t.Fatalf("stop availability = %q, want forced_unavailable (distance %.2f)",
+			got[0].Availability, got[0].DistanceMeters)
+	}
+}
+
 func TestClassifyStopsMeasuresClosestPointOnSegment(t *testing.T) {
 	input := route.Route{Stops: []route.Stop{
 		{ID: "forced", Position: position(0.00009, 0.005)},
@@ -83,8 +136,8 @@ func TestClassifyStopsIncludesRadiusBoundaries(t *testing.T) {
 	cut := cutAt(position(0, 0), position(0, 0.01))
 	forcedPosition := position(0.0002, 0.005)
 	optionalPosition := position(0.001, 0.005)
-	forcedDistance := distanceToLineString(forcedPosition, cut.LineString)
-	optionalDistance := distanceToLineString(optionalPosition, cut.LineString)
+	forcedDistance := distanceToLineString(forcedPosition, cut.Lines[0])
+	optionalDistance := distanceToLineString(optionalPosition, cut.Lines[0])
 	policy := testPolicy()
 	policy.ForcedStopRadiusMeters = forcedDistance
 	policy.OptionalStopRadiusMeters = optionalDistance
@@ -135,7 +188,15 @@ func testPolicy() Policy {
 }
 
 func cutAt(positions ...route.Position) Cut {
-	return Cut{LineString: route.LineString{Positions: positions}}
+	return Cut{Lines: []route.LineString{{Positions: positions}}}
+}
+
+func cutWith(lines ...[]route.Position) Cut {
+	cut := Cut{Lines: make([]route.LineString, len(lines))}
+	for index, positions := range lines {
+		cut.Lines[index] = route.LineString{Positions: positions}
+	}
+	return cut
 }
 
 func position(latitude, longitude float64) route.Position {
