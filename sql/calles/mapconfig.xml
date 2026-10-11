@@ -15,5 +15,11 @@
     <tag_value name="unclassified"   id="111" priority="1.0" maxspeed="40" />
     <tag_value name="residential"    id="112" priority="1.0" maxspeed="40" />
     <tag_value name="living_street"  id="113" priority="1.0" maxspeed="20" />
+    <!-- Carriles exclusivos de bus (Metrobús). El extracto ya dejó sólo los que
+         habilitan bus/psv; transformar_calles.sql vuelve a exigir bus/psv designado
+         para que ningún otro `service` (estacionamientos, drive-throughs) se cuele. -->
+    <tag_value name="service"        id="114" priority="1.0" maxspeed="40" />
+    <tag_value name="busway"         id="115" priority="1.0" maxspeed="40" />
+    <tag_value name="bus_guideway"   id="116" priority="1.0" maxspeed="40" />
   </tag_name>
 </configuration>
