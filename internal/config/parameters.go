@@ -127,6 +127,10 @@ const (
 	RealtimeCoverageWarningRatio = 0.7
 )
 
+// H0012 experimental coverage uses fixed local clock hours, attributed to entry.
+// This is not a recurrence/publication policy.
+const BottlenecksAnalysisTimeZone = "America/Argentina/Buenos_Aires"
+
 // Bunching reports proximity, not groups or a service severity level.
 const (
 	BunchingDistanceMeters      = 100.0
