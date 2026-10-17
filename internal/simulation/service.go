@@ -58,6 +58,7 @@ func (service *Service) Simulate(
 	if err := route.Validate(input); err != nil {
 		return Result{}, err
 	}
+
 	estimation, err := service.estimate(ctx, input)
 	if err != nil {
 		return Result{}, err
@@ -70,6 +71,7 @@ func (service *Service) estimate(ctx context.Context, input route.Route) (estima
 	if err != nil {
 		return estimation{}, fmt.Errorf("estimate demand: %w", err)
 	}
+
 	travelTimeResult, err := service.travelTimeEstimator.Estimate(ctx, input)
 	if err != nil {
 		return estimation{}, fmt.Errorf("estimate travel time: %w", err)

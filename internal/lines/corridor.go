@@ -37,6 +37,7 @@ func DrawnPath(input route.Route) route.LineString {
 		if len(positions) > 0 && positions[len(positions)-1] == position {
 			return
 		}
+
 		positions = append(positions, position)
 	}
 
@@ -47,10 +48,12 @@ func DrawnPath(input route.Route) route.LineString {
 			appendPosition(input.Stops[index+1].Position)
 			continue
 		}
+
 		for _, position := range stop.PathToNext.Positions {
 			appendPosition(position)
 		}
 	}
+
 	return route.LineString{Positions: positions}
 }
 

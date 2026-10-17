@@ -91,26 +91,32 @@ func Analyze(ctx context.Context, repo Repository, request AnalysisRequest) (Ana
 	if err := request.Validate(); err != nil {
 		return Analysis{}, err
 	}
+
 	location, err := time.LoadLocation(request.TimeZone)
 	if err != nil {
 		return Analysis{}, fmt.Errorf("load coverage timezone: %w", err)
 	}
+
 	data, err := repo.Load(ctx, request.LineID, request.Window, request.Policy.MaximumDistanceMeters)
 	if err != nil {
 		return Analysis{}, err
 	}
+
 	layout, err := NewLayout(data.Version, data.LengthMeters, request.NominalMeters)
 	if err != nil {
 		return Analysis{}, err
 	}
+
 	matching, err := MatchConservatively(layout, data.Observations, request.Policy)
 	if err != nil {
 		return Analysis{}, err
 	}
+
 	measured, err := Measure(layout, matching.Observations, request.Policy)
 	if err != nil {
 		return Analysis{}, err
 	}
+
 	result := Analysis{LineID: data.LineID, Version: data.Version, Line: data.Line, Branch: data.Branch, Window: request.Window, Policy: AnalysisLimits{MaximumGapSeconds: request.Policy.MaximumGap.Seconds(), MaximumDistanceMeters: request.Policy.MaximumDistanceMeters, MaximumSpeedKPH: request.Policy.MaximumSpeedKPH},
 		NominalMeters: layout.NominalMeters(), LengthMeters: layout.LengthMeters(), DistanceMethod: "PostGIS geography (spheroid)",
 		RawPositions: len(data.Observations), SpatiallyUnique: matching.SpatiallyUnique, TemporallyResolved: matching.TemporallyResolved,
@@ -120,6 +126,7 @@ func Analyze(ctx context.Context, repo Repository, request AnalysisRequest) (Ana
 	for i, s := range layout.sectors {
 		result.Sectors[i].Sector = s
 	}
+
 	for _, p := range measured.Passages {
 		s := &result.Sectors[p.Sector.Index]
 		s.Passages++
@@ -131,10 +138,12 @@ func Analyze(ctx context.Context, repo Repository, request AnalysisRequest) (Ana
 		}
 		durations[p.Sector.Index] = append(durations[p.Sector.Index], p.Duration.Seconds())
 	}
+
 	for i, d := range durations {
 		if len(d) == 0 {
 			continue
 		}
+
 		sort.Float64s(d)
 		median := d[len(d)/2]
 		if len(d)%2 == 0 {
@@ -144,6 +153,7 @@ func Analyze(ctx context.Context, repo Repository, request AnalysisRequest) (Ana
 		result.Sectors[i].MedianDurationSeconds = &median
 		result.Sectors[i].TypicalSpeedKPH = &speed
 	}
+
 	result.Coverage = buildCoverage(layout, matching.Observations, measured, location)
 	return result, nil
 }

@@ -55,7 +55,12 @@ func TestBunchingRecurrenceHTTP(t *testing.T) {
 				if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
 					t.Fatal(err)
 				}
-				if len(page.Lines) != 1 || !page.Lines[0].Recurrent || page.Lines[0].DaysWithEvents != 2 || len(page.Lines[0].Hours) != 1 || page.Lines[0].Hours[0].Hour != 8 || !page.Lines[0].Hours[0].Recurrent {
+				if len(page.Lines) != 1 ||
+					!page.Lines[0].Recurrent ||
+					page.Lines[0].DaysWithEvents != 2 ||
+					len(page.Lines[0].Hours) != 1 ||
+					page.Lines[0].Hours[0].Hour != 8 ||
+					!page.Lines[0].Hours[0].Recurrent {
 					t.Fatalf("page: %+v", page)
 				}
 			}

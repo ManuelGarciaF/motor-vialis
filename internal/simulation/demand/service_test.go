@@ -152,6 +152,7 @@ func routeWithStops(ids ...string) route.Route {
 	for index, id := range ids {
 		stops[index] = route.Stop{ID: id}
 	}
+
 	return route.Route{Stops: stops}
 }
 

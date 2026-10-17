@@ -16,20 +16,77 @@ func TestBunchingMinimumDurationIntegration(t *testing.T) {
 	repo := fixture.realtimeRepository()
 	// Read filters must not ingest captures or acquire the worker's global lock.
 	_, err := tx.Exec(ctx, repo.sql(`
-CREATE TABLE vialis.recorridos(id_recorrido bigint,gtfs_route_id text,direction_id smallint,gtfs_shape_id text,geom geometry(LineString,4326),linea text,ramal text);
-CREATE TABLE vialis.equivalencias_recorridos_gcba(gcba_route_id text,gcba_direction smallint,gtfs_route_id text,gtfs_direction_id smallint);
-INSERT INTO vialis.recorridos VALUES(1,'gtfs',0,'shape',ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.5 -34.6)',4326),'TEST','A');
-INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'gtfs',0);`))
+		CREATE TABLE vialis.recorridos (
+		    id_recorrido bigint,
+		    gtfs_route_id text,
+		    direction_id smallint,
+		    gtfs_shape_id text,
+		    geom geometry(LineString, 4326),
+		    linea text,
+		    ramal text
+		);
+
+		CREATE TABLE vialis.equivalencias_recorridos_gcba (
+		    gcba_route_id text,
+		    gcba_direction smallint,
+		    gtfs_route_id text,
+		    gtfs_direction_id smallint
+		);
+
+		INSERT INTO vialis.recorridos
+		VALUES (
+		    1,
+		    'gtfs',
+		    0,
+		    'shape',
+		    ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.5 -34.6)', 4326),
+		    'TEST',
+		    'A'
+		);
+
+		INSERT INTO vialis.equivalencias_recorridos_gcba
+		VALUES (
+		    'gcba',
+		    0,
+		    'gtfs',
+		    0
+		);
+	`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-	_, err = tx.Exec(ctx, repo.sql(`INSERT INTO vialis.capturas_colectivos(recibido_en,filas_totales,filas_validas,filas_invalidas,filas_duplicadas,filas_stale,cobertura_parcial,aglutinaciones_analizadas) VALUES($1,0,0,0,0,0,false,true)`), now)
+	_, err = tx.Exec(ctx, repo.sql(`
+		INSERT INTO vialis.capturas_colectivos (
+		    recibido_en,
+		    filas_totales,
+		    filas_validas,
+		    filas_invalidas,
+		    filas_duplicadas,
+		    filas_stale,
+		    cobertura_parcial,
+		    aglutinaciones_analizadas
+		)
+		VALUES (
+		    $1,
+		    0,
+		    0,
+		    0,
+		    0,
+		    0,
+		    false,
+		    true
+		)
+	`), now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var hash string
-	if err = tx.QueryRow(ctx, repo.sql(`SELECT md5(encode(ST_AsEWKB(geom),'hex')) FROM vialis.recorridos WHERE id_recorrido=1`)).Scan(&hash); err != nil {
+	if err = tx.QueryRow(ctx, repo.sql(`
+		SELECT md5(encode(ST_AsEWKB(geom), 'hex'))
+		FROM vialis.recorridos
+		WHERE id_recorrido = 1
+	`)).Scan(&hash); err != nil {
 		t.Fatal(err)
 	}
 	policy := config.BunchingPolicy()
@@ -78,12 +135,14 @@ INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'gtfs',0);`))
 		case "below-speed":
 			e.MaximumSpeedAMetersPerSecond = 1 - 0.000001
 		}
+
 		if tc.closed {
 			e.ClosedAt = &now
 			e.CloseReason = "missing"
 		}
 		queueEvent(batch, repo, e)
 	}
+
 	if err = tx.SendBatch(ctx, batch).Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -100,6 +159,7 @@ INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'gtfs',0);`))
 			t.Fatalf("unexpected current pair: %+v", pair)
 		}
 	}
+
 	query := bunching.HistoryRequest{From: now.Add(-time.Hour), To: now.Add(time.Second), State: "all", Limit: 50}
 	page, err := reader.FindHistory(ctx, query, now, policy)
 	if err != nil || page.Total != 4 || len(page.Events) != 4 {
@@ -113,6 +173,7 @@ INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'gtfs',0);`))
 			t.Fatal("duration does not override freshness")
 		}
 	}
+
 	for state, want := range map[string]int64{"open": 3, "closed": 1} {
 		query.State = state
 		page, err = reader.FindHistory(ctx, query, now, policy)
@@ -120,6 +181,7 @@ INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'gtfs',0);`))
 			t.Fatalf("state %s: %+v %v", state, page, err)
 		}
 	}
+
 	query.State, query.Limit, query.Offset = "all", 1, 0
 	first, err := reader.FindHistory(ctx, query, now, policy)
 	if err != nil || first.Total != 4 || len(first.Events) != 1 {

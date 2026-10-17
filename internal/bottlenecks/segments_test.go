@@ -38,6 +38,7 @@ func TestLayout(t *testing.T) {
 				ends = append(ends, s.EndMeters)
 				previous = s.EndMeters
 			}
+
 			if !reflect.DeepEqual(ends, tc.ends) {
 				t.Fatalf("ends %v, want %v", ends, tc.ends)
 			}
@@ -58,6 +59,7 @@ func TestLayoutRejectsInvalidInput(t *testing.T) {
 			t.Fatalf("accepted %v", values)
 		}
 	}
+
 	for _, v := range []ShapeVersion{{}, {RouteID: "r", ShapeID: "s", ShapeHash: "h", Direction: 2}, {RouteID: " ", ShapeID: "s", ShapeHash: "h"}} {
 		if _, err := NewLayout(v, 1000, 500); err == nil {
 			t.Fatalf("accepted version %+v", v)

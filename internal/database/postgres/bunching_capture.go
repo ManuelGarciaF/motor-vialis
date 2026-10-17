@@ -32,6 +32,7 @@ func readBunchingCaptureState(ctx context.Context, queryer captureQueryer, schem
 	if err != nil {
 		return bunchingCaptureState{}, err
 	}
+
 	age := now.Sub(receivedAt).Seconds()
 	if age < 0 {
 		age = 0

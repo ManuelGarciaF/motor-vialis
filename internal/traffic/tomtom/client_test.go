@@ -104,6 +104,7 @@ func TestClientSnapshotHonorsContextCancellation(t *testing.T) {
 		<-request.Context().Done()
 	}))
 	defer server.Close()
+
 	client := newTestClient(t, server.URL, time.Now)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -119,6 +120,7 @@ func TestClientSnapshotRejectsInvalidProviderTile(t *testing.T) {
 		_, _ = io.WriteString(writer, "invalid-pbf")
 	}))
 	defer server.Close()
+
 	client := newTestClient(t, server.URL, time.Now)
 
 	_, err := client.Snapshot(context.Background(), []Tile{{Zoom: 14, X: 1, Y: 1}})

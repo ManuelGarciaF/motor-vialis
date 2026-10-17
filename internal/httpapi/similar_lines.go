@@ -89,6 +89,7 @@ func (handler *Handler) findSimilarLines(
 			)
 			return
 		}
+
 		handler.writeLineError(writer, request, "find similar stored lines", err)
 		return
 	}

@@ -66,13 +66,19 @@ func TestIncrementalFourCapturesCloseOnceWithoutExtendingDuration(t *testing.T) 
 		var r CaptureMeasurement
 		s, r = applyCapture(t, l, s, capture(id))
 		if id == 15 {
-			if !r.Closed || len(r.Incomplete) != 1 || r.Incomplete[0].Reason != MissingUpdates || len(r.Passages) != 0 || s.Previous != nil || s.Pending != nil {
+			if !r.Closed ||
+				len(r.Incomplete) != 1 ||
+				r.Incomplete[0].Reason != MissingUpdates ||
+				len(r.Passages) != 0 ||
+				s.Previous != nil ||
+				s.Pending != nil {
 				t.Fatalf("wrong close: %+v %+v", s, r)
 			}
 		} else if r.Closed || len(r.Incomplete) != 0 {
 			t.Fatalf("unexpected closure at %d: %+v", id, r)
 		}
 	}
+
 	if s.MissingCaptures != 4 {
 		t.Fatal("counter did not saturate")
 	}
@@ -122,6 +128,7 @@ func TestIncrementalProcessesUpdateBeforeFourthAbsence(t *testing.T) {
 	for id := int64(12); id <= 14; id++ {
 		s, _ = applyCapture(t, l, s, capture(id))
 	}
+
 	s, r := applyCapture(t, l, s, capture(15, observation(120, 1250)))
 	if len(r.Passages) != 1 || r.Closed || s.MissingCaptures != 0 {
 		t.Fatalf("closed before updates: %+v", r)
@@ -245,6 +252,7 @@ func TestIncrementalNoExtrapolationAndGapStillApplies(t *testing.T) {
 			t.Fatal("inferred a vehicle without evidence")
 		}
 	}
+
 	s, _ = applyCapture(t, l, s, capture(17, observation(0, 250), observation(60, 750)))
 	_, r := applyCapture(t, l, s, capture(18, observation(241, 1250)))
 	if len(r.Passages) != 0 || len(r.Incomplete) != 1 || r.Incomplete[0].Reason != GPSGap {
@@ -313,6 +321,7 @@ func TestIncrementalBatchParityAcrossEveryPartition(t *testing.T) {
 			if end < len(rows) && mask&(1<<(end-1)) == 0 {
 				continue
 			}
+
 			var r CaptureMeasurement
 			s, r = applyCapture(t, l, s, capture(id, rows[start:end]...))
 			if len(r.Incomplete) != 0 {
@@ -323,6 +332,7 @@ func TestIncrementalBatchParityAcrossEveryPartition(t *testing.T) {
 			start = end
 			id++
 		}
+
 		if !reflect.DeepEqual(passages, expected.Passages) {
 			t.Fatalf("partition %d differs from batch", mask)
 		}

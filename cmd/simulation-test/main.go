@@ -43,6 +43,7 @@ func main() {
 		log.Fatalf("open route file: %v", err)
 	}
 	defer inputFile.Close()
+
 	input, err := decodeRoute(inputFile, config.LinesAlignmentToleranceMeters)
 	if err != nil {
 		log.Fatalf("decode route file: %v", err)
@@ -81,6 +82,7 @@ func decodeRoute(
 	if err := decoder.Decode(&input); err != nil {
 		return simulation.Route{}, err
 	}
+
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err == nil {

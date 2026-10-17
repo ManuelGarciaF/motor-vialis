@@ -25,6 +25,7 @@ func TestDetourRepositoryAnalyzeIntegration(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
@@ -37,27 +38,19 @@ func TestDetourRepositoryAnalyzeIntegration(t *testing.T) {
 		cutJSON  []byte
 	)
 	err = pool.QueryRow(ctx, `
-SELECT
-    id_calle,
-    ST_AsGeoJSON(geom)::bytea,
-    ST_AsGeoJSON(ST_MakeLine(
-        ST_Project(
-            ST_LineInterpolatePoint(geom, 0.5)::geography,
-            25,
-            ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)) + pi() / 2
-        )::geometry,
-        ST_Project(
-            ST_LineInterpolatePoint(geom, 0.5)::geography,
-            25,
-            ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)) - pi() / 2
-        )::geometry
-    ))::bytea
-FROM vialis.calles
-WHERE costo BETWEEN 200 AND 500
-  AND ST_NPoints(geom) >= 2
-ORDER BY id_calle
-LIMIT 1
-`).Scan(&streetID, &pathJSON, &cutJSON)
+		SELECT
+		    id_calle,
+		    ST_AsGeoJSON(geom)::bytea,
+		    ST_AsGeoJSON(ST_MakeLine(ST_Project(ST_LineInterpolatePoint(geom, 0.5)::geography, 25, ST_Azimuth(ST_StartPoint(geom),
+		                ST_EndPoint(geom)) + pi() / 2)::geometry, ST_Project(ST_LineInterpolatePoint(geom, 0.5)::geography,
+		            25, ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)) - pi() / 2)::geometry))::bytea
+		FROM vialis.calles
+		WHERE costo BETWEEN 200
+		    AND 500
+		    AND ST_NPoints(geom) >= 2
+		ORDER BY id_calle
+		LIMIT 1
+	`).Scan(&streetID, &pathJSON, &cutJSON)
 	if err != nil {
 		t.Fatalf("prepare detour fixture: %v", err)
 	}
@@ -115,6 +108,7 @@ func TestDetourRepositoryRouteIntegration(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
@@ -129,30 +123,23 @@ func TestDetourRepositoryRouteIntegration(t *testing.T) {
 		directionDegrees              float64
 	)
 	err = pool.QueryRow(ctx, `
-SELECT
-    id_calle,
-    ST_AsGeoJSON(geom)::bytea,
-    ST_AsGeoJSON(ST_Buffer(geom::geography, 5)::geometry)::bytea,
-    ST_X((ST_Project(
-        ST_LineInterpolatePoint(geom, 0.1)::geography,
-        3,
-        ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)) + pi() / 2
-    ))::geometry),
-    ST_Y((ST_Project(
-        ST_LineInterpolatePoint(geom, 0.1)::geography,
-        3,
-        ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)) + pi() / 2
-    ))::geometry),
-    ST_X(ST_LineInterpolatePoint(geom, 0.9)),
-    ST_Y(ST_LineInterpolatePoint(geom, 0.9)),
-    degrees(ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)))
-FROM vialis.calles
-WHERE costo BETWEEN 200 AND 500
-  AND costo_inverso > 0
-  AND ST_NPoints(geom) >= 2
-ORDER BY id_calle
-LIMIT 1
-`).Scan(
+		SELECT
+		    id_calle,
+		    ST_AsGeoJSON(geom)::bytea,
+		    ST_AsGeoJSON(ST_Buffer(geom::geography, 5)::geometry)::bytea,
+		    ST_X((ST_Project(ST_LineInterpolatePoint(geom, 0.1)::geography, 3, ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)) + pi() / 2))::geometry),
+		    ST_Y((ST_Project(ST_LineInterpolatePoint(geom, 0.1)::geography, 3, ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)) + pi() / 2))::geometry),
+		    ST_X(ST_LineInterpolatePoint(geom, 0.9)),
+		    ST_Y(ST_LineInterpolatePoint(geom, 0.9)),
+		    degrees(ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)))
+		FROM vialis.calles
+		WHERE costo BETWEEN 200
+		    AND 500
+		    AND costo_inverso > 0
+		    AND ST_NPoints(geom) >= 2
+		ORDER BY id_calle
+		LIMIT 1
+	`).Scan(
 		&streetID,
 		&pathJSON,
 		&searchArea,
@@ -173,6 +160,7 @@ LIMIT 1
 	for index, position := range path.Positions {
 		trafficGeometry[index] = orb.Point{position.Longitude, position.Latitude}
 	}
+
 	request := detour.RoutingRequest{
 		Analysis: detour.Analysis{
 			SearchArea:    searchArea,
@@ -235,6 +223,7 @@ LIMIT 1
 			t.Fatalf("reverse geometry is not oriented between virtual points: %#v", got)
 		}
 	}
+
 	if result.Trace.ForwardDirectEdges == 0 || result.Trace.ReverseDirectEdges == 0 {
 		t.Fatalf("direct traffic coverage missing: %#v", result.Trace)
 	}
@@ -300,6 +289,7 @@ func TestDetourRepositoryRouteRespectsOneWay(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
@@ -313,20 +303,21 @@ func TestDetourRepositoryRouteRespectsOneWay(t *testing.T) {
 		directionDegrees              float64
 	)
 	err = pool.QueryRow(ctx, `
-SELECT
-    ST_AsGeoJSON(geom)::bytea,
-    ST_AsGeoJSON(ST_Buffer(geom::geography, 5)::geometry)::bytea,
-    ST_X(ST_LineInterpolatePoint(geom, 0.1)),
-    ST_Y(ST_LineInterpolatePoint(geom, 0.1)),
-    ST_X(ST_LineInterpolatePoint(geom, 0.9)),
-    ST_Y(ST_LineInterpolatePoint(geom, 0.9)),
-    degrees(ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)))
-FROM vialis.calles
-WHERE costo BETWEEN 100 AND 500
-  AND costo_inverso = -1
-ORDER BY id_calle
-LIMIT 1
-`).Scan(
+		SELECT
+		    ST_AsGeoJSON(geom)::bytea,
+		    ST_AsGeoJSON(ST_Buffer(geom::geography, 5)::geometry)::bytea,
+		    ST_X(ST_LineInterpolatePoint(geom, 0.1)),
+		    ST_Y(ST_LineInterpolatePoint(geom, 0.1)),
+		    ST_X(ST_LineInterpolatePoint(geom, 0.9)),
+		    ST_Y(ST_LineInterpolatePoint(geom, 0.9)),
+		    degrees(ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)))
+		FROM vialis.calles
+		WHERE costo BETWEEN 100
+		    AND 500
+		    AND costo_inverso = - 1
+		ORDER BY id_calle
+		LIMIT 1
+	`).Scan(
 		&pathJSON,
 		&searchArea,
 		&startLongitude,
@@ -346,6 +337,7 @@ LIMIT 1
 	for index, position := range line.Positions {
 		geometry[index] = orb.Point{position.Longitude, position.Latitude}
 	}
+
 	request := detour.RoutingRequest{
 		Analysis: detour.Analysis{
 			SearchArea:    searchArea,
@@ -388,6 +380,7 @@ func TestDetourRepositoryRouteUsesNearbyEstimate(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
@@ -402,25 +395,26 @@ func TestDetourRepositoryRouteUsesNearbyEstimate(t *testing.T) {
 		directionDegrees              float64
 	)
 	err = pool.QueryRow(ctx, `
-SELECT
-    ST_AsGeoJSON(geom)::bytea,
-    ST_AsGeoJSON(ST_Buffer(geom::geography, 100)::geometry)::bytea,
-    ST_AsGeoJSON(ST_Transform(ST_OffsetCurve(ST_Transform(geom, 3857), 30), 4326))::bytea,
-    ST_AsGeoJSON(ST_Transform(ST_OffsetCurve(ST_Transform(geom, 3857), 45), 4326))::bytea,
-    ST_AsGeoJSON(ST_Transform(ST_OffsetCurve(ST_Transform(geom, 3857), 60), 4326))::bytea,
-    ST_X(ST_LineInterpolatePoint(geom, 0.1)),
-    ST_Y(ST_LineInterpolatePoint(geom, 0.1)),
-    ST_X(ST_LineInterpolatePoint(geom, 0.9)),
-    ST_Y(ST_LineInterpolatePoint(geom, 0.9)),
-    degrees(ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)))
-FROM vialis.calles
-WHERE costo BETWEEN 200 AND 500
-  AND costo_inverso > 0
-  AND tipo = 'residential'
-  AND GeometryType(ST_OffsetCurve(ST_Transform(geom, 3857), 60)) = 'LINESTRING'
-ORDER BY id_calle
-LIMIT 1
-`).Scan(
+		SELECT
+		    ST_AsGeoJSON(geom)::bytea,
+		    ST_AsGeoJSON(ST_Buffer(geom::geography, 100)::geometry)::bytea,
+		    ST_AsGeoJSON(ST_Transform(ST_OffsetCurve(ST_Transform(geom, 3857), 30), 4326))::bytea,
+		    ST_AsGeoJSON(ST_Transform(ST_OffsetCurve(ST_Transform(geom, 3857), 45), 4326))::bytea,
+		    ST_AsGeoJSON(ST_Transform(ST_OffsetCurve(ST_Transform(geom, 3857), 60), 4326))::bytea,
+		    ST_X(ST_LineInterpolatePoint(geom, 0.1)),
+		    ST_Y(ST_LineInterpolatePoint(geom, 0.1)),
+		    ST_X(ST_LineInterpolatePoint(geom, 0.9)),
+		    ST_Y(ST_LineInterpolatePoint(geom, 0.9)),
+		    degrees(ST_Azimuth(ST_StartPoint(geom), ST_EndPoint(geom)))
+		FROM vialis.calles
+		WHERE costo BETWEEN 200
+		    AND 500
+		    AND costo_inverso > 0
+		    AND tipo = 'residential'
+		    AND GeometryType(ST_OffsetCurve(ST_Transform(geom, 3857), 60)) = 'LINESTRING'
+		ORDER BY id_calle
+		LIMIT 1
+	`).Scan(
 		&pathJSON,
 		&searchArea,
 		&offsetJSON[0],
@@ -445,6 +439,7 @@ LIMIT 1
 		for pointIndex, position := range line.Positions {
 			geometry[pointIndex] = orb.Point{position.Longitude, position.Latitude}
 		}
+
 		trafficSegments[index] = traffic.Segment{
 			SourceID:     string(rune('A' + index)),
 			Geometry:     geometry,
@@ -454,6 +449,7 @@ LIMIT 1
 			HasSpeed:     true,
 		}
 	}
+
 	request := detour.RoutingRequest{
 		Analysis: detour.Analysis{
 			SearchArea:    searchArea,
@@ -508,38 +504,32 @@ func loadConsecutiveBlocks(ctx context.Context, t *testing.T, pool *pgxpool.Pool
 		stopBlockJSON, nextBlockJSON []byte
 	)
 	err := pool.QueryRow(ctx, `
-SELECT
-    stop_block.id_calle,
-    next_block.id_calle,
-    ST_AsGeoJSON(ST_LineMerge(ST_Collect(stop_block.geom, next_block.geom)))::bytea,
-    ST_AsGeoJSON(ST_Buffer(ST_Collect(stop_block.geom, next_block.geom)::geography, 60)::geometry)::bytea,
-    ST_AsGeoJSON(ST_MakeLine(ARRAY[
-        ST_LineInterpolatePoint(stop_block.geom, 0.1),
-        ST_LineInterpolatePoint(stop_block.geom, 0.6),
-        ST_LineInterpolatePoint(stop_block.geom, 0.8)
-    ]))::bytea,
-    ST_AsGeoJSON(ST_MakeLine(
-        ST_LineInterpolatePoint(next_block.geom, 0.5),
-        ST_EndPoint(next_block.geom)
-    ))::bytea,
-    degrees(ST_Azimuth(ST_StartPoint(stop_block.geom), ST_EndPoint(stop_block.geom))),
-    degrees(ST_Azimuth(ST_StartPoint(next_block.geom), ST_EndPoint(next_block.geom)))
-FROM vialis.calles stop_block
-JOIN vialis.calles next_block
-  ON next_block.origen = stop_block.destino
- AND next_block.nombre = stop_block.nombre
- AND next_block.id_calle <> stop_block.id_calle
-WHERE stop_block.costo_inverso > 0
-  AND next_block.costo_inverso > 0
-  AND ST_Length(stop_block.geom::geography) BETWEEN 80 AND 150
-  AND ST_Length(next_block.geom::geography) BETWEEN 80 AND 150
-  AND degrees(acos(LEAST(1.0, cos(
-        ST_Azimuth(ST_StartPoint(stop_block.geom), ST_EndPoint(stop_block.geom))
-        - ST_Azimuth(ST_StartPoint(next_block.geom), ST_EndPoint(next_block.geom))
-      )))) BETWEEN 3 AND 20
-ORDER BY stop_block.id_calle
-LIMIT 1
-`).Scan(
+		SELECT
+		    stop_block.id_calle,
+		    next_block.id_calle,
+		    ST_AsGeoJSON(ST_LineMerge(ST_Collect(stop_block.geom, next_block.geom)))::bytea,
+		    ST_AsGeoJSON(ST_Buffer(ST_Collect(stop_block.geom, next_block.geom)::geography, 60)::geometry)::bytea,
+		    ST_AsGeoJSON(ST_MakeLine(ARRAY [ ST_LineInterpolatePoint(stop_block.geom, 0.1), ST_LineInterpolatePoint(stop_block.geom,
+		            0.6), ST_LineInterpolatePoint(stop_block.geom, 0.8) ]))::bytea,
+		ST_AsGeoJSON(ST_MakeLine(ST_LineInterpolatePoint(next_block.geom, 0.5), ST_EndPoint(next_block.geom)))::bytea,
+		degrees(ST_Azimuth(ST_StartPoint(stop_block.geom), ST_EndPoint(stop_block.geom))),
+		degrees(ST_Azimuth(ST_StartPoint(next_block.geom), ST_EndPoint(next_block.geom)))
+		FROM vialis.calles stop_block
+		JOIN vialis.calles next_block ON next_block.origen = stop_block.destino
+		    AND next_block.nombre = stop_block.nombre
+		    AND next_block.id_calle <> stop_block.id_calle
+		WHERE stop_block.costo_inverso > 0
+		    AND next_block.costo_inverso > 0
+		    AND ST_Length(stop_block.geom::geography) BETWEEN 80
+		    AND 150
+		    AND ST_Length(next_block.geom::geography) BETWEEN 80
+		    AND 150
+		    AND degrees(acos(LEAST(1.0, cos(ST_Azimuth(ST_StartPoint(stop_block.geom), ST_EndPoint(stop_block.geom)) - ST_Azimuth(ST_StartPoint(next_block.geom),
+		                    ST_EndPoint(next_block.geom)))))) BETWEEN 3
+		    AND 20
+		ORDER BY stop_block.id_calle
+		LIMIT 1
+	`).Scan(
 		&fixture.stopBlockID,
 		&fixture.nextBlockID,
 		&pathJSON,
@@ -565,6 +555,7 @@ LIMIT 1
 	for index, position := range path.Positions {
 		geometry[index] = orb.Point{position.Longitude, position.Latitude}
 	}
+
 	fixture.traffic = traffic.Segment{
 		SourceID: "blocks", Geometry: geometry, RoadCoverage: "full",
 		SpeedKPH: 30, HasSpeed: true,
@@ -579,6 +570,7 @@ func pointsAt(points route.LineString, fractions ...float64) map[float64]route.P
 	for index, fraction := range fractions {
 		byFraction[fraction] = points.Positions[index]
 	}
+
 	return byFraction
 }
 
@@ -593,6 +585,7 @@ func TestDetourRepositoryRouteSnapsStopToNearestAlignedEdge(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
@@ -650,6 +643,7 @@ func TestDetourRepositoryRouteLeavesStopOnBlockedBlockUnmatched(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
@@ -702,6 +696,7 @@ func TestDetourRepositoryAnalyzeRejectsCutOutsideGraph(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
@@ -756,51 +751,31 @@ func loadTurnRestriction(ctx context.Context, t *testing.T, pool *pgxpool.Pool) 
 	var fractions, fromLongitudes, fromLatitudes, fromDirections []float64
 	var toLongitudes, toLatitudes, toDirections []float64
 	err := pool.QueryRow(ctx, `
-WITH restriction AS (
-    SELECT
-        r.id_calle_desde,
-        r.id_calle_hacia,
-        CASE WHEN desde.destino = r.id_vertice_via THEN desde.geom ELSE ST_Reverse(desde.geom) END AS from_line,
-        CASE WHEN hacia.origen = r.id_vertice_via THEN hacia.geom ELSE ST_Reverse(hacia.geom) END AS to_line
-    FROM vialis.calles_restricciones r
-    JOIN vialis.calles desde ON desde.id_calle = r.id_calle_desde
-    JOIN vialis.calles hacia ON hacia.id_calle = r.id_calle_hacia
-    WHERE r.restriccion = 'no_left_turn'
-      AND r.id_calle_desde <> r.id_calle_hacia
-      AND ST_Length(desde.geom::geography) BETWEEN 60 AND 200
-      AND ST_Length(hacia.geom::geography) BETWEEN 60 AND 200
-    ORDER BY r.osm_relation_id
-    LIMIT 1
-), area AS (
-    SELECT ST_Buffer(ST_Collect(from_line, to_line)::geography, 300)::geometry AS geom
-    FROM restriction
-), fractions AS (
-    SELECT ARRAY[0.3, 0.8, 0.2, 0.7]::float8[] AS value
-)
-SELECT
-    restriction.id_calle_desde,
-    restriction.id_calle_hacia,
-    ST_AsGeoJSON(area.geom)::bytea,
-    (
-        SELECT jsonb_agg(ST_AsGeoJSON(street.geom)::jsonb ORDER BY street.id_calle)
-        FROM vialis.calles street
-        WHERE street.geom && area.geom AND ST_Intersects(street.geom, area.geom)
-    )::text::bytea,
-    fractions.value,
-    ARRAY(SELECT ST_X(ST_LineInterpolatePoint(restriction.from_line, f)) FROM unnest(fractions.value) f),
-    ARRAY(SELECT ST_Y(ST_LineInterpolatePoint(restriction.from_line, f)) FROM unnest(fractions.value) f),
-    ARRAY(SELECT degrees(ST_Azimuth(
-        ST_LineInterpolatePoint(restriction.from_line, f - 0.05),
-        ST_LineInterpolatePoint(restriction.from_line, f + 0.05)
-    )) FROM unnest(fractions.value) f),
-    ARRAY(SELECT ST_X(ST_LineInterpolatePoint(restriction.to_line, f)) FROM unnest(fractions.value) f),
-    ARRAY(SELECT ST_Y(ST_LineInterpolatePoint(restriction.to_line, f)) FROM unnest(fractions.value) f),
-    ARRAY(SELECT degrees(ST_Azimuth(
-        ST_LineInterpolatePoint(restriction.to_line, f - 0.05),
-        ST_LineInterpolatePoint(restriction.to_line, f + 0.05)
-    )) FROM unnest(fractions.value) f)
-FROM restriction, area, fractions
-`).Scan(
+		WITH restriction AS (SELECT r.id_calle_desde, r.id_calle_hacia, CASE WHEN desde.destino = r.id_vertice_via THEN desde.geom ELSE ST_Reverse(desde.geom) END AS from_line,
+		    CASE WHEN hacia.origen = r.id_vertice_via THEN hacia.geom ELSE ST_Reverse(hacia.geom) END AS to_line FROM vialis.calles_restricciones r JOIN vialis.calles desde ON desde.id_calle = r.id_calle_desde JOIN vialis.calles hacia ON hacia.id_calle = r.id_calle_hacia WHERE r.restriccion = 'no_left_turn' AND
+		    r.id_calle_desde <> r.id_calle_hacia AND ST_Length(desde.geom::geography) BETWEEN 60 AND 200 AND ST_Length(hacia.geom::geography) BETWEEN 60 AND
+		    200 ORDER BY r.osm_relation_id LIMIT 1),
+		area AS (SELECT ST_Buffer(ST_Collect(from_line, to_line)::geography, 300)::geometry AS geom FROM restriction),
+		fractions AS (SELECT ARRAY [ 0.3, 0.8, 0.2, 0.7 ]::float8 [ ] AS value)
+		SELECT
+		    restriction.id_calle_desde,
+		    restriction.id_calle_hacia,
+		    ST_AsGeoJSON(area.geom)::bytea,
+		    (SELECT jsonb_agg(ST_AsGeoJSON(street.geom)::jsonb ORDER BY street.id_calle) FROM vialis.calles street WHERE street.geom & & area.geom AND
+		    ST_Intersects(street.geom, area.geom))::text::bytea,
+		fractions.value,
+		ARRAY(SELECT ST_X(ST_LineInterpolatePoint(restriction.from_line, f)) FROM unnest(fractions.value) f),
+		ARRAY(SELECT ST_Y(ST_LineInterpolatePoint(restriction.from_line, f)) FROM unnest(fractions.value) f),
+		ARRAY(SELECT degrees(ST_Azimuth(ST_LineInterpolatePoint(restriction.from_line, f - 0.05), ST_LineInterpolatePoint(restriction.from_line,
+		                f + 0.05))) FROM unnest(fractions.value) f),
+		ARRAY(SELECT ST_X(ST_LineInterpolatePoint(restriction.to_line, f)) FROM unnest(fractions.value) f),
+		ARRAY(SELECT ST_Y(ST_LineInterpolatePoint(restriction.to_line, f)) FROM unnest(fractions.value) f),
+		ARRAY(SELECT degrees(ST_Azimuth(ST_LineInterpolatePoint(restriction.to_line, f - 0.05), ST_LineInterpolatePoint(restriction.to_line,
+		                f + 0.05))) FROM unnest(fractions.value) f)
+		FROM restriction,
+		area,
+		fractions
+	`).Scan(
 		&fixture.fromEdgeID,
 		&fixture.toEdgeID,
 		&searchArea,
@@ -826,17 +801,20 @@ FROM restriction, area, fractions
 		for pointIndex, position := range line.Positions {
 			geometry[pointIndex] = orb.Point{position.Longitude, position.Latitude}
 		}
+
 		fixture.traffic = append(fixture.traffic, traffic.Segment{
 			SourceID: fmt.Sprint(index), Geometry: geometry, RoadCoverage: "full",
 			SpeedKPH: 30, HasSpeed: true,
 		})
 	}
+
 	for index, fraction := range fractions {
 		fixture.fromAt[fraction] = route.Position{Longitude: fromLongitudes[index], Latitude: fromLatitudes[index]}
 		fixture.toAt[fraction] = route.Position{Longitude: toLongitudes[index], Latitude: toLatitudes[index]}
 		fixture.fromDirection[fraction] = fromDirections[index]
 		fixture.toDirection[fraction] = toDirections[index]
 	}
+
 	return fixture
 }
 
@@ -850,6 +828,7 @@ func takesTurn(edgeIDs []int64, from, to int64) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -864,6 +843,7 @@ func TestDetourRepositoryRouteRespectsTurnRestrictions(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)

@@ -79,6 +79,7 @@ func parseHour(raw string) (*int, *fieldError) {
 	if raw == "" {
 		return nil, nil
 	}
+
 	parsed, err := strconv.Atoi(raw)
 	if err != nil || parsed < 0 || parsed >= combinaciones.HoursInDay {
 		return nil, &fieldError{

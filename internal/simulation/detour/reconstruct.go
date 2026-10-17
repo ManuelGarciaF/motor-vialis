@@ -26,6 +26,7 @@ func reconstructRoute(
 			Message: "the cut leaves fewer than two covered stops",
 		}
 	}
+
 	sort.Slice(replacements, func(left, right int) bool {
 		if replacements[left].start.scalar() != replacements[right].start.scalar() {
 			return replacements[left].start.scalar() < replacements[right].start.scalar()
@@ -49,6 +50,7 @@ func reconstructRoute(
 			keptOrders = append(keptOrders, order)
 		}
 	}
+
 	variant := route.Route{
 		Jurisdiction: original.Jurisdiction,
 		Stops:        make([]route.Stop, len(keptOrders)),
@@ -61,6 +63,7 @@ func reconstructRoute(
 		if index == len(keptOrders)-1 {
 			continue
 		}
+
 		start := stopLocation(originalOrder, len(original.Stops))
 		end := stopLocation(keptOrders[index+1], len(original.Stops))
 		path, err := reconstructPath(original, start, end, replacements)
@@ -72,8 +75,10 @@ func reconstructRoute(
 				err,
 			)
 		}
+
 		variant.Stops[index].PathToNext = &path
 	}
+
 	return variant, nil
 }
 
@@ -93,18 +98,22 @@ func reconstructPath(
 			replacement.end.scalar() > end.scalar()+locationTolerance {
 			return route.LineString{}, fmt.Errorf("replacement crosses retained stop boundary")
 		}
+
 		originalPiece, err := originalSlice(original, cursor, replacement.start)
 		if err != nil {
 			return route.LineString{}, err
 		}
+
 		positions = appendPositions(positions, originalPiece.Positions)
 		positions = appendPositions(positions, replacement.path.Positions)
 		cursor = replacement.end
 	}
+
 	originalPiece, err := originalSlice(original, cursor, end)
 	if err != nil {
 		return route.LineString{}, err
 	}
+
 	positions = appendPositions(positions, originalPiece.Positions)
 	if len(positions) < 2 {
 		return route.LineString{}, fmt.Errorf("reconstructed path has fewer than two positions")
@@ -134,17 +143,21 @@ func originalSlice(
 			original.Stops[segmentOrder].PathToNext == nil {
 			return route.LineString{}, fmt.Errorf("original segment %d is unavailable", segmentOrder)
 		}
+
 		fromFraction := math.Max(0, startScalar-float64(segmentOrder))
 		toFraction := math.Min(1, endScalar-float64(segmentOrder))
 		if toFraction-fromFraction <= locationTolerance {
 			continue
 		}
+
 		piece, err := lineSubstring(*original.Stops[segmentOrder].PathToNext, fromFraction, toFraction)
 		if err != nil {
 			return route.LineString{}, fmt.Errorf("slice original segment %d: %w", segmentOrder, err)
 		}
+
 		positions = appendPositions(positions, piece.Positions)
 	}
+
 	return route.LineString{Positions: positions}, nil
 }
 
@@ -155,6 +168,7 @@ func lineSubstring(line route.LineString, fromFraction, toFraction float64) (rou
 		fromFraction > toFraction {
 		return route.LineString{}, fmt.Errorf("invalid LineString substring")
 	}
+
 	lengths := make([]float64, len(line.Positions)-1)
 	var total float64
 	for index := range lengths {
@@ -166,9 +180,11 @@ func lineSubstring(line route.LineString, fromFraction, toFraction float64) (rou
 		)
 		total += lengths[index]
 	}
+
 	if total == 0 {
 		return route.LineString{}, fmt.Errorf("LineString has zero planar length")
 	}
+
 	startDistance := fromFraction * total
 	endDistance := toFraction * total
 	start := interpolateAtDistance(line.Positions, lengths, startDistance)
@@ -181,6 +197,7 @@ func lineSubstring(line route.LineString, fromFraction, toFraction float64) (rou
 			positions = append(positions, line.Positions[index+1])
 		}
 	}
+
 	positions = appendPositions(positions, []route.Position{end})
 	return route.LineString{Positions: positions}, nil
 }
@@ -193,12 +210,14 @@ func interpolateAtDistance(
 	if target <= 0 {
 		return positions[0]
 	}
+
 	var traversed float64
 	for index, length := range lengths {
 		if target <= traversed+length || index == len(lengths)-1 {
 			if length == 0 {
 				return positions[index+1]
 			}
+
 			fraction := (target - traversed) / length
 			left := positions[index]
 			right := positions[index+1]
@@ -207,8 +226,10 @@ func interpolateAtDistance(
 				Longitude: left.Longitude + fraction*(right.Longitude-left.Longitude),
 			}
 		}
+
 		traversed += length
 	}
+
 	return positions[len(positions)-1]
 }
 
@@ -216,6 +237,7 @@ func appendPositions(destination, source []route.Position) []route.Position {
 	if len(source) == 0 {
 		return destination
 	}
+
 	start := 0
 	if len(destination) > 0 && samePosition(destination[len(destination)-1], source[0]) {
 		start = 1

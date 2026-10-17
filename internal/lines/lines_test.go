@@ -129,6 +129,7 @@ func TestGetExportsARouteTheEngineAccepts(t *testing.T) {
 			)
 		}
 	}
+
 	if detail.Stops[0].Name != "Retiro" {
 		t.Fatalf("stops[0].name = %q, want Retiro", detail.Stops[0].Name)
 	}
@@ -235,6 +236,7 @@ func TestGetRejectsAGappedLineWithAnInvalidSegment(t *testing.T) {
 	for left, right := 0, len(positions)-1; left < right; left, right = left+1, right-1 {
 		positions[left], positions[right] = positions[right], positions[left]
 	}
+
 	repository := &fakeRepository{stored: stored}
 	service := lines.NewService(repository, testPolicy())
 

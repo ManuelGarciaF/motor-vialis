@@ -18,7 +18,11 @@ type ShapeVersion struct {
 }
 
 func (v ShapeVersion) validate() error {
-	if strings.TrimSpace(v.RouteID) == "" || strings.TrimSpace(v.ShapeID) == "" || strings.TrimSpace(v.ShapeHash) == "" || v.Direction < 0 || v.Direction > 1 {
+	if strings.TrimSpace(v.RouteID) == "" ||
+		strings.TrimSpace(v.ShapeID) == "" ||
+		strings.TrimSpace(v.ShapeHash) == "" ||
+		v.Direction < 0 ||
+		v.Direction > 1 {
 		return fmt.Errorf("invalid shape version")
 	}
 	return nil

@@ -29,6 +29,7 @@ func TestIncrementalBatchParityWithContinuityCuts(t *testing.T) {
 				if end < len(rows) && mask&(1<<(end-1)) == 0 {
 					continue
 				}
+
 				var r CaptureMeasurement
 				s, r = applyCapture(t, l, s, capture(id, rows[start:end]...))
 				got.Passages = append(got.Passages, r.Passages...)
@@ -36,6 +37,7 @@ func TestIncrementalBatchParityWithContinuityCuts(t *testing.T) {
 				for reason, count := range r.Rejections {
 					got.Rejections[reason] += count
 				}
+
 				s = roundTripState(t, s)
 				start = end
 				id++
@@ -47,7 +49,10 @@ func TestIncrementalBatchParityWithContinuityCuts(t *testing.T) {
 					incomplete = append(incomplete, p)
 				}
 			}
-			if !reflect.DeepEqual(got.Passages, expected.Passages) || !reflect.DeepEqual(got.Incomplete, incomplete) || !reflect.DeepEqual(got.Rejections, expected.Rejections) {
+
+			if !reflect.DeepEqual(got.Passages, expected.Passages) ||
+				!reflect.DeepEqual(got.Incomplete, incomplete) ||
+				!reflect.DeepEqual(got.Rejections, expected.Rejections) {
 				t.Fatalf("case %d partition %d: got %+v, expected %+v", caseID, mask, got, expected)
 			}
 		}

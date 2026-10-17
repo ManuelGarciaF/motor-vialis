@@ -59,7 +59,11 @@ func TestPassageWithInteriorGPSAndStop(t *testing.T) {
 		t.Fatalf("passages: %+v", m)
 	}
 	p := m.Passages[0]
-	if p.Duration != 120*time.Second || math.Abs(p.SpeedKPH-15) > 1e-9 || p.InteriorObservations != 2 || p.SameGPSInterval || p.MaximumSupportingGap != time.Minute {
+	if p.Duration != 120*time.Second ||
+		math.Abs(p.SpeedKPH-15) > 1e-9 ||
+		p.InteriorObservations != 2 ||
+		p.SameGPSInterval ||
+		p.MaximumSupportingGap != time.Minute {
 		t.Fatalf("passage: %+v", p)
 	}
 	if !p.Entered.At.Equal(epoch.Add(30*time.Second)) || !p.Exited.At.Equal(epoch.Add(150*time.Second)) {
@@ -92,6 +96,7 @@ func TestMultipleCrossingsAndMergedRemainder(t *testing.T) {
 			t.Fatalf("passage: %+v", p)
 		}
 	}
+
 	if m.Passages[3].Sector.LengthMeters() != 600 {
 		t.Fatal("remainder not merged")
 	}
@@ -212,6 +217,7 @@ func TestMeasurementValidation(t *testing.T) {
 			t.Fatalf("policy accepted: %+v", p)
 		}
 	}
+
 	for _, change := range []func(*Observation){
 		func(o *Observation) { o.VehicleID = " " }, func(o *Observation) { o.ObservedAt = time.Time{} },
 		func(o *Observation) { o.ProgressMeters = math.NaN() }, func(o *Observation) { o.DistanceToShapeMeters = math.Inf(1) },

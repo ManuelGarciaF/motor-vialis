@@ -27,11 +27,17 @@ func TestCoverageIncludesPassagesWithoutInteriorGPS(t *testing.T) {
 	}
 	for _, cell := range c.Cells {
 		if cell.SectorIndex == 1 {
-			if cell.ValidPassages != 1 || cell.SameIntervalPassages != 1 || cell.MatchedGPSPositions != 0 || cell.UniquePassageVehicles != 1 || cell.Hour != 9 || cell.Date != "2026-10-10" {
+			if cell.ValidPassages != 1 ||
+				cell.SameIntervalPassages != 1 ||
+				cell.MatchedGPSPositions != 0 ||
+				cell.UniquePassageVehicles != 1 ||
+				cell.Hour != 9 ||
+				cell.Date != "2026-10-10" {
 				t.Fatalf("no-interior cell %+v", cell)
 			}
 		}
 	}
+
 	if c.Sectors[1].UniqueGPSVehicles != 0 || c.Sectors[1].UniquePassageVehicles != 1 {
 		t.Fatal("conflated GPS and passage exposure")
 	}

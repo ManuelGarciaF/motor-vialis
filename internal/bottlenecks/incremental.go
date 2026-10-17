@@ -102,6 +102,7 @@ func MeasureCapture(layout Layout, state CaptureState, input CaptureInput) (Capt
 	if _, err := Measure(layout, input.Observations, state.Policy); err != nil {
 		return fail(err)
 	}
+
 	rows := append([]Observation(nil), input.Observations...)
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ObservedAt.Before(rows[j].ObservedAt) })
 	for _, o := range rows {
@@ -109,6 +110,7 @@ func MeasureCapture(layout Layout, state CaptureState, input CaptureInput) (Capt
 			return fail(fmt.Errorf("capture contains another vehicle"))
 		}
 	}
+
 	next := cloneCaptureState(state)
 	result := empty
 	cursor := measurementCursor{previous: next.Previous}
@@ -122,6 +124,7 @@ func MeasureCapture(layout Layout, state CaptureState, input CaptureInput) (Capt
 				if !sameObservation(*next.Watermark, o) {
 					return fail(fmt.Errorf("conflicting observation at watermark"))
 				}
+
 				result.Duplicates++
 			} else if !next.ClosedThrough.IsZero() && !o.ObservedAt.After(next.ClosedThrough) {
 				result.LateObservations++
@@ -130,11 +133,13 @@ func MeasureCapture(layout Layout, state CaptureState, input CaptureInput) (Capt
 			}
 			continue
 		}
+
 		cursor.advance(layout, o, state.Policy, &result.Measurements)
 		copied := o
 		next.Watermark = &copied
 		updated = true
 	}
+
 	if updated {
 		next.MissingCaptures = 0
 	} else if input.Successful && !input.Partial && next.Watermark != nil {
@@ -177,7 +182,14 @@ func cloneCaptureState(state CaptureState) CaptureState {
 }
 
 func validateCaptureState(layout Layout, state CaptureState) error {
-	if len(layout.sectors) == 0 || state.Version != layout.version || state.LengthMeters != layout.length || state.NominalMeters != layout.nominal || strings.TrimSpace(state.VehicleID) == "" || state.LastCaptureID < 0 || state.MissingCaptures < 0 || state.MissingCaptures > MissingCaptureLimit {
+	if len(layout.sectors) == 0 ||
+		state.Version != layout.version ||
+		state.LengthMeters != layout.length ||
+		state.NominalMeters != layout.nominal ||
+		strings.TrimSpace(state.VehicleID) == "" ||
+		state.LastCaptureID < 0 ||
+		state.MissingCaptures < 0 ||
+		state.MissingCaptures > MissingCaptureLimit {
 		return fmt.Errorf("invalid capture state or layout mismatch")
 	}
 	if err := state.Policy.validate(); err != nil {
@@ -189,6 +201,7 @@ func validateCaptureState(layout Layout, state CaptureState) error {
 	if !state.ClosedThrough.IsZero() && (state.Watermark == nil || state.ClosedThrough.After(state.Watermark.ObservedAt)) {
 		return fmt.Errorf("invalid closed watermark")
 	}
+
 	for _, o := range []*Observation{state.Watermark, state.Previous} {
 		if o == nil {
 			continue
@@ -200,10 +213,13 @@ func validateCaptureState(layout Layout, state CaptureState) error {
 			return err
 		}
 	}
+
 	if state.Previous != nil {
 		normalized := *state.Watermark
 		normalized.ProgressMeters = meters(normalized.ProgressMeters)
-		if !state.Previous.ObservedAt.Equal(state.Watermark.ObservedAt) || !sameObservation(*state.Previous, normalized) || rejectObservation(layout, *state.Previous, state.Policy) != "" {
+		if !state.Previous.ObservedAt.Equal(state.Watermark.ObservedAt) ||
+			!sameObservation(*state.Previous, normalized) ||
+			rejectObservation(layout, *state.Previous, state.Policy) != "" {
 			return fmt.Errorf("invalid previous observation")
 		}
 	}
@@ -211,7 +227,22 @@ func validateCaptureState(layout Layout, state CaptureState) error {
 		return fmt.Errorf("closed capture state has continuity")
 	}
 	if p := state.Pending; p != nil {
-		if state.Previous == nil || p.Sector.Index < 0 || p.Sector.Index >= len(layout.sectors) || p.Sector != layout.sectors[p.Sector.Index] || p.InteriorObservations < 0 || p.MaximumSupportingGap < 0 || p.MaximumSupportingGap > state.Policy.MaximumGap || p.Entered.At.IsZero() || p.Entered.BeforeAt.IsZero() || p.Entered.AfterAt.IsZero() || p.Entered.At.Before(p.Entered.BeforeAt) || p.Entered.At.After(p.Entered.AfterAt) || p.Entered.AfterAt.After(state.Previous.ObservedAt) || p.Entered.AfterAt.Sub(p.Entered.BeforeAt) > state.Policy.MaximumGap || state.Previous.ProgressMeters < p.Sector.StartMeters || state.Previous.ProgressMeters >= p.Sector.EndMeters {
+		if state.Previous == nil ||
+			p.Sector.Index < 0 ||
+			p.Sector.Index >= len(layout.sectors) ||
+			p.Sector != layout.sectors[p.Sector.Index] ||
+			p.InteriorObservations < 0 ||
+			p.MaximumSupportingGap < 0 ||
+			p.MaximumSupportingGap > state.Policy.MaximumGap ||
+			p.Entered.At.IsZero() ||
+			p.Entered.BeforeAt.IsZero() ||
+			p.Entered.AfterAt.IsZero() ||
+			p.Entered.At.Before(p.Entered.BeforeAt) ||
+			p.Entered.At.After(p.Entered.AfterAt) ||
+			p.Entered.AfterAt.After(state.Previous.ObservedAt) ||
+			p.Entered.AfterAt.Sub(p.Entered.BeforeAt) > state.Policy.MaximumGap ||
+			state.Previous.ProgressMeters < p.Sector.StartMeters ||
+			state.Previous.ProgressMeters >= p.Sector.EndMeters {
 			return fmt.Errorf("invalid pending measurement")
 		}
 	}

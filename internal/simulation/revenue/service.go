@@ -40,6 +40,7 @@ func (service *Service) Estimate(
 	if err := validatePolicy(service.policy); err != nil {
 		return Result{}, err
 	}
+
 	bands, err := service.repository.FindTariffBands(ctx, input.Jurisdiction)
 	if err != nil {
 		return Result{}, fmt.Errorf("find tariff bands: %w", err)
@@ -59,10 +60,12 @@ func (service *Service) Estimate(
 		if err != nil {
 			return Result{}, err
 		}
+
 		band, err := tariffForDistance(distance, bands)
 		if err != nil {
 			return Result{}, err
 		}
+
 		capturedDemand := pair.PotentialDemand * service.policy.CaptureFactor
 		weightedFare := float64(band.RegisteredFareCents)*service.policy.RegisteredCardShare +
 			float64(band.UnregisteredFareCents)*(1-service.policy.RegisteredCardShare)
@@ -76,6 +79,7 @@ func (service *Service) Estimate(
 			WeightedFareCents:     weightedFare, PotentialRevenueCents: potentialRevenue,
 		})
 	}
+
 	return result, nil
 }
 
@@ -93,12 +97,17 @@ func validateBands(bands []TariffBand) error {
 	if len(bands) == 0 {
 		return fmt.Errorf("no tariff bands configured")
 	}
+
 	for index, band := range bands {
-		if band.MinimumDistanceMeters < 0 || band.RegisteredFareCents < 0 || band.UnregisteredFareCents < 0 ||
-			(band.MaximumDistanceMeters != nil && *band.MaximumDistanceMeters <= band.MinimumDistanceMeters) {
+		if band.MinimumDistanceMeters < 0 ||
+			band.RegisteredFareCents < 0 ||
+			band.UnregisteredFareCents < 0 ||
+			(band.MaximumDistanceMeters != nil &&
+				*band.MaximumDistanceMeters <= band.MinimumDistanceMeters) {
 			return fmt.Errorf("invalid tariff band %d", index)
 		}
 	}
+
 	return nil
 }
 
@@ -106,15 +115,20 @@ func pairDistance(pair demand.StopPairDemand, segments []traveltime.SegmentResul
 	if pair.OriginStopOrder < 0 || pair.DestinationStopOrder <= pair.OriginStopOrder || pair.DestinationStopOrder > len(segments) {
 		return 0, fmt.Errorf("invalid stop pair %q to %q", pair.OriginStopID, pair.DestinationStopID)
 	}
+
 	var distance float64
 	for index := pair.OriginStopOrder; index < pair.DestinationStopOrder; index++ {
 		segment := segments[index]
-		if (index == pair.OriginStopOrder && segment.OriginStopID != pair.OriginStopID) ||
-			(index == pair.DestinationStopOrder-1 && segment.DestinationStopID != pair.DestinationStopID) {
+		if (index == pair.OriginStopOrder &&
+			segment.OriginStopID != pair.OriginStopID) ||
+			(index == pair.DestinationStopOrder-1 &&
+				segment.DestinationStopID != pair.DestinationStopID) {
 			return 0, fmt.Errorf("stop pair %q to %q does not match route segments", pair.OriginStopID, pair.DestinationStopID)
 		}
+
 		distance += segment.DistanceMeters
 	}
+
 	return distance, nil
 }
 
@@ -125,5 +139,6 @@ func tariffForDistance(distance float64, bands []TariffBand) (TariffBand, error)
 			return band, nil
 		}
 	}
+
 	return TariffBand{}, fmt.Errorf("no tariff band for %.2f meters", distance)
 }

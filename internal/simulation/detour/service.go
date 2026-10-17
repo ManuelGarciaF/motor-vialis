@@ -119,6 +119,7 @@ func (service *Service) Plan(ctx context.Context, input Input) (Result, error) {
 	if len(analysis.Intervals) == 0 {
 		return Result{}, fmt.Errorf("analyze detour: affected route has no search-area intervals")
 	}
+
 	classified := ClassifyStops(input.Route, input.Cut, service.policy)
 	tiles, err := traffic.TilesForGeoJSON(analysis.SearchArea, service.policy.TrafficZoom)
 	if err != nil {
@@ -135,6 +136,7 @@ func (service *Service) Plan(ctx context.Context, input Input) (Result, error) {
 			),
 		}
 	}
+
 	snapshot, err := service.trafficProvider.Snapshot(ctx, tiles)
 	if err != nil {
 		return Result{}, mapTrafficError(err)
@@ -144,6 +146,7 @@ func (service *Service) Plan(ctx context.Context, input Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+
 	routing, err := service.repository.Route(ctx, RoutingRequest{
 		Analysis: analysis,
 		Traffic:  snapshot.Segments,
@@ -171,15 +174,18 @@ func (service *Service) Plan(ctx context.Context, input Input) (Result, error) {
 			}
 			return Result{}, selectErr
 		}
+
 		decisionSeconds += selection.TravelSeconds
 		for _, localOrder := range selection.OmittedStopOrders {
 			if stopOrder := plans[planIndex].nodes[localOrder].stopOrder; stopOrder >= 0 {
 				omitted[stopOrder] = struct{}{}
 			}
 		}
+
 		for stopOrder := range plans[planIndex].boundaryOmitted {
 			omitted[stopOrder] = struct{}{}
 		}
+
 		for _, connection := range selection.Connections {
 			from := plans[planIndex].nodes[connection.FromStopOrder]
 			to := plans[planIndex].nodes[connection.ToStopOrder]
@@ -201,6 +207,7 @@ func (service *Service) Plan(ctx context.Context, input Input) (Result, error) {
 		// not an input validation error attributable to the caller.
 		return Result{}, fmt.Errorf("validate generated detour variant: %v", err)
 	}
+
 	comparison, err := service.comparator.CompareDetour(ctx, simulation.ComparisonInput{
 		Baseline: input.Route,
 		Proposed: variant,
@@ -272,6 +279,7 @@ func buildIntervalPlans(
 		if entry.scalar() >= exit.scalar()-locationTolerance {
 			return nil, nil, nil, fmt.Errorf("detour interval %d is empty or reversed", interval.Order)
 		}
+
 		plan := intervalPlan{boundaryOmitted: make(map[int]struct{})}
 		entryIsRouteStart := entry.scalar() <= locationTolerance
 		exitIsRouteEnd := exit.scalar() >= lastScalar-locationTolerance
@@ -284,6 +292,7 @@ func buildIntervalPlans(
 			if scalar < entry.scalar()-locationTolerance || scalar > exit.scalar()+locationTolerance {
 				continue
 			}
+
 			atEntry := math.Abs(scalar-entry.scalar()) <= locationTolerance
 			atExit := math.Abs(scalar-exit.scalar()) <= locationTolerance
 			if (atEntry && !entryIsRouteStart) || (atExit && !exitIsRouteEnd) {
@@ -316,6 +325,7 @@ func buildIntervalPlans(
 			}
 			plan.nodes = append(plan.nodes, node)
 		}
+
 		if !exitIsRouteEnd {
 			appendAnchorNode(&plan, &points, &nextPointID, interval.Exit)
 		}
@@ -326,9 +336,11 @@ func buildIntervalPlans(
 				Message: fmt.Sprintf("affected interval %d has fewer than two routing states", interval.Order),
 			}
 		}
+
 		pairs = append(pairs, intervalPairs(plan)...)
 		plans = append(plans, plan)
 	}
+
 	return plans, points, pairs, nil
 }
 
@@ -365,16 +377,19 @@ func intervalPairs(plan intervalPlan) []PointPair {
 		if plan.nodes[from].point.ID == 0 {
 			continue
 		}
+
 		for to := from + 1; to < len(plan.nodes); to++ {
 			if plan.nodes[to].point.ID == 0 || containsRequired(plan.stops[from+1:to]) {
 				continue
 			}
+
 			pairs = append(pairs, PointPair{
 				From: plan.nodes[from].point.ID,
 				To:   plan.nodes[to].point.ID,
 			})
 		}
 	}
+
 	return pairs
 }
 
@@ -387,6 +402,7 @@ func selectInterval(
 	for _, path := range paths {
 		pathByPair[PointPair{From: path.From, To: path.To}] = path
 	}
+
 	var connections []Connection
 	for from := 0; from < len(plan.nodes); from++ {
 		for to := from + 1; to < len(plan.nodes); to++ {
@@ -397,6 +413,7 @@ func selectInterval(
 			if !found {
 				continue
 			}
+
 			connections = append(connections, Connection{
 				FromStopOrder: from,
 				ToStopOrder:   to,
@@ -406,6 +423,7 @@ func selectInterval(
 			})
 		}
 	}
+
 	return Select(plan.stops, connections, criterion)
 }
 
@@ -414,6 +432,7 @@ func topologyCanResolve(plan intervalPlan, pairs []PointPair, criterion Criterio
 	for _, pair := range pairs {
 		available[pair] = struct{}{}
 	}
+
 	var connections []Connection
 	for from := 0; from < len(plan.nodes); from++ {
 		for to := from + 1; to < len(plan.nodes); to++ {
@@ -421,12 +440,14 @@ func topologyCanResolve(plan intervalPlan, pairs []PointPair, criterion Criterio
 			if _, found := available[pair]; !found {
 				continue
 			}
+
 			connections = append(connections, Connection{
 				FromStopOrder: from,
 				ToStopOrder:   to,
 			})
 		}
 	}
+
 	_, err := Select(plan.stops, connections, criterion)
 	return err == nil
 }
@@ -449,6 +470,7 @@ func mapTrafficError(err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
+
 	var providerError *traffic.Error
 	if !errors.As(err, &providerError) {
 		return &Error{
@@ -458,6 +480,7 @@ func mapTrafficError(err error) error {
 			Cause:   err,
 		}
 	}
+
 	code := ErrorTrafficUnavailable
 	kind := ErrorKindDependency
 	switch providerError.Code {
@@ -467,6 +490,7 @@ func mapTrafficError(err error) error {
 		code = ErrorTrafficTileLimitExceeded
 		kind = ErrorKindInvalidInput
 	}
+
 	return &Error{Code: code, Kind: kind, Message: providerError.Message, Cause: err}
 }
 
@@ -477,6 +501,7 @@ func countAvailability(stops []ClassifiedStop, availability StopAvailability) in
 			count++
 		}
 	}
+
 	return count
 }
 
@@ -490,6 +515,7 @@ func uncoveredStops(
 		if _, found := omitted[order]; !found {
 			continue
 		}
+
 		var contribution simulation.StopResult
 		if order < len(baseline) {
 			contribution = baseline[order]
@@ -502,6 +528,7 @@ func uncoveredStops(
 			Baseline:       contribution,
 		})
 	}
+
 	sort.Slice(result, func(left, right int) bool {
 		return result[left].StopOrder < result[right].StopOrder
 	})

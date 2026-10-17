@@ -74,6 +74,7 @@ func TestClassifyStopsMeasuresClosestPointOnSegment(t *testing.T) {
 				index, got[index].Availability, want[index], got[index].DistanceMeters)
 		}
 	}
+
 	if got[1].DistanceMeters < 95 || got[1].DistanceMeters > 105 {
 		t.Fatalf("distance to segment = %.2f, want approximately 100 m", got[1].DistanceMeters)
 	}

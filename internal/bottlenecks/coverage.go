@@ -61,6 +61,7 @@ func buildCoverage(layout Layout, observations []Observation, measured Measureme
 		sectorUnits[i] = newCoverageUnits()
 		dates[i] = make(map[string]struct{})
 	}
+
 	type cellKey struct {
 		sector int
 		date   string
@@ -85,13 +86,19 @@ func buildCoverage(layout Layout, observations []Observation, measured Measureme
 	}
 	seen := make(map[observationKey]struct{})
 	for _, o := range observations {
-		if o.Match != Matched || o.Scope.Version != layout.version || !finite(o.ProgressMeters) || o.ProgressMeters < 0 || o.ProgressMeters > layout.length {
+		if o.Match != Matched ||
+			o.Scope.Version != layout.version ||
+			!finite(o.ProgressMeters) ||
+			o.ProgressMeters < 0 ||
+			o.ProgressMeters > layout.length {
 			continue
 		}
+
 		key := observationKey{o.VehicleID, o.ObservedAt.UTC()}
 		if _, exists := seen[key]; exists {
 			continue
 		}
+
 		seen[key] = struct{}{}
 		index := sort.Search(len(layout.sectors), func(i int) bool { return o.ProgressMeters < layout.sectors[i].EndMeters })
 		if index == len(layout.sectors) {
@@ -104,6 +111,7 @@ func buildCoverage(layout Layout, observations []Observation, measured Measureme
 		sectorUnits[index].gps[o.VehicleID] = struct{}{}
 		c.MatchedGPSPositions++
 	}
+
 	for _, p := range measured.Passages {
 		index := p.Sector.Index
 		cell, u := cellFor(index, p.Entered.At)
@@ -120,6 +128,7 @@ func buildCoverage(layout Layout, observations []Observation, measured Measureme
 		sectorUnits[index].passages[p.VehicleID] = struct{}{}
 		dates[index][cell.Date] = struct{}{}
 	}
+
 	for _, p := range measured.Incomplete {
 		cell, _ := cellFor(p.Sector.Index, p.Entered.At)
 		cell.IncompleteMeasurements++
@@ -130,6 +139,7 @@ func buildCoverage(layout Layout, observations []Observation, measured Measureme
 			c.BoundaryCensoredMeasurements++
 		}
 	}
+
 	for i := range c.Sectors {
 		s := &c.Sectors[i]
 		s.UniqueGPSVehicles = len(sectorUnits[i].gps)
@@ -137,6 +147,7 @@ func buildCoverage(layout Layout, observations []Observation, measured Measureme
 		for date := range dates[i] {
 			s.DatesWithPassages = append(s.DatesWithPassages, date)
 		}
+
 		sort.Strings(s.DatesWithPassages)
 		if s.MatchedGPSPositions > 0 {
 			c.SectorsWithMatchedGPS++
@@ -150,6 +161,7 @@ func buildCoverage(layout Layout, observations []Observation, measured Measureme
 			c.SectorsWithPassagesOnMultipleDates++
 		}
 	}
+
 	type hourKey struct{ sector, hour int }
 	hourDates := make(map[hourKey]int)
 	for key, cell := range cells {
@@ -161,11 +173,13 @@ func buildCoverage(layout Layout, observations []Observation, measured Measureme
 		}
 		c.Cells = append(c.Cells, *cell)
 	}
+
 	for _, count := range hourDates {
 		if count > 1 {
 			c.SectorHourPairsWithPassagesOnMultipleDates++
 		}
 	}
+
 	sort.Slice(c.Cells, func(i, j int) bool {
 		a, b := c.Cells[i], c.Cells[j]
 		if a.SectorIndex != b.SectorIndex {

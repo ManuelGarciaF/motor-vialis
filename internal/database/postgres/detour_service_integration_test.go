@@ -25,6 +25,7 @@ func TestDetourServiceIntegration(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
@@ -32,46 +33,24 @@ func TestDetourServiceIntegration(t *testing.T) {
 	defer pool.Close()
 
 	rows, err := pool.Query(ctx, `
-SELECT
-    middle.id_calle,
-    ST_AsGeoJSON(ST_MakeLine(ARRAY[incoming.geom, middle.geom, outgoing.geom]))::bytea,
-    ST_AsGeoJSON(ST_MakeLine(
-        (ST_Project(
-            ST_LineInterpolatePoint(middle.geom, 0.5)::geography,
-            20,
-            ST_Azimuth(ST_StartPoint(middle.geom), ST_EndPoint(middle.geom)) + pi() / 2
-        ))::geometry,
-        (ST_Project(
-            ST_LineInterpolatePoint(middle.geom, 0.5)::geography,
-            20,
-            ST_Azimuth(ST_StartPoint(middle.geom), ST_EndPoint(middle.geom)) - pi() / 2
-        ))::geometry
-    ))::bytea
-FROM vialis.calles middle
-JOIN LATERAL (
-    SELECT candidate.geom
-    FROM vialis.calles candidate
-    WHERE candidate.destino = middle.origen
-      AND candidate.costo > 0
-      AND candidate.id_calle <> middle.id_calle
-    ORDER BY candidate.id_calle
-    LIMIT 1
-) incoming ON true
-JOIN LATERAL (
-    SELECT candidate.geom
-    FROM vialis.calles candidate
-    WHERE candidate.origen = middle.destino
-      AND candidate.costo > 0
-      AND candidate.id_calle <> middle.id_calle
-    ORDER BY candidate.id_calle
-    LIMIT 1
-) outgoing ON true
-WHERE middle.costo_inverso > 0
-  AND ST_Length(middle.geom::geography) BETWEEN 50 AND 200
-  AND middle.geom && ST_MakeEnvelope(-58.45, -34.63, -58.37, -34.57, 4326)
-ORDER BY middle.id_calle
-LIMIT 8
-`)
+		SELECT
+		    middle.id_calle,
+		    ST_AsGeoJSON(ST_MakeLine(ARRAY [ incoming.geom, middle.geom, outgoing.geom ]))::bytea,
+		    ST_AsGeoJSON(ST_MakeLine((ST_Project(ST_LineInterpolatePoint(middle.geom, 0.5)::geography, 20, ST_Azimuth(ST_StartPoint(middle.geom),
+		                    ST_EndPoint(middle.geom)) + pi() / 2))::geometry,(ST_Project(ST_LineInterpolatePoint(middle.geom,
+		                    0.5)::geography, 20, ST_Azimuth(ST_StartPoint(middle.geom), ST_EndPoint(middle.geom)) - pi() / 2))::geometry))::bytea
+		FROM vialis.calles middle
+		JOIN LATERAL(SELECT candidate.geom FROM vialis.calles candidate WHERE candidate.destino = middle.origen AND candidate.costo > 0 AND
+		    candidate.id_calle <> middle.id_calle ORDER BY candidate.id_calle LIMIT 1) incoming ON true
+		JOIN LATERAL(SELECT candidate.geom FROM vialis.calles candidate WHERE candidate.origen = middle.destino AND candidate.costo > 0 AND
+		    candidate.id_calle <> middle.id_calle ORDER BY candidate.id_calle LIMIT 1) outgoing ON true
+		WHERE middle.costo_inverso > 0
+		    AND ST_Length(middle.geom::geography) BETWEEN 50
+		    AND 200
+		    AND middle.geom & & ST_MakeEnvelope(- 58.45, - 34.63, - 58.37, - 34.57, 4326)
+		ORDER BY middle.id_calle
+		LIMIT 8
+	`)
 	if err != nil {
 		t.Fatalf("query route candidates: %v", err)
 	}
@@ -97,6 +76,7 @@ LIMIT 8
 		}
 		candidates = append(candidates, candidate{blockedID: blockedID, path: path, cut: cut})
 	}
+
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterate route candidates: %v", err)
 	}
@@ -137,12 +117,15 @@ LIMIT 8
 		if err := route.Validate(result.Variant); err != nil {
 			t.Fatalf("generated variant is invalid: %v", err)
 		}
-		if len(result.Variant.Stops) != 2 || result.Trace.DecisionTravelSeconds <= 0 ||
-			len(result.Trace.BlockedStreetIDs) == 0 || provider.tileCount == 0 {
+		if len(result.Variant.Stops) != 2 ||
+			result.Trace.DecisionTravelSeconds <= 0 ||
+			len(result.Trace.BlockedStreetIDs) == 0 ||
+			provider.tileCount == 0 {
 			t.Fatalf("incomplete service result: %#v", result.Trace)
 		}
 		return
 	}
+
 	t.Fatalf("no candidate produced a complete detour: %v", attemptErrors)
 }
 
@@ -155,24 +138,23 @@ func trafficAroundCut(
 	if err != nil {
 		return nil, err
 	}
+
 	rows, err := pool.Query(ctx, `
-WITH area AS (
-    SELECT ST_Buffer(
-        ST_SetSRID(ST_GeomFromGeoJSON($1::jsonb), 4326)::geography,
-        1000
-    )::geometry AS geom
-)
-SELECT street.id_calle, ST_AsGeoJSON(street.geom)::bytea
-FROM vialis.calles street
-CROSS JOIN area
-WHERE street.geom && ST_Envelope(area.geom)
-  AND ST_Intersects(street.geom, area.geom)
-ORDER BY street.id_calle
-`, encodedCut)
+		WITH area AS (SELECT ST_Buffer(ST_SetSRID(ST_GeomFromGeoJSON($1::jsonb), 4326)::geography, 1000)::geometry AS geom)
+		SELECT
+		    street.id_calle,
+		    ST_AsGeoJSON(street.geom)::bytea
+		FROM vialis.calles street
+		CROSS JOIN area
+		WHERE street.geom & & ST_Envelope(area.geom)
+		    AND ST_Intersects(street.geom, area.geom)
+		ORDER BY street.id_calle
+	`, encodedCut)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+
 	var result []traffic.Segment
 	for rows.Next() {
 		var id int64
@@ -180,14 +162,17 @@ ORDER BY street.id_calle
 		if err := rows.Scan(&id, &geometryJSON); err != nil {
 			return nil, err
 		}
+
 		var line route.LineString
 		if err := json.Unmarshal(geometryJSON, &line); err != nil {
 			return nil, err
 		}
+
 		geometry := make(orb.LineString, len(line.Positions))
 		for index, position := range line.Positions {
 			geometry[index] = orb.Point{position.Longitude, position.Latitude}
 		}
+
 		result = append(result, traffic.Segment{
 			SourceID:     strconv.FormatInt(id, 10),
 			Geometry:     geometry,
@@ -196,6 +181,7 @@ ORDER BY street.id_calle
 			HasSpeed:     true,
 		})
 	}
+
 	return result, rows.Err()
 }
 
@@ -226,5 +212,6 @@ func (integrationComparator) CompareDetour(
 	for index, stop := range input.Baseline.Stops {
 		baseline[index] = simulation.StopResult{StopOrder: index, StopID: stop.ID}
 	}
+
 	return simulation.Comparison{Baseline: simulation.Result{ByStop: baseline}}, nil
 }

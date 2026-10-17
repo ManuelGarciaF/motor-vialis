@@ -13,16 +13,74 @@ func bottleneckFixture(t *testing.T) *realtimeFixture {
 	t.Helper()
 	f := newRealtimeFixture(t, time.Minute)
 	_, err := f.tx.Exec(f.ctx, f.sql(`
- CREATE TABLE vialis.recorridos(id_recorrido bigint,gtfs_route_id text,direction_id smallint,gtfs_shape_id text,geom geometry(LineString,4326),linea text DEFAULT 'L',ramal text DEFAULT 'R');
- CREATE TABLE vialis.equivalencias_recorridos_gcba(gcba_route_id text,gcba_direction smallint,gtfs_route_id text,gtfs_direction_id smallint);
- INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('g',0,'r',0);
- CREATE TABLE vialis.posiciones_colectivos_raw(dia_observado date,observado_en timestamptz,id_vehiculo text,gcba_route_id text,gcba_direction smallint,gtfs_route_id text,gtfs_direction_id smallint,gtfs_shape_id text,gtfs_shape_hash text,posicion geometry(Point,4326));
- INSERT INTO vialis.recorridos(id_recorrido,gtfs_route_id,direction_id,gtfs_shape_id,geom) VALUES(1,'r',0,'s',ST_GeomFromText('LINESTRING(-58.41 -34.6,-58.39 -34.6)',4326));
- INSERT INTO vialis.posiciones_colectivos_raw
- SELECT '2026-10-10','2026-10-10T12:00:00Z'::timestamptz+k*interval '60 seconds',
- 'v','g',0,'r',0,'s',md5(encode(ST_AsEWKB(geom),'hex')),ST_LineInterpolatePoint(geom,k/4.0)
- FROM vialis.recorridos CROSS JOIN generate_series(0,4) k;
- `))
+		CREATE TABLE vialis.recorridos (
+		    id_recorrido bigint,
+		    gtfs_route_id text,
+		    direction_id smallint,
+		    gtfs_shape_id text,
+		    geom geometry(LineString, 4326),
+		    linea text DEFAULT 'L',
+		    ramal text DEFAULT 'R'
+		);
+
+		CREATE TABLE vialis.equivalencias_recorridos_gcba (
+		    gcba_route_id text,
+		    gcba_direction smallint,
+		    gtfs_route_id text,
+		    gtfs_direction_id smallint
+		);
+
+		INSERT INTO vialis.equivalencias_recorridos_gcba
+		VALUES (
+		    'g',
+		    0,
+		    'r',
+		    0
+		);
+
+		CREATE TABLE vialis.posiciones_colectivos_raw (
+		    dia_observado date,
+		    observado_en timestamptz,
+		    id_vehiculo text,
+		    gcba_route_id text,
+		    gcba_direction smallint,
+		    gtfs_route_id text,
+		    gtfs_direction_id smallint,
+		    gtfs_shape_id text,
+		    gtfs_shape_hash text,
+		    posicion geometry(Point, 4326)
+		);
+
+		INSERT INTO vialis.recorridos (
+		    id_recorrido,
+		    gtfs_route_id,
+		    direction_id,
+		    gtfs_shape_id,
+		    geom
+		)
+		VALUES (
+		    1,
+		    'r',
+		    0,
+		    's',
+		    ST_GeomFromText('LINESTRING(-58.41 -34.6,-58.39 -34.6)', 4326)
+		);
+
+		INSERT INTO vialis.posiciones_colectivos_raw
+		SELECT
+		    '2026-10-10',
+		    '2026-10-10T12:00:00Z'::timestamptz + k * interval '60 seconds',
+		    'v',
+		    'g',
+		    0,
+		    'r',
+		    0,
+		    's',
+		    md5(encode(ST_AsEWKB(geom), 'hex')),
+		    ST_LineInterpolatePoint(geom, k / 4.0)
+		FROM vialis.recorridos
+		CROSS JOIN generate_series(0, 4) k;
+	`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,6 +103,7 @@ func TestBottlenecksGeodesicProjection(t *testing.T) {
 			t.Fatalf("projection %d: %+v", i, o)
 		}
 	}
+
 	layout, err := bottlenecks.NewLayout(data.Version, data.LengthMeters, 500)
 	if err != nil {
 		t.Fatal(err)
@@ -74,18 +133,65 @@ func TestBottlenecksGeodesicProjection(t *testing.T) {
 func TestBottlenecksTargetsUseExplicitEquivalences(t *testing.T) {
 	f := bottleneckFixture(t)
 	_, err := f.tx.Exec(f.ctx, f.sql(`
- UPDATE vialis.equivalencias_recorridos_gcba SET gcba_direction=1;
- UPDATE vialis.posiciones_colectivos_raw SET gcba_direction=1;
- INSERT INTO vialis.recorridos(id_recorrido,gtfs_route_id,direction_id,gtfs_shape_id,geom)
- VALUES(2,'other',1,'other-shape',ST_GeomFromText('LINESTRING(-58.41 -34.7,-58.39 -34.7)',4326));
- INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('r',0,'other',1);
- INSERT INTO vialis.posiciones_colectivos_raw
- SELECT '2026-10-10','2026-10-10T12:01:30Z','collision','r',0,'r',0,'s',
- md5(encode(ST_AsEWKB(geom),'hex')),ST_StartPoint(geom) FROM vialis.recorridos WHERE id_recorrido=1;
- INSERT INTO vialis.posiciones_colectivos_raw
- SELECT '2026-10-10','2026-10-10T12:01:30Z','unmapped','api-not-mapped',0,'r',0,'s',
- md5(encode(ST_AsEWKB(geom),'hex')),ST_StartPoint(geom) FROM vialis.recorridos WHERE id_recorrido=1;
- `))
+		UPDATE vialis.equivalencias_recorridos_gcba
+		SET gcba_direction = 1;
+
+		UPDATE vialis.posiciones_colectivos_raw
+		SET gcba_direction = 1;
+
+		INSERT INTO vialis.recorridos (
+		    id_recorrido,
+		    gtfs_route_id,
+		    direction_id,
+		    gtfs_shape_id,
+		    geom
+		)
+		VALUES (
+		    2,
+		    'other',
+		    1,
+		    'other-shape',
+		    ST_GeomFromText('LINESTRING(-58.41 -34.7,-58.39 -34.7)', 4326)
+		);
+
+		INSERT INTO vialis.equivalencias_recorridos_gcba
+		VALUES (
+		    'r',
+		    0,
+		    'other',
+		    1
+		);
+
+		INSERT INTO vialis.posiciones_colectivos_raw
+		SELECT
+		    '2026-10-10',
+		    '2026-10-10T12:01:30Z',
+		    'collision',
+		    'r',
+		    0,
+		    'r',
+		    0,
+		    's',
+		    md5(encode(ST_AsEWKB(geom), 'hex')),
+		    ST_StartPoint(geom)
+		FROM vialis.recorridos
+		WHERE id_recorrido = 1;
+
+		INSERT INTO vialis.posiciones_colectivos_raw
+		SELECT
+		    '2026-10-10',
+		    '2026-10-10T12:01:30Z',
+		    'unmapped',
+		    'api-not-mapped',
+		    0,
+		    'r',
+		    0,
+		    's',
+		    md5(encode(ST_AsEWKB(geom), 'hex')),
+		    ST_StartPoint(geom)
+		FROM vialis.recorridos
+		WHERE id_recorrido = 1;
+	`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,6 +212,7 @@ func TestBottlenecksTargetsUseExplicitEquivalences(t *testing.T) {
 			t.Fatalf("direction mapping %+v", o)
 		}
 	}
+
 	historical, err := repo.load(f.ctx, f.tx, 2, window, 100)
 	if err != nil || len(historical.Observations) != 1 || len(historical.Observations[0].Candidates) != 0 {
 		t.Fatalf("historical target reprojected %+v %v", historical, err)
@@ -115,15 +222,56 @@ func TestBottlenecksTargetsUseExplicitEquivalences(t *testing.T) {
 func TestBottlenecksLoopKeepsAlternativesAndOldHashUnmatched(t *testing.T) {
 	f := bottleneckFixture(t)
 	_, err := f.tx.Exec(f.ctx, f.sql(`
- DELETE FROM vialis.posiciones_colectivos_raw;
- UPDATE vialis.recorridos SET geom=ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.39 -34.6,-58.39 -34.59,-58.4 -34.6,-58.41 -34.6)',4326);
- INSERT INTO vialis.posiciones_colectivos_raw
- SELECT '2026-10-10','2026-10-10T12:00:00Z','v','g',0,'r',0,'s',md5(encode(ST_AsEWKB(geom),'hex')),ST_StartPoint(geom) FROM vialis.recorridos;
- INSERT INTO vialis.posiciones_colectivos_raw
- SELECT '2026-10-10','2026-10-10T12:01:00Z','old','g',0,'r',0,'s','old-hash',ST_StartPoint(geom) FROM vialis.recorridos;
- INSERT INTO vialis.posiciones_colectivos_raw
- SELECT '2026-10-10','2026-10-10T12:01:00Z','far','g',0,'r',0,'s',md5(encode(ST_AsEWKB(geom),'hex')),ST_Point(-58.5,-34.7,4326) FROM vialis.recorridos;
- `))
+		DELETE
+		FROM vialis.posiciones_colectivos_raw;
+
+		UPDATE vialis.recorridos
+		SET
+		    geom = ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.39 -34.6,-58.39 -34.59,-58.4 -34.6,-58.41 -34.6)',
+		    4326);
+
+		INSERT INTO vialis.posiciones_colectivos_raw
+		SELECT
+		    '2026-10-10',
+		    '2026-10-10T12:00:00Z',
+		    'v',
+		    'g',
+		    0,
+		    'r',
+		    0,
+		    's',
+		    md5(encode(ST_AsEWKB(geom), 'hex')),
+		    ST_StartPoint(geom)
+		FROM vialis.recorridos;
+
+		INSERT INTO vialis.posiciones_colectivos_raw
+		SELECT
+		    '2026-10-10',
+		    '2026-10-10T12:01:00Z',
+		    'old',
+		    'g',
+		    0,
+		    'r',
+		    0,
+		    's',
+		    'old-hash',
+		    ST_StartPoint(geom)
+		FROM vialis.recorridos;
+
+		INSERT INTO vialis.posiciones_colectivos_raw
+		SELECT
+		    '2026-10-10',
+		    '2026-10-10T12:01:00Z',
+		    'far',
+		    'g',
+		    0,
+		    'r',
+		    0,
+		    's',
+		    md5(encode(ST_AsEWKB(geom), 'hex')),
+		    ST_Point(- 58.5, - 34.7, 4326)
+		FROM vialis.recorridos;
+	`))
 	if err != nil {
 		t.Fatal(err)
 	}

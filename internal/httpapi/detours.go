@@ -85,6 +85,7 @@ func (handler *Handler) createDetour(writer http.ResponseWriter, request *http.R
 		)
 		return
 	}
+
 	for _, required := range []struct {
 		field   string
 		missing bool
@@ -107,6 +108,7 @@ func (handler *Handler) createDetour(writer http.ResponseWriter, request *http.R
 
 	ctx, cancel := handler.withTimeout(request)
 	defer cancel()
+
 	result, err := handler.detours.Plan(ctx, detour.Input{
 		Route:     *body.Route,
 		Cut:       detour.Cut{LineString: *body.Cut},
@@ -116,6 +118,7 @@ func (handler *Handler) createDetour(writer http.ResponseWriter, request *http.R
 		handler.writeDetourError(writer, request, err)
 		return
 	}
+
 	writeJSON(writer, http.StatusOK, newDetourResponse(result))
 }
 
@@ -134,6 +137,7 @@ func newDetourResponse(result detour.Result) detourResponse {
 			Baseline:            stop.Baseline,
 		}
 	}
+
 	trace := result.Trace
 	return detourResponse{
 		Variant:        result.Variant,
@@ -189,6 +193,7 @@ func (handler *Handler) writeDetourError(
 		)
 		return
 	}
+
 	var detourValidation *detour.ValidationError
 	if errors.As(err, &detourValidation) {
 		writeError(
@@ -228,6 +233,7 @@ func (handler *Handler) writeDetourError(
 		case detour.ErrorKindDependency:
 			status = http.StatusServiceUnavailable
 		}
+
 		handler.logger.Info("detour request rejected",
 			"code", domainError.Code,
 			"kind", domainError.Kind,

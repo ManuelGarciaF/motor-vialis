@@ -15,6 +15,7 @@ func ValidateCut(cut Cut, policy Policy) error {
 	if err := policy.validate(); err != nil {
 		return err
 	}
+
 	positions := cut.LineString.Positions
 	if len(positions) < 2 {
 		return invalidCut("cut.coordinates must contain at least two positions")
@@ -51,6 +52,7 @@ func ValidateCut(cut Cut, policy Policy) error {
 				index,
 			))
 		}
+
 		lengthMeters += segmentLength
 		if lengthMeters > policy.MaximumCutLengthMeters {
 			return invalidCut(fmt.Sprintf(
@@ -59,6 +61,7 @@ func ValidateCut(cut Cut, policy Policy) error {
 			))
 		}
 	}
+
 	return nil
 }
 
@@ -80,6 +83,7 @@ func ClassifyStops(
 		case distance <= policy.OptionalStopRadiusMeters:
 			availability = StopOptional
 		}
+
 		result[index] = ClassifiedStop{
 			Order:          index,
 			ID:             stop.ID,
@@ -87,6 +91,7 @@ func ClassifyStops(
 			Availability:   availability,
 		}
 	}
+
 	return result
 }
 
@@ -100,6 +105,7 @@ func distanceToLineString(point route.Position, line route.LineString) float64 {
 		)
 		minimum = math.Min(minimum, distance)
 	}
+
 	return minimum
 }
 

@@ -45,25 +45,90 @@ func newPassageStoreFixture(t *testing.T) *passageStoreFixture {
 	}
 	t.Cleanup(pool.Close)
 	schema := fmt.Sprintf("h0012_test_%d", time.Now().UnixNano())
-	if _, err = pool.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize()); err != nil {
+	if _, err = pool.Exec(ctx, `
+		CREATE SCHEMA
+	`+pgx.Identifier{schema}.Sanitize()); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if _, err := pool.Exec(cleanup, "DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE"); err != nil {
+
+		if _, err := pool.Exec(cleanup, `
+			DROP SCHEMA
+		`+pgx.Identifier{schema}.Sanitize()+" CASCADE"); err != nil {
 			t.Errorf("cleanup H0012 schema: %v", err)
 		}
 	})
 	s := &BottlenecksStore{database: pool, schema: schema}
 	f := &passageStoreFixture{ctx: ctx, pool: pool, store: s, t: t}
-	f.exec(`CREATE TABLE vialis.capturas_colectivos(id_captura bigint PRIMARY KEY,recibido_en timestamptz NOT NULL,cobertura_parcial boolean NOT NULL DEFAULT false);
- CREATE TABLE vialis.recorridos(id_recorrido bigint PRIMARY KEY,gtfs_route_id text,direction_id smallint,gtfs_shape_id text,linea text,ramal text,geom geometry(LineString,4326));
- CREATE TABLE vialis.paradas(id_parada bigint PRIMARY KEY,gtfs_stop_id text,nombre text,posicion geometry(Point,4326));
- CREATE TABLE vialis.recorridos_paradas(id_recorrido bigint,id_parada bigint,nro_parada integer);
- INSERT INTO vialis.recorridos VALUES(1,'r',0,'s','L','R',ST_GeomFromText('LINESTRING(-58.41 -34.6,-58.39 -34.6)',4326));
- INSERT INTO vialis.paradas VALUES(1,'stop-1','A',ST_Point(-58.41,-34.6,4326)),(2,'stop-2','B',ST_Point(-58.39,-34.6,4326));
- INSERT INTO vialis.recorridos_paradas VALUES(1,1,0),(1,2,1);`)
+	f.exec(`
+		CREATE TABLE vialis.capturas_colectivos (
+		    id_captura bigint PRIMARY KEY,
+		    recibido_en timestamptz NOT NULL,
+		    cobertura_parcial boolean NOT NULL DEFAULT false
+		);
+
+		CREATE TABLE vialis.recorridos (
+		    id_recorrido bigint PRIMARY KEY,
+		    gtfs_route_id text,
+		    direction_id smallint,
+		    gtfs_shape_id text,
+		    linea text,
+		    ramal text,
+		    geom geometry(LineString, 4326)
+		);
+
+		CREATE TABLE vialis.paradas (
+		    id_parada bigint PRIMARY KEY,
+		    gtfs_stop_id text,
+		    nombre text,
+		    posicion geometry(Point, 4326)
+		);
+
+		CREATE TABLE vialis.recorridos_paradas (
+		    id_recorrido bigint,
+		    id_parada bigint,
+		    nro_parada integer
+		);
+
+		INSERT INTO vialis.recorridos
+		VALUES (
+		    1,
+		    'r',
+		    0,
+		    's',
+		    'L',
+		    'R',
+		    ST_GeomFromText('LINESTRING(-58.41 -34.6,-58.39 -34.6)', 4326)
+		);
+
+		INSERT INTO vialis.paradas
+		VALUES (
+		    1,
+		    'stop-1',
+		    'A',
+		    ST_Point(- 58.41, - 34.6, 4326)
+		),
+		(
+		    2,
+		    'stop-2',
+		    'B',
+		    ST_Point(- 58.39, - 34.6, 4326)
+		);
+
+		INSERT INTO vialis.recorridos_paradas
+		VALUES (
+		    1,
+		    1,
+		    0
+		),
+		(
+		    1,
+		    2,
+		    1
+		);
+	`)
 	f.exec(scripts.CrearBottlenecks)
 	f.exec(scripts.CrearBottlenecks)
 	f.capture(5)
@@ -80,7 +145,10 @@ func (f *passageStoreFixture) exec(query string, args ...any) {
 func (f *passageStoreFixture) count(table string) int {
 	f.t.Helper()
 	var count int
-	if err := f.pool.QueryRow(f.ctx, `SELECT count(*) FROM `+pgx.Identifier{f.store.schema, table}.Sanitize()).Scan(&count); err != nil {
+	if err := f.pool.QueryRow(f.ctx, `
+		SELECT count(*)
+		FROM
+	`+pgx.Identifier{f.store.schema, table}.Sanitize()).Scan(&count); err != nil {
 		f.t.Fatal(err)
 	}
 	return count
@@ -89,7 +157,16 @@ func (f *passageStoreFixture) count(table string) int {
 var passageEpoch = time.Now().UTC().Truncate(24 * time.Hour).Add(12 * time.Hour)
 
 func (f *passageStoreFixture) capture(id int64) {
-	f.exec(`INSERT INTO vialis.capturas_colectivos(id_captura,recibido_en) VALUES($1,$2)`, id, passageEpoch.Add(time.Duration(id)*time.Minute))
+	f.exec(`
+		INSERT INTO vialis.capturas_colectivos (
+		    id_captura,
+		    recibido_en
+		)
+		VALUES (
+		    $1,
+		    $2
+		)
+	`, id, passageEpoch.Add(time.Duration(id)*time.Minute))
 }
 func persistenceModel() bottlenecks.PersistenceModel {
 	return bottlenecks.PersistenceModel{Name: "experimental", MeasurementVersion: "commercial-v1", MatcherVersion: "conservative-v1", NominalMeters: 500, Policy: bottlenecks.MeasurementPolicy{MaximumGap: 180 * time.Second, MaximumDistanceMeters: 100, MaximumSpeedKPH: 100}, TimeZone: "America/Argentina/Buenos_Aires", RawRetentionDays: 7, ClosureCaptures: 4}
@@ -155,23 +232,43 @@ func TestPassageStoreActivationSnapshotAndCatalogIndependence(t *testing.T) {
 	}
 	var sectors, stops int
 	var delta float64
-	err = f.pool.QueryRow(f.ctx, f.store.sql(`SELECT (SELECT count(*) FROM vialis.h0012_sectores WHERE trazado=$1),jsonb_array_length(paradas),
- (SELECT max(abs(ST_Length(s.geom::geography)-(fin_metros-inicio_metros))) FROM vialis.h0012_sectores s WHERE trazado=$1)
- FROM vialis.h0012_trazados WHERE id=$1`), layout.ID).Scan(&sectors, &stops, &delta)
+	err = f.pool.QueryRow(f.ctx, f.store.sql(`
+		SELECT(SELECT count(*) FROM vialis.h0012_sectores WHERE trazado = $1),
+		jsonb_array_length(paradas),
+		(SELECT max(abs(ST_Length(s.geom::geography) -(fin_metros - inicio_metros))) FROM vialis.h0012_sectores s WHERE trazado = $1)
+		FROM vialis.h0012_trazados
+		WHERE id = $1
+	`), layout.ID).Scan(&sectors, &stops, &delta)
 	if err != nil || sectors != len(layout.Layout.Sectors()) || stops != 2 || delta > 0.001 {
 		t.Fatalf("snapshot geometry %d %d delta=%f: %v", sectors, stops, delta, err)
 	}
 	var first, last int
-	err = f.pool.QueryRow(f.ctx, f.store.sql(`SELECT (paradas->0->'projectionCandidates'->0->>'sectorIndex')::int,(paradas->1->'projectionCandidates'->0->>'sectorIndex')::int FROM vialis.h0012_trazados WHERE id=$1`), layout.ID).Scan(&first, &last)
+	err = f.pool.QueryRow(f.ctx, f.store.sql(`
+		SELECT(paradas->0->'projectionCandidates'->0->>'sectorIndex')::int,
+		(paradas->1->'projectionCandidates'->0->>'sectorIndex')::int
+		FROM vialis.h0012_trazados
+		WHERE id = $1
+	`), layout.ID).Scan(&first, &last)
 	if err != nil || first != 0 || last != sectors-1 {
 		t.Fatalf("stop/sector associations: %d %d %v", first, last, err)
 	}
-	f.exec(`UPDATE vialis.recorridos SET geom=ST_GeomFromText('LINESTRING(-58.41 -34.6,-58.38 -34.6)',4326),gtfs_shape_id='new' WHERE id_recorrido=1`)
+	f.exec(`
+		UPDATE vialis.recorridos
+		SET
+		    geom = ST_GeomFromText('LINESTRING(-58.41 -34.6,-58.38 -34.6)', 4326),
+		    gtfs_shape_id = 'new'
+		WHERE id_recorrido = 1
+	`)
 	replacement, err := f.store.RegisterLayout(f.ctx, run.Model.Name, 1)
 	if err != nil || replacement.ID == layout.ID || replacement.Layout.Version() == layout.Layout.Version() {
 		t.Fatalf("version overwritten: %v", err)
 	}
-	f.exec(`TRUNCATE vialis.recorridos_paradas,vialis.paradas,vialis.recorridos,vialis.capturas_colectivos`)
+	f.exec(`
+		TRUNCATE vialis.recorridos_paradas,
+		vialis.paradas,
+		vialis.recorridos,
+		vialis.capturas_colectivos
+	`)
 	if f.count("h0012_trazados") != 2 || f.count("h0012_sectores") <= sectors {
 		t.Fatal("catalog/raw purge removed static evidence")
 	}
@@ -205,13 +302,20 @@ func TestPassageStoreAtomicCommitRestartAndReplay(t *testing.T) {
 			t.Fatalf("replay classification: %v", err)
 		}
 	}
+
 	if f.count("h0012_mediciones") != 1 || f.count("h0012_diagnosticos") != 2 {
 		t.Fatal("replay duplicated evidence")
 	}
 	var payload []byte
 	var date string
 	var hour int
-	if err = f.pool.QueryRow(f.ctx, f.store.sql(`SELECT soporte,fecha_local::text,hora_local FROM vialis.h0012_mediciones`)).Scan(&payload, &date, &hour); err != nil {
+	if err = f.pool.QueryRow(f.ctx, f.store.sql(`
+		SELECT
+		    soporte,
+		    fecha_local::text,
+		    hora_local
+		FROM vialis.h0012_mediciones
+	`)).Scan(&payload, &date, &hour); err != nil {
 		t.Fatal(err)
 	}
 	var passage bottlenecks.Passage
@@ -221,7 +325,9 @@ func TestPassageStoreAtomicCommitRestartAndReplay(t *testing.T) {
 	if !reflect.DeepEqual(passage, second.Measurement.Passages[0]) || date != passageEpoch.Format("2006-01-02") || hour != 9 {
 		t.Fatalf("support/attribution changed: %+v %s %d", passage, date, hour)
 	}
-	f.exec(`TRUNCATE vialis.capturas_colectivos`)
+	f.exec(`
+		TRUNCATE vialis.capturas_colectivos
+	`)
 	states, err = f.store.LoadStates(f.ctx, run.Model.Name)
 	if err != nil || len(states) != 1 || states[0].State.LastCaptureID != 12 || f.count("h0012_mediciones") != 1 {
 		t.Fatalf("raw purge damaged restart/evidence: %v", err)
@@ -292,10 +398,12 @@ func TestPassageStoreCheckpointOrderingAndConcurrentReplay(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+
 			_, err := f.store.CommitCapture(f.ctx, run.Model.Name, 10, 11, []bottlenecks.StreamTransition{first})
 			results <- err
 		}()
 	}
+
 	wg.Wait()
 	close(results)
 	success, replay := 0, 0
@@ -308,6 +416,7 @@ func TestPassageStoreCheckpointOrderingAndConcurrentReplay(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+
 	if success != 1 || replay != 1 || f.count("h0012_mediciones") != 1 || f.count("h0012_diagnosticos") != 1 {
 		t.Fatalf("concurrent duplication: success=%d replay=%d", success, replay)
 	}
@@ -333,12 +442,18 @@ func TestPassageStorePersistsFinalIncompleteClosure(t *testing.T) {
 		}
 		transition = next
 	}
+
 	if f.count("h0012_mediciones") != 1 {
 		t.Fatal("repeated incomplete closure")
 	}
 	var reason string
 	var complete bool
-	if err := f.pool.QueryRow(f.ctx, f.store.sql(`SELECT motivo,completa FROM vialis.h0012_mediciones`)).Scan(&reason, &complete); err != nil || reason != "missing_updates" || complete {
+	if err := f.pool.QueryRow(f.ctx, f.store.sql(`
+		SELECT
+		    motivo,
+		    completa
+		FROM vialis.h0012_mediciones
+	`)).Scan(&reason, &complete); err != nil || reason != "missing_updates" || complete {
 		t.Fatalf("invalid incomplete measurement: %s %v %v", reason, complete, err)
 	}
 }

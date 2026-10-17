@@ -44,6 +44,7 @@ func AnalyzeTargets(ctx context.Context, repo Repository, targets []AnalysisTarg
 	if err := ctx.Err(); err != nil {
 		return summary, err
 	}
+
 	for _, target := range targets {
 		if target.LineID <= 0 || target.ExpectedRawPositions < 0 {
 			return summary, fmt.Errorf("invalid analysis target")
@@ -54,6 +55,7 @@ func AnalyzeTargets(ctx context.Context, repo Repository, targets []AnalysisTarg
 		if err := ctx.Err(); err != nil {
 			return summary, err
 		}
+
 		request.LineID = target.LineID
 		// Bound each target independently; the caller owns the global run budget.
 		targetCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
@@ -71,6 +73,7 @@ func AnalyzeTargets(ctx context.Context, repo Repository, targets []AnalysisTarg
 		if err := emit(report); err != nil {
 			return summary, err
 		}
+
 		summary.Targets++
 		summary.RawPositions += report.RawPositions
 		c := report.Coverage
@@ -85,5 +88,6 @@ func AnalyzeTargets(ctx context.Context, repo Repository, targets []AnalysisTarg
 		summary.SectorHourPairsWithPassagesOnMultipleDates += c.SectorHourPairsWithPassagesOnMultipleDates
 		summary.CellsWithValidPassages += c.CellsWithValidPassages
 	}
+
 	return summary, nil
 }

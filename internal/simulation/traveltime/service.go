@@ -57,6 +57,7 @@ func (service *Service) Estimate(
 						"find global commercial paces: no valid GTFS references",
 					)
 				}
+
 				global = &fallback
 			}
 			paces = global.Paces
@@ -84,6 +85,7 @@ func (service *Service) Estimate(
 		result.Confidence = worseConfidence(result.Confidence, confidence)
 		result.BySegment = append(result.BySegment, segmentResult)
 	}
+
 	return result, nil
 }
 
@@ -97,6 +99,7 @@ func segmentsFromRoute(input route.Route) []Segment {
 			Path:              *input.Stops[index].PathToNext,
 		})
 	}
+
 	return segments
 }
 
@@ -130,6 +133,7 @@ func (service *Service) resolveLocalPaces(
 		if len(pending) == 0 {
 			break
 		}
+
 		measured, err := service.repository.FindSegmentReferences(
 			ctx,
 			pending,
@@ -139,6 +143,7 @@ func (service *Service) resolveLocalPaces(
 		if err != nil {
 			return nil, fmt.Errorf("find segment references: %w", err)
 		}
+
 		ordered, err := orderMeasuredSegments(measured, pending)
 		if err != nil {
 			return nil, err
@@ -156,14 +161,17 @@ func (service *Service) resolveLocalPaces(
 				unresolved = append(unresolved, estimate.segment)
 				continue
 			}
+
 			estimate.paces = paces
 			estimate.source = source
 			estimate.confidence = confidence
 			estimate.referenceCount = count
 			estimate.found = true
 		}
+
 		pending = unresolved
 	}
+
 	return estimates, nil
 }
 
@@ -179,6 +187,7 @@ func orderMeasuredSegments(
 			len(requested),
 		)
 	}
+
 	positions := make(map[int]int, len(requested))
 	for position, segment := range requested {
 		positions[segment.Order] = position
@@ -200,9 +209,11 @@ func orderMeasuredSegments(
 				segment.Order,
 			)
 		}
+
 		seen[position] = true
 		ordered[position] = segment
 	}
+
 	return ordered, nil
 }
 
@@ -260,6 +271,7 @@ func consolidateRoutes(
 			reference.DistanceMeters < 0 {
 			continue
 		}
+
 		overlapRatio := math.Min(
 			1,
 			reference.OverlapMeters/segment.LengthMeters,
@@ -283,6 +295,7 @@ func consolidateRoutes(
 		if accumulator.weight <= 0 {
 			continue
 		}
+
 		result = append(result, routePace{
 			RouteID: routeID,
 			Paces: Paces{
@@ -293,6 +306,7 @@ func consolidateRoutes(
 			Weight: math.Min(accumulator.weight, 1),
 		})
 	}
+
 	sort.Slice(result, func(left, right int) bool {
 		return result[left].RouteID < result[right].RouteID
 	})
@@ -317,6 +331,7 @@ func weightedMedian(
 	for _, item := range ordered {
 		totalWeight += item.Weight
 	}
+
 	threshold := totalWeight / 2
 	var cumulative float64
 	for _, item := range ordered {
@@ -325,6 +340,7 @@ func weightedMedian(
 			return value(item)
 		}
 	}
+
 	return value(ordered[len(ordered)-1])
 }
 

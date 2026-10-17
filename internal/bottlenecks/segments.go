@@ -35,10 +35,12 @@ func NewLayout(version ShapeVersion, lengthMeters, nominalMeters float64) (Layou
 	if !finite(lengthMeters) || !finite(nominalMeters) || lengthMeters <= 0 || nominalMeters <= 0 || lengthMeters > 1e9 || nominalMeters > 1e9 {
 		return Layout{}, fmt.Errorf("invalid segmentation lengths")
 	}
+
 	length, nominal := meters(lengthMeters), meters(nominalMeters)
 	if length <= 0 || nominal <= 0 || length/nominal > 100000 {
 		return Layout{}, fmt.Errorf("segmentation precision or allocation limit exceeded")
 	}
+
 	count := int(math.Floor(length / nominal))
 	remainder := meters(length - float64(count)*nominal)
 	if remainder >= nominal/2 {
@@ -53,6 +55,7 @@ func NewLayout(version ShapeVersion, lengthMeters, nominalMeters float64) (Layou
 		}
 		sectors[i] = Sector{Index: i, StartMeters: meters(float64(i) * nominal), EndMeters: end}
 	}
+
 	return Layout{version: version, length: length, nominal: nominal, sectors: sectors}, nil
 }
 

@@ -21,6 +21,7 @@ func (r fakeCaptureRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
+
 	*dest[0].(*time.Time) = r.receivedAt
 	*dest[1].(*bool) = r.partial
 	return nil
@@ -45,6 +46,7 @@ func TestReadBunchingCaptureState(t *testing.T) {
 	policy := bunching.Policy{MaximumAge: 5 * time.Minute, MaximumFutureSkew: time.Minute}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	failure := errors.New("database failed")
 	for _, tc := range []struct {
 		name           string
@@ -83,6 +85,7 @@ func TestReadBunchingCaptureState(t *testing.T) {
 				}
 				return
 			}
+
 			age := -tc.offset.Seconds()
 			if age < 0 {
 				age = 0

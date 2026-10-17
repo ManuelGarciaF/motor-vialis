@@ -30,7 +30,16 @@ type PersistenceModel struct {
 }
 
 func (m PersistenceModel) Validate() error {
-	if strings.TrimSpace(m.Name) == "" || strings.TrimSpace(m.MeasurementVersion) == "" || strings.TrimSpace(m.MatcherVersion) == "" || !finite(m.NominalMeters) || meters(m.NominalMeters) <= 0 || m.NominalMeters > 1e9 || m.TimeZone != "America/Argentina/Buenos_Aires" || m.RawRetentionDays < 1 || m.RawRetentionDays > 31 || m.ClosureCaptures != MissingCaptureLimit {
+	if strings.TrimSpace(m.Name) == "" ||
+		strings.TrimSpace(m.MeasurementVersion) == "" ||
+		strings.TrimSpace(m.MatcherVersion) == "" ||
+		!finite(m.NominalMeters) ||
+		meters(m.NominalMeters) <= 0 ||
+		m.NominalMeters > 1e9 ||
+		m.TimeZone != "America/Argentina/Buenos_Aires" ||
+		m.RawRetentionDays < 1 ||
+		m.RawRetentionDays > 31 ||
+		m.ClosureCaptures != MissingCaptureLimit {
 		return fmt.Errorf("invalid persistence model")
 	}
 	if _, err := time.LoadLocation(m.TimeZone); err != nil {

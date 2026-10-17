@@ -173,6 +173,7 @@ func TestStaleCannotOpen(t *testing.T) {
 		p.ObservedAt = now.Add(-6 * time.Minute)
 		s.Positions[id] = p
 	}
+
 	changes, _ := Advance(nil, s, testPolicy())
 	if len(changes) != 0 {
 		t.Fatal(changes)
@@ -217,12 +218,14 @@ func TestDelayedPositionsDoNotCausePrematureExpiry(t *testing.T) {
 		p.ObservedAt = now.Add(-4*time.Minute - 30*time.Second)
 		s.Positions[id] = p
 	}
+
 	event := firstEvent(t, s)
 	s.ReceivedAt = now.Add(time.Minute)
 	for id, p := range s.Positions {
 		p.ObservedAt = p.ObservedAt.Add(time.Minute)
 		s.Positions[id] = p
 	}
+
 	changes, err := Advance([]Event{event}, s, testPolicy())
 	if err != nil || len(changes) != 1 || changes[0].ClosedAt != nil || changes[0].Observations != 2 {
 		t.Fatalf("delayed continuation: %+v %v", changes, err)
@@ -236,12 +239,14 @@ func TestFutureSkewDoesNotCreateInvalidClosureTime(t *testing.T) {
 		p.ObservedAt = now.Add(30 * time.Second)
 		s.Positions[id] = p
 	}
+
 	event := firstEvent(t, s)
 	s = testSnapshot(now.Add(10*time.Second), 250)
 	for id, p := range s.Positions {
 		p.ObservedAt = now.Add(40 * time.Second)
 		s.Positions[id] = p
 	}
+
 	changes, err := Advance([]Event{event}, s, testPolicy())
 	if err != nil || len(changes) != 1 || changes[0].ClosedAt == nil || changes[0].ClosedAt.Before(event.LastObservedAt) {
 		t.Fatalf("future closure: %+v %v", changes, err)
@@ -261,6 +266,7 @@ func TestCachedSamplesCannotStartAnotherEpisode(t *testing.T) {
 		p.ObservedAt = now.Add(time.Minute)
 		s.Positions[id] = p
 	}
+
 	s.ReceivedAt = now.Add(time.Minute)
 	changes, err = Advance(nil, s, testPolicy())
 	if err != nil || len(changes) != 1 {

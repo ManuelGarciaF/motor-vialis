@@ -16,10 +16,47 @@ func TestRealtimeRepositoryIntegration(t *testing.T) {
 	fixture.migrate("migrar_realtime.sql", "migrar_realtime.sql")
 	ctx, tx, schema := fixture.ctx, fixture.tx, fixture.schema
 	repo := fixture.realtimeRepository()
-	_, err := tx.Exec(ctx, repo.sql(`CREATE TABLE vialis.recorridos(id_recorrido bigint,gtfs_route_id text,direction_id smallint,gtfs_shape_id text,geom geometry(LineString,4326),UNIQUE(gtfs_route_id,direction_id));
- CREATE TABLE vialis.equivalencias_recorridos_gcba(gcba_route_id text,gcba_direction smallint,gtfs_route_id text,gtfs_direction_id smallint,PRIMARY KEY(gcba_route_id,gcba_direction));
- INSERT INTO vialis.recorridos VALUES(1,'gtfs',1,'shape-original',ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.5 -34.7)',4326));
- INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'gtfs',1),('orphan',0,'absent',0)`))
+	_, err := tx.Exec(ctx, repo.sql(`
+		CREATE TABLE vialis.recorridos (
+		    id_recorrido bigint,
+		    gtfs_route_id text,
+		    direction_id smallint,
+		    gtfs_shape_id text,
+		    geom geometry(LineString, 4326),
+		    UNIQUE(gtfs_route_id, direction_id)
+		);
+
+		CREATE TABLE vialis.equivalencias_recorridos_gcba (
+		    gcba_route_id text,
+		    gcba_direction smallint,
+		    gtfs_route_id text,
+		    gtfs_direction_id smallint,
+		    PRIMARY KEY(gcba_route_id, gcba_direction)
+		);
+
+		INSERT INTO vialis.recorridos
+		VALUES (
+		    1,
+		    'gtfs',
+		    1,
+		    'shape-original',
+		    ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.5 -34.7)', 4326)
+		);
+
+		INSERT INTO vialis.equivalencias_recorridos_gcba
+		VALUES (
+		    'gcba',
+		    0,
+		    'gtfs',
+		    1
+		),
+		(
+		    'orphan',
+		    0,
+		    'absent',
+		    0
+		)
+	`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,12 +96,28 @@ func TestRealtimeRepositoryIntegration(t *testing.T) {
 	}
 	var direction int
 	var shape string
-	err = tx.QueryRow(ctx, repo.sql(`SELECT gtfs_direction_id,gtfs_shape_id FROM vialis.posiciones_colectivos_raw`)).Scan(&direction, &shape)
+	err = tx.QueryRow(ctx, repo.sql(`
+		SELECT
+		    gtfs_direction_id,
+		    gtfs_shape_id
+		FROM vialis.posiciones_colectivos_raw
+	`)).Scan(&direction, &shape)
 	if err != nil || direction != 1 || shape != "shape-original" {
 		t.Fatalf("mapping: %d %s %v", direction, shape, err)
 	}
 	// Simulates replacement of the GTFS catalog, including regenerated IDs.
-	if _, err = tx.Exec(ctx, repo.sql(`TRUNCATE vialis.recorridos; INSERT INTO vialis.recorridos VALUES(999,'gtfs',1,'shape-new',ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.6 -34.7)',4326))`)); err != nil {
+	if _, err = tx.Exec(ctx, repo.sql(`
+		TRUNCATE vialis.recorridos;
+
+		INSERT INTO vialis.recorridos
+		VALUES (
+		    999,
+		    'gtfs',
+		    1,
+		    'shape-new',
+		    ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.6 -34.7)', 4326)
+		)
+	`)); err != nil {
 		t.Fatal(err)
 	}
 	position.ObservedAt = now.Add(time.Second)
@@ -73,7 +126,10 @@ func TestRealtimeRepositoryIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	var versions int
-	if err = tx.QueryRow(ctx, repo.sql(`SELECT count(DISTINCT gtfs_shape_hash) FROM vialis.posiciones_colectivos_raw`)).Scan(&versions); err != nil || versions != 2 {
+	if err = tx.QueryRow(ctx, repo.sql(`
+		SELECT count(DISTINCT gtfs_shape_hash)
+		FROM vialis.posiciones_colectivos_raw
+	`)).Scan(&versions); err != nil || versions != 2 {
 		t.Fatalf("versions: %d %v", versions, err)
 	}
 	// Invalid geometry/speed must roll back metadata as well as the batch.
@@ -85,7 +141,10 @@ func TestRealtimeRepositoryIntegration(t *testing.T) {
 		t.Fatal("invalid coordinates accepted")
 	}
 	var count int
-	if err := tx.QueryRow(ctx, repo.sql(`SELECT count(*) FROM vialis.capturas_colectivos`)).Scan(&count); err != nil || count != 3 {
+	if err := tx.QueryRow(ctx, repo.sql(`
+		SELECT count(*)
+		FROM vialis.capturas_colectivos
+	`)).Scan(&count); err != nil || count != 3 {
 		t.Fatalf("rollback: %d %v", count, err)
 	}
 	bad.Latitude = -34.6
@@ -105,6 +164,7 @@ func TestRealtimeRepositoryIntegration(t *testing.T) {
 			p.Latitude = -34.7 + float64((i/100)%100)/1000
 			capture.Positions[i] = p
 		}
+
 		capture.Stats = bunching.CaptureStats{TotalRows: volumeRows, ValidRows: volumeRows}
 		started := time.Now()
 		result, err := repo.StoreCapture(ctx, capture)
@@ -112,7 +172,11 @@ func TestRealtimeRepositoryIntegration(t *testing.T) {
 			t.Fatalf("volume: %+v %v", result, err)
 		}
 		var total, heap int64
-		err = tx.QueryRow(ctx, `SELECT pg_total_relation_size($1::regclass),pg_relation_size($1::regclass)`, pgx.Identifier{schema, "posiciones_colectivos_raw_20260930"}.Sanitize()).Scan(&total, &heap)
+		err = tx.QueryRow(ctx, `
+			SELECT
+			    pg_total_relation_size($1::regclass),
+			    pg_relation_size($1::regclass)
+		`, pgx.Identifier{schema, "posiciones_colectivos_raw_20260930"}.Sanitize()).Scan(&total, &heap)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -120,7 +184,16 @@ func TestRealtimeRepositoryIntegration(t *testing.T) {
 		if _, err = tx.Exec(ctx, repo.sql(`ANALYZE vialis.posiciones_colectivos_raw`)); err != nil {
 			t.Fatal(err)
 		}
-		rows, err := tx.Query(ctx, repo.sql(`EXPLAIN (ANALYZE, BUFFERS) SELECT id_vehiculo FROM vialis.posiciones_colectivos_raw WHERE dia_observado='2026-09-30' AND gtfs_route_id='gtfs' AND gtfs_direction_id=1 AND observado_en >= '2026-09-30 11:55:00+00' AND ST_DWithin(posicion::geography,ST_SetSRID(ST_MakePoint(-58.45,-34.65),4326)::geography,200)`))
+		rows, err := tx.Query(ctx, repo.sql(`
+			EXPLAIN(ANALYZE, BUFFERS)
+			SELECT id_vehiculo
+			FROM vialis.posiciones_colectivos_raw
+			WHERE dia_observado = '2026-09-30'
+			    AND gtfs_route_id = 'gtfs'
+			    AND gtfs_direction_id = 1
+			    AND observado_en >= '2026-09-30 11:55:00+00'
+			    AND ST_DWithin(posicion::geography, ST_SetSRID(ST_MakePoint(- 58.45, - 34.65), 4326)::geography, 200)
+		`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -131,6 +204,7 @@ func TestRealtimeRepositoryIntegration(t *testing.T) {
 			}
 			t.Log(line)
 		}
+
 		err = rows.Err()
 		rows.Close()
 		if err != nil {
@@ -145,8 +219,14 @@ func TestRealtimeRepositoryIntegration(t *testing.T) {
 		t.Fatalf("dropped: %+v", maintained)
 	}
 	var raw, captures int
-	tx.QueryRow(ctx, repo.sql(`SELECT count(*) FROM vialis.posiciones_colectivos_raw`)).Scan(&raw)
-	tx.QueryRow(ctx, repo.sql(`SELECT count(*) FROM vialis.capturas_colectivos`)).Scan(&captures)
+	tx.QueryRow(ctx, repo.sql(`
+		SELECT count(*)
+		FROM vialis.posiciones_colectivos_raw
+	`)).Scan(&raw)
+	tx.QueryRow(ctx, repo.sql(`
+		SELECT count(*)
+		FROM vialis.capturas_colectivos
+	`)).Scan(&captures)
 	if raw != 0 || captures != 0 {
 		t.Fatalf("retention: raw=%d captures=%d", raw, captures)
 	}

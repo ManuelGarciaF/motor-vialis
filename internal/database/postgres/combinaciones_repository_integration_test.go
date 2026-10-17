@@ -46,6 +46,7 @@ func TestCombinacionesRankingIntegration(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
@@ -173,44 +174,102 @@ func insertRankingFixture(ctx context.Context, t *testing.T, tx pgx.Tx) {
 	t.Helper()
 
 	execFixture(ctx, t, tx, `
-		INSERT INTO vialis.paradas (id_parada, gtfs_stop_id, nombre, posicion)
-		VALUES
-			($1, 'ranking-bajada', 'Ranking bajada', ST_SetSRID(ST_MakePoint($3, $5), 4326)),
-			($2, 'ranking-subida', 'Ranking subida', ST_SetSRID(ST_MakePoint($4, $5), 4326))`,
+		INSERT INTO vialis.paradas (
+		    id_parada,
+		    gtfs_stop_id,
+		    nombre,
+		    posicion
+		)
+		VALUES (
+		    $1,
+		    'ranking-bajada',
+		    'Ranking bajada',
+		    ST_SetSRID(ST_MakePoint($3, $5), 4326)
+		),
+		(
+		    $2,
+		    'ranking-subida',
+		    'Ranking subida',
+		    ST_SetSRID(ST_MakePoint($4, $5), 4326)
+		)
+	`,
 		rankingBoardStopID, rankingAlightStopID,
 		rankingLongitude, rankingLongitude+0.0003, rankingLatitude,
 	)
 
 	execFixture(ctx, t, tx, `
 		INSERT INTO vialis.recorridos (
-			id_recorrido, gtfs_route_id, gtfs_shape_id, nombre_publico,
-			linea, ramal, direction_id, geom, distancia_metros
-		) VALUES
-			($1, 'ranking-a', 'ranking-a', 'Ranking A', 'RA', 'TRONCAL', 0,
-			 ST_SetSRID(ST_MakeLine(ST_MakePoint($3, $5), ST_MakePoint($4, $5)), 4326), 5000),
-			($2, 'ranking-b', 'ranking-b', 'Ranking B', 'RB', 'TRONCAL', 1,
-			 ST_SetSRID(ST_MakeLine(ST_MakePoint($4, $5), ST_MakePoint($3, $5)), 4326), 5000)`,
+		    id_recorrido,
+		    gtfs_route_id,
+		    gtfs_shape_id,
+		    nombre_publico,
+		    linea,
+		    ramal,
+		    direction_id,
+		    geom,
+		    distancia_metros
+		)
+		VALUES (
+		    $1,
+		    'ranking-a',
+		    'ranking-a',
+		    'Ranking A',
+		    'RA',
+		    'TRONCAL',
+		    0,
+		    ST_SetSRID(ST_MakeLine(ST_MakePoint($3, $5), ST_MakePoint($4, $5)), 4326),
+		    5000
+		),
+		(
+		    $2,
+		    'ranking-b',
+		    'ranking-b',
+		    'Ranking B',
+		    'RB',
+		    'TRONCAL',
+		    1,
+		    ST_SetSRID(ST_MakeLine(ST_MakePoint($4, $5), ST_MakePoint($3, $5)), 4326),
+		    5000
+		)
+	`,
 		rankingFirstLineID, rankingSecondLineID,
 		rankingLongitude, rankingLongitude+0.05, rankingLatitude,
 	)
 
 	execFixture(ctx, t, tx, `
 		INSERT INTO vialis.conexiones_recorridos (
-			id_recorrido_origen, id_recorrido_destino,
-			id_parada_bajada, id_parada_subida, distancia_caminata_metros
-		) VALUES ($1, $2, $3, $4, 33)`,
+		    id_recorrido_origen,
+		    id_recorrido_destino,
+		    id_parada_bajada,
+		    id_parada_subida,
+		    distancia_caminata_metros
+		)
+		VALUES (
+		    $1,
+		    $2,
+		    $3,
+		    $4,
+		    33
+		)
+	`,
 		rankingFirstLineID, rankingSecondLineID,
 		rankingBoardStopID, rankingAlightStopID,
 	)
 
 	execFixture(ctx, t, tx, `
-		INSERT INTO vialis.hexagonos_viajes (indice_h3, punto_maxima_concurrencia, concurrencia)
-		SELECT h3_lat_lng_to_cell(punto, 8), punto, 1
-		FROM (VALUES
-			(ST_SetSRID(ST_MakePoint($1, $3), 4326)),
-			(ST_SetSRID(ST_MakePoint($2, $3), 4326))
-		) AS v(punto)
-		ON CONFLICT (indice_h3) DO NOTHING`,
+		INSERT INTO vialis.hexagonos_viajes (
+		    indice_h3,
+		    punto_maxima_concurrencia,
+		    concurrencia
+		)
+		SELECT
+		    h3_lat_lng_to_cell(punto, 8),
+		    punto,
+		    1
+		FROM(VALUES (ST_SetSRID(ST_MakePoint($1, $3), 4326)),(ST_SetSRID(ST_MakePoint($2, $3), 4326))) AS v(punto)
+		ON CONFLICT (indice_h3)
+		DO NOTHING
+	`,
 		rankingLongitude, rankingLongitude+0.1, rankingLatitude,
 	)
 
@@ -218,11 +277,30 @@ func insertRankingFixture(ctx context.Context, t *testing.T, tx pgx.Tx) {
 	// whole-day row whose NULL is a value and not a gap.
 	execFixture(ctx, t, tx, `
 		INSERT INTO vialis.combinaciones_lineas (
-			id_recorrido_primero, id_recorrido_segundo, rango_horario,
-			viajes_estimados, alternativas_promedio, rango_horario_pico
-		) VALUES
-			($1, $2, $3, $4, 2, $3),
-			($1, $2, NULL, $4, 2, $3)`,
+		    id_recorrido_primero,
+		    id_recorrido_segundo,
+		    rango_horario,
+		    viajes_estimados,
+		    alternativas_promedio,
+		    rango_horario_pico
+		)
+		VALUES (
+		    $1,
+		    $2,
+		    $3,
+		    $4,
+		    2,
+		    $3
+		),
+		(
+		    $1,
+		    $2,
+		    NULL,
+		    $4,
+		    2,
+		    $3
+		)
+	`,
 		rankingFirstLineID, rankingSecondLineID, rankingHour, rankingVolume,
 	)
 

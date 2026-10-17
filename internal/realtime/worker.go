@@ -34,7 +34,13 @@ type Worker struct {
 }
 
 func NewWorker(capturer Capturer, repository bunching.Repository, logger *slog.Logger, options Options) (*Worker, error) {
-	if capturer == nil || repository == nil || logger == nil || options.Interval <= 0 || options.DatabaseTimeout <= 0 || options.CoverageWarningRatio <= 0 || options.CoverageWarningRatio >= 1 {
+	if capturer == nil ||
+		repository == nil ||
+		logger == nil ||
+		options.Interval <= 0 ||
+		options.DatabaseTimeout <= 0 ||
+		options.CoverageWarningRatio <= 0 ||
+		options.CoverageWarningRatio >= 1 {
 		return nil, fmt.Errorf("invalid realtime worker configuration")
 	}
 	if options.Now == nil {
@@ -50,6 +56,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return nil
 	}
+
 	day := ""
 	reference := 0
 	var sequence uint64
@@ -85,6 +92,7 @@ func (w *Worker) Run(ctx context.Context) error {
 					freshIDs[p.VehicleID] = struct{}{}
 				}
 			}
+
 			fresh := len(freshIDs)
 			previousReference := reference
 			ratio := 1.0
@@ -104,6 +112,7 @@ func (w *Worker) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
+
 			attrs = append(attrs, "duration_ms", w.options.Now().Sub(started).Milliseconds())
 			if storeErr != nil {
 				w.logger.Warn("realtime_store_failed", append(attrs, "error_class", ErrorClass(storeErr))...)
@@ -120,12 +129,14 @@ func (w *Worker) Run(ctx context.Context) error {
 			return nil
 		}
 	}
+
 	return nil
 }
 
 func (w *Worker) maintain(ctx context.Context) error {
 	dbContext, cancel := context.WithTimeout(ctx, w.options.DatabaseTimeout)
 	defer cancel()
+
 	result, err := w.repository.MaintainPartitions(dbContext, w.options.Now())
 	if err != nil {
 		if ctx.Err() == nil {
@@ -133,6 +144,7 @@ func (w *Worker) maintain(ctx context.Context) error {
 		}
 		return err
 	}
+
 	w.logger.Info("realtime_maintenance_completed", "partitions_created", len(result.Created), "partitions_dropped", len(result.Dropped))
 	return nil
 }
@@ -140,6 +152,7 @@ func (w *Worker) maintain(ctx context.Context) error {
 func wait(ctx context.Context, interval time.Duration) error {
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -156,10 +169,12 @@ func ErrorClass(err error) string {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "deadline_exceeded"
 	}
+
 	var providerError *gcba.Error
 	if errors.As(err, &providerError) {
 		return "gcba_" + string(providerError.Code)
 	}
+
 	var dbError *pgconn.PgError
 	if errors.As(err, &dbError) {
 		return "postgres_" + dbError.Code

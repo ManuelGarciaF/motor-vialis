@@ -17,13 +17,66 @@ func TestBunchingRecurrenceIntegration(t *testing.T) {
 	ctx, tx, schema := fixture.ctx, fixture.tx, fixture.schema
 	writer := fixture.realtimeRepository()
 	if _, err := tx.Exec(ctx, writer.sql(`
- CREATE TABLE vialis.recorridos(id_recorrido bigint,gtfs_route_id text,direction_id smallint,gtfs_shape_id text,geom geometry(LineString,4326),linea text,ramal text);
- CREATE TABLE vialis.equivalencias_recorridos_gcba(gcba_route_id text,gcba_direction smallint,gtfs_route_id text,gtfs_direction_id smallint);
- INSERT INTO vialis.recorridos VALUES
- (1,'route',0,'new-shape',ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.5 -34.6)',4326),'TEST','A'),
- (2,'route',1,'new-shape',ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.5 -34.6)',4326),'TEST','A'),
- (3,'unmapped',0,'shape',ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.5 -34.6)',4326),'OTHER','B');
- INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('gcba',0,'route',0),('gcba',1,'route',1);`)); err != nil {
+		CREATE TABLE vialis.recorridos (
+		    id_recorrido bigint,
+		    gtfs_route_id text,
+		    direction_id smallint,
+		    gtfs_shape_id text,
+		    geom geometry(LineString, 4326),
+		    linea text,
+		    ramal text
+		);
+
+		CREATE TABLE vialis.equivalencias_recorridos_gcba (
+		    gcba_route_id text,
+		    gcba_direction smallint,
+		    gtfs_route_id text,
+		    gtfs_direction_id smallint
+		);
+
+		INSERT INTO vialis.recorridos
+		VALUES (
+		    1,
+		    'route',
+		    0,
+		    'new-shape',
+		    ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.5 -34.6)', 4326),
+		    'TEST',
+		    'A'
+		),
+		(
+		    2,
+		    'route',
+		    1,
+		    'new-shape',
+		    ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.5 -34.6)', 4326),
+		    'TEST',
+		    'A'
+		),
+		(
+		    3,
+		    'unmapped',
+		    0,
+		    'shape',
+		    ST_GeomFromText('LINESTRING(-58.4 -34.6,-58.5 -34.6)', 4326),
+		    'OTHER',
+		    'B'
+		);
+
+		INSERT INTO vialis.equivalencias_recorridos_gcba
+		VALUES (
+		    'gcba',
+		    0,
+		    'route',
+		    0
+		),
+		(
+		    'gcba',
+		    1,
+		    'route',
+		    1
+		);
+	`)); err != nil {
 		t.Fatal(err)
 	}
 	// The worker's extracted schema check must accept a complete operational
@@ -40,7 +93,9 @@ func TestBunchingRecurrenceIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := nested.Exec(ctx, "ALTER TABLE "+pgx.Identifier{schema, "aglutinaciones_colectivos"}.Sanitize()+" DROP COLUMN "+pgx.Identifier{column}.Sanitize()); err != nil {
+		if _, err := nested.Exec(ctx, `
+			ALTER TABLE
+		`+pgx.Identifier{schema, "aglutinaciones_colectivos"}.Sanitize()+" DROP COLUMN "+pgx.Identifier{column}.Sanitize()); err != nil {
 			t.Fatal(err)
 		}
 		if err := nested.QueryRow(ctx, checkRealtimeSchemaSQL, schema).Scan(&ready); err != nil || ready {
@@ -50,6 +105,7 @@ func TestBunchingRecurrenceIntegration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+
 	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	parse := func(s string) time.Time {
 		v, err := time.Parse(time.RFC3339, s)
@@ -126,6 +182,7 @@ func TestBunchingRecurrenceIntegration(t *testing.T) {
 			t.Fatalf("global filtering/order: %+v", page.Lines)
 		}
 	}
+
 	var found *bunching.LineRecurrence
 	for i := range page.Lines {
 		line := &page.Lines[i]
@@ -149,7 +206,10 @@ func TestBunchingRecurrenceIntegration(t *testing.T) {
 			}
 		default:
 			found = line
-			if !line.Recurrent || line.EventCount != 8 || !line.Mapped || !reflect.DeepEqual(line.Dates, []string{"2026-10-03", "2026-10-08", "2026-10-09", "2026-10-10"}) {
+			if !line.Recurrent ||
+				line.EventCount != 8 ||
+				!line.Mapped ||
+				!reflect.DeepEqual(line.Dates, []string{"2026-10-03", "2026-10-08", "2026-10-09", "2026-10-10"}) {
 				t.Fatalf("recurrence: %+v", line)
 			}
 			wantHours := []bunching.HourRecurrence{
@@ -163,6 +223,7 @@ func TestBunchingRecurrenceIntegration(t *testing.T) {
 			}
 		}
 	}
+
 	service, err := bunching.NewService(reader, policy, config.BunchingHistoryPolicy(), recurrence)
 	if err != nil {
 		t.Fatal(err)

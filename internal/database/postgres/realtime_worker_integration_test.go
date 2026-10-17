@@ -41,10 +41,43 @@ func TestRealtimeWorkerIntegration(t *testing.T) {
 	fixture.migrate("migrar_realtime.sql")
 	ctx, tx := fixture.ctx, fixture.tx
 	repo := fixture.realtimeRepository()
-	_, err := tx.Exec(ctx, repo.sql(`CREATE TABLE vialis.recorridos(gtfs_route_id text,direction_id smallint,gtfs_shape_id text,geom geometry(LineString,4326));
- CREATE TABLE vialis.equivalencias_recorridos_gcba(gcba_route_id text,gcba_direction smallint,gtfs_route_id text,gtfs_direction_id smallint);
- INSERT INTO vialis.recorridos VALUES('gtfs',0,'shape',ST_GeomFromText('LINESTRING(-58.38 -34.60,-58.39 -34.61)',4326));
- INSERT INTO vialis.equivalencias_recorridos_gcba VALUES('route-1',0,'gtfs',0),('route-1',1,'gtfs',0)`))
+	_, err := tx.Exec(ctx, repo.sql(`
+		CREATE TABLE vialis.recorridos (
+		    gtfs_route_id text,
+		    direction_id smallint,
+		    gtfs_shape_id text,
+		    geom geometry(LineString, 4326)
+		);
+
+		CREATE TABLE vialis.equivalencias_recorridos_gcba (
+		    gcba_route_id text,
+		    gcba_direction smallint,
+		    gtfs_route_id text,
+		    gtfs_direction_id smallint
+		);
+
+		INSERT INTO vialis.recorridos
+		VALUES (
+		    'gtfs',
+		    0,
+		    'shape',
+		    ST_GeomFromText('LINESTRING(-58.38 -34.60,-58.39 -34.61)', 4326)
+		);
+
+		INSERT INTO vialis.equivalencias_recorridos_gcba
+		VALUES (
+		    'route-1',
+		    0,
+		    'gtfs',
+		    0
+		),
+		(
+		    'route-1',
+		    1,
+		    'gtfs',
+		    0
+		)
+	`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,6 +92,7 @@ func TestRealtimeWorkerIntegration(t *testing.T) {
 		_, _ = w.Write(payload)
 	}))
 	defer server.Close()
+
 	now := time.Date(2025, 1, 1, 0, 0, 30, 0, time.UTC)
 	client, err := gcba.NewClient(gcba.Options{ClientID: "private-id", ClientSecret: "private-secret", BaseURL: server.URL, RequestTimeout: time.Second, MaximumAge: 5 * time.Minute, MaximumFutureSkew: time.Minute, MaximumBodyBytes: 10000, MaximumAttempts: 1, InitialBackoff: time.Millisecond, MaximumBackoff: time.Millisecond, Now: func() time.Time { return now }})
 	if err != nil {
@@ -66,6 +100,7 @@ func TestRealtimeWorkerIntegration(t *testing.T) {
 	}
 	workerCtx, stop := context.WithCancel(ctx)
 	defer stop()
+
 	stopping := &stoppingRealtimeRepository{RealtimeRepository: repo, cancel: stop}
 	var logs bytes.Buffer
 	worker, err := realtime.NewWorker(client, stopping, slog.New(slog.NewJSONHandler(&logs, nil)), realtime.Options{Interval: time.Millisecond, DatabaseTimeout: time.Second, CoverageWarningRatio: .7, Now: func() time.Time { return now }})
@@ -79,10 +114,16 @@ func TestRealtimeWorkerIntegration(t *testing.T) {
 		t.Fatalf("requests=%d stores=%d", requests.Load(), stopping.stores)
 	}
 	var raw, captures int
-	if err = tx.QueryRow(ctx, repo.sql(`SELECT count(*) FROM vialis.posiciones_colectivos_raw`)).Scan(&raw); err != nil {
+	if err = tx.QueryRow(ctx, repo.sql(`
+		SELECT count(*)
+		FROM vialis.posiciones_colectivos_raw
+	`)).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
-	if err = tx.QueryRow(ctx, repo.sql(`SELECT count(*) FROM vialis.capturas_colectivos`)).Scan(&captures); err != nil {
+	if err = tx.QueryRow(ctx, repo.sql(`
+		SELECT count(*)
+		FROM vialis.capturas_colectivos
+	`)).Scan(&captures); err != nil {
 		t.Fatal(err)
 	}
 	if raw != 2 || captures != 2 {

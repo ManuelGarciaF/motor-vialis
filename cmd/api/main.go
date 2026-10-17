@@ -94,6 +94,7 @@ func main() {
 		config.DatabaseConnectTimeout,
 	)
 	defer cancel()
+
 	if err := server.Shutdown(shutdownContext); err != nil {
 		logger.Error("could not gracefully stop HTTP server", "error", err)
 		os.Exit(1)

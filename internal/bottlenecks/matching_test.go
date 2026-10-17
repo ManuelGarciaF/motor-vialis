@@ -11,6 +11,7 @@ func candidates(seconds int, progress ...float64) CandidateObservation {
 	for _, p := range progress {
 		r.Candidates = append(r.Candidates, Projection{ProgressMeters: p, DistanceMeters: 5})
 	}
+
 	return r
 }
 
@@ -39,10 +40,12 @@ func TestConservativeMatching(t *testing.T) {
 					t.Fatalf("%d: %+v", i, got)
 				}
 			}
+
 			reversed := append([]CandidateObservation(nil), tc.rows...)
 			for i, j := 0, len(reversed)-1; i < j; i, j = i+1, j-1 {
 				reversed[i], reversed[j] = reversed[j], reversed[i]
 			}
+
 			other, err := MatchConservatively(l, reversed, testPolicy())
 			if err != nil || !reflect.DeepEqual(got, other) {
 				t.Fatal("order dependent", err)

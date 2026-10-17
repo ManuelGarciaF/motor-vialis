@@ -90,12 +90,14 @@ func (cache *tileCache) getLocked(key cacheKey, now time.Time) (cacheEntry, bool
 	if !found {
 		return cacheEntry{}, false
 	}
+
 	entry := element.Value.(cacheEntry)
 	if now.Sub(entry.fetchedAt) > cache.ttl ||
 		(!entry.expires.IsZero() && !now.Before(entry.expires)) {
 		cache.removeLocked(element)
 		return cacheEntry{}, false
 	}
+
 	cache.recent.MoveToFront(element)
 	return entry, true
 }
@@ -119,6 +121,7 @@ func (cache *tileCache) addLocked(entry cacheEntry) {
 func (cache *tileCache) invalidate(key cacheKey) {
 	cache.mutex.Lock()
 	defer cache.mutex.Unlock()
+
 	if element, found := cache.entries[key]; found {
 		cache.removeLocked(element)
 	}
@@ -128,6 +131,7 @@ func (cache *tileCache) removeLocked(element *list.Element) {
 	if element == nil {
 		return
 	}
+
 	entry := element.Value.(cacheEntry)
 	delete(cache.entries, entry.key)
 	cache.usedBytes -= len(entry.data)

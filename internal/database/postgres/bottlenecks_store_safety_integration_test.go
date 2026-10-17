@@ -14,7 +14,10 @@ func TestPassageStoreRefusesExpiredSourceWithoutResettingActivation(t *testing.T
 	f := newPassageStoreFixture(t)
 	run, _ := f.activate()
 	f.capture(11)
-	f.exec(`UPDATE vialis.h0012_modelos SET activado_en=clock_timestamp()-interval '8 days'`)
+	f.exec(`
+		UPDATE vialis.h0012_modelos
+		SET activado_en = clock_timestamp() - interval '8 days'
+	`)
 	if _, err := f.store.CommitCapture(f.ctx, run.Model.Name, 10, 11, nil); !errors.Is(err, bottlenecks.ErrSourceExpired) {
 		t.Fatalf("silently skipped purged history: %v", err)
 	}
@@ -22,8 +25,15 @@ func TestPassageStoreRefusesExpiredSourceWithoutResettingActivation(t *testing.T
 	if err != nil || again.Checkpoint != 10 || !again.ActivatedAt.Before(run.ActivatedAt) {
 		t.Fatalf("activation silently recovered gap: %+v %v", again, err)
 	}
-	f.exec(`UPDATE vialis.h0012_modelos SET activado_en=clock_timestamp()`)
-	f.exec(`UPDATE vialis.capturas_colectivos SET recibido_en=clock_timestamp()-interval '8 days' WHERE id_captura=11`)
+	f.exec(`
+		UPDATE vialis.h0012_modelos
+		SET activado_en = clock_timestamp()
+	`)
+	f.exec(`
+		UPDATE vialis.capturas_colectivos
+		SET recibido_en = clock_timestamp() - interval '8 days'
+		WHERE id_captura = 11
+	`)
 	if _, err = f.store.CommitCapture(f.ctx, run.Model.Name, 10, 11, nil); !errors.Is(err, bottlenecks.ErrSourceExpired) {
 		t.Fatalf("expired capture accepted: %v", err)
 	}
@@ -41,7 +51,11 @@ func TestPassageStoreUsesCapturePartialMetadata(t *testing.T) {
 	if _, err := f.store.CommitCapture(f.ctx, run.Model.Name, 10, 11, []bottlenecks.StreamTransition{first}); err != nil {
 		t.Fatal(err)
 	}
-	f.exec(`UPDATE vialis.capturas_colectivos SET cobertura_parcial=true WHERE id_captura=12`)
+	f.exec(`
+		UPDATE vialis.capturas_colectivos
+		SET cobertura_parcial = true
+		WHERE id_captura = 12
+	`)
 	incorrectlyCounted := f.transition(layout, &first.State, 12)
 	if _, err := f.store.CommitCapture(f.ctx, run.Model.Name, 11, 12, []bottlenecks.StreamTransition{incorrectlyCounted}); err == nil {
 		t.Fatal("producer overrode source partial status")
@@ -97,6 +111,7 @@ func TestPassageStoreRejectsMixedLayoutsModelsAndTechnicalCensoring(t *testing.T
 			}
 		})
 	}
+
 	other := persistenceModel()
 	other.Name = "other"
 	if _, err := f.store.Activate(f.ctx, other); err != nil {
@@ -115,6 +130,7 @@ func TestPassageStorePreservesNanosecondIdentityAndSupport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer rollbackBottlenecks(tx)
+
 	sector := layout.Layout.Sectors()[0]
 	scope := bottlenecks.Scope{ProviderRouteID: "g", Version: layout.Layout.Version()}
 	for ns := 1; ns <= 2; ns++ {
@@ -125,7 +141,13 @@ func TestPassageStorePreservesNanosecondIdentityAndSupport(t *testing.T) {
 			t.Fatal(err)
 		}
 		var data []byte
-		if err = tx.QueryRow(f.ctx, f.store.sql(`SELECT soporte FROM vialis.h0012_mediciones ORDER BY identidad OFFSET $1 LIMIT 1`), 0).Scan(&data); err != nil {
+		if err = tx.QueryRow(f.ctx, f.store.sql(`
+			SELECT soporte
+			FROM vialis.h0012_mediciones
+			ORDER BY identidad
+			OFFSET $1
+			LIMIT 1
+		`), 0).Scan(&data); err != nil {
 			t.Fatal(err)
 		}
 		var restored bottlenecks.Passage
@@ -136,8 +158,14 @@ func TestPassageStorePreservesNanosecondIdentityAndSupport(t *testing.T) {
 			t.Fatal("nanosecond support lost")
 		}
 	}
+
 	var identities, timestamps int
-	if err = tx.QueryRow(f.ctx, f.store.sql(`SELECT count(DISTINCT identidad),count(DISTINCT entrada_en) FROM vialis.h0012_mediciones`)).Scan(&identities, &timestamps); err != nil {
+	if err = tx.QueryRow(f.ctx, f.store.sql(`
+		SELECT
+		    count(DISTINCT identidad),
+		    count(DISTINCT entrada_en)
+		FROM vialis.h0012_mediciones
+	`)).Scan(&identities, &timestamps); err != nil {
 		t.Fatal(err)
 	}
 	if identities != 2 || timestamps != 1 {
@@ -147,10 +175,20 @@ func TestPassageStorePreservesNanosecondIdentityAndSupport(t *testing.T) {
 
 func TestPassageStoreStopSnapshotPreservesLoopAlternatives(t *testing.T) {
 	f := newPassageStoreFixture(t)
-	f.exec(`UPDATE vialis.recorridos SET geom=ST_GeomFromText('LINESTRING(-58.41 -34.6,-58.40 -34.6,-58.40 -34.59,-58.41 -34.6,-58.42 -34.6)',4326) WHERE id_recorrido=1`)
+	f.exec(`
+		UPDATE vialis.recorridos
+		SET
+		    geom = ST_GeomFromText('LINESTRING(-58.41 -34.6,-58.40 -34.6,-58.40 -34.59,-58.41 -34.6,-58.42 -34.6)',
+		    4326)
+		WHERE id_recorrido = 1
+	`)
 	_, layout := f.activate()
 	var count int
-	if err := f.pool.QueryRow(f.ctx, f.store.sql(`SELECT jsonb_array_length(paradas->0->'projectionCandidates') FROM vialis.h0012_trazados WHERE id=$1`), layout.ID).Scan(&count); err != nil || count < 2 {
+	if err := f.pool.QueryRow(f.ctx, f.store.sql(`
+		SELECT jsonb_array_length(paradas->0->'projectionCandidates')
+		FROM vialis.h0012_trazados
+		WHERE id = $1
+	`), layout.ID).Scan(&count); err != nil || count < 2 {
 		t.Fatalf("loop stop forced onto a single branch: %d %v", count, err)
 	}
 }

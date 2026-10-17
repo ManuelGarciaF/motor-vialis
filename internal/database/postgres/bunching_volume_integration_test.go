@@ -21,20 +21,42 @@ func TestBunchingSnapshotVolume(t *testing.T) {
 	ctx, tx, schema := fixture.ctx, fixture.tx, fixture.schema
 	repo := fixture.realtimeRepository()
 	for _, table := range []string{"recorridos", "equivalencias_recorridos_gcba"} {
-		if _, err := tx.Exec(ctx, "CREATE TABLE "+pgx.Identifier{schema, table}.Sanitize()+" AS SELECT * FROM "+pgx.Identifier{"vialis", table}.Sanitize()); err != nil {
+		if _, err := tx.Exec(ctx, `
+			CREATE TABLE
+		`+pgx.Identifier{schema, table}.Sanitize()+" AS SELECT * FROM "+pgx.Identifier{"vialis", table}.Sanitize()); err != nil {
 			t.Fatal(err)
 		}
 	}
+
 	policy := bunching.Policy{DistanceMeters: 200, MaximumAge: 5 * time.Minute, MaximumFutureSkew: time.Minute, MissingCaptureTolerance: 1, MinimumObservations: 2}
 	if err := repo.EnableBunching(policy); err != nil {
 		t.Fatal(err)
 	}
 	var capture bunching.Capture
 	var id int64
-	if err := tx.QueryRow(ctx, `SELECT id_captura,recibido_en FROM vialis.capturas_colectivos WHERE filas_insertadas>3000 ORDER BY id_captura LIMIT 1`).Scan(&id, &capture.ReceivedAt); err != nil {
+	if err := tx.QueryRow(ctx, `
+		SELECT
+		    id_captura,
+		    recibido_en
+		FROM vialis.capturas_colectivos
+		WHERE filas_insertadas > 3000
+		ORDER BY id_captura
+		LIMIT 1
+	`).Scan(&id, &capture.ReceivedAt); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := tx.Query(ctx, `SELECT id_vehiculo,gcba_route_id,gcba_direction,ST_X(posicion),ST_Y(posicion),observado_en,velocidad_metros_segundo FROM vialis.posiciones_colectivos_raw WHERE id_captura=$1`, id)
+	rows, err := tx.Query(ctx, `
+		SELECT
+		    id_vehiculo,
+		    gcba_route_id,
+		    gcba_direction,
+		    ST_X(posicion),
+		    ST_Y(posicion),
+		    observado_en,
+		    velocidad_metros_segundo
+		FROM vialis.posiciones_colectivos_raw
+		WHERE id_captura = $1
+	`, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,6 +68,7 @@ func TestBunchingSnapshotVolume(t *testing.T) {
 		}
 		capture.Positions = append(capture.Positions, p)
 	}
+
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
@@ -65,6 +88,7 @@ func TestBunchingSnapshotVolume(t *testing.T) {
 	for i := range capture.Positions {
 		capture.Positions[i].ObservedAt = capture.Positions[i].ObservedAt.Add(time.Minute)
 	}
+
 	started = time.Now()
 	second, err := repo.StoreCapture(ctx, capture)
 	if err != nil {

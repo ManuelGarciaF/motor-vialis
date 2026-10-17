@@ -75,18 +75,21 @@ func parseLineQuery(request *http.Request) (lines.Query, *fieldError) {
 	if fieldErr != nil {
 		return lines.Query{}, fieldErr
 	}
+
 	query.Limit = limit
 
 	offset, fieldErr := parseCount(values.Get("offset"), "offset")
 	if fieldErr != nil {
 		return lines.Query{}, fieldErr
 	}
+
 	query.Offset = offset
 
 	bounds, fieldErr := parseBounds(values.Get("bbox"))
 	if fieldErr != nil {
 		return lines.Query{}, fieldErr
 	}
+
 	query.Bounds = bounds
 
 	return query, nil
@@ -97,6 +100,7 @@ func parseCount(raw, name string) (int, *fieldError) {
 	if raw == "" {
 		return 0, nil
 	}
+
 	parsed, err := strconv.Atoi(raw)
 	if err != nil || parsed < 0 {
 		return 0, &fieldError{Field: name, Message: "must be a non-negative integer"}
@@ -118,6 +122,7 @@ func parseBounds(raw string) (*lines.Bounds, *fieldError) {
 			Message: "must be minLongitude,minLatitude,maxLongitude,maxLatitude",
 		}
 	}
+
 	corners := make([]float64, 4)
 	for index, part := range parts {
 		parsed, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
@@ -127,6 +132,7 @@ func parseBounds(raw string) (*lines.Bounds, *fieldError) {
 				Message: fmt.Sprintf("value %d is not a number: %q", index, part),
 			}
 		}
+
 		corners[index] = parsed
 	}
 

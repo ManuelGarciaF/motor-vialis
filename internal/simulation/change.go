@@ -42,6 +42,7 @@ func relativeChange(baseline, absolute float64) *float64 {
 	if baseline == 0 {
 		return nil
 	}
+
 	relative := absolute / baseline
 	if math.IsNaN(relative) || math.IsInf(relative, 0) {
 		return nil

@@ -41,6 +41,7 @@ func TestDecodeRejectsRowsIndividually(t *testing.T) {
 			for k, v := range rows[0] {
 				row[k] = v
 			}
+
 			test.change(row)
 			encoded, _ := json.Marshal([]any{row, rows[1]})
 			capture, err := decode(encoded, testNow, 5*time.Minute, time.Minute)
@@ -62,6 +63,7 @@ func TestDecodeDeduplicatesByVehicleAndTimestamp(t *testing.T) {
 	for k, v := range rows[0] {
 		duplicate[k] = v
 	}
+
 	duplicate["route_id"] = "different-route"
 	encoded, _ := json.Marshal([]any{rows[0], duplicate, rows[1]})
 	capture, err := decode(encoded, testNow, 5*time.Minute, time.Minute)

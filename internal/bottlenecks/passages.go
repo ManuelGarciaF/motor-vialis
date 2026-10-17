@@ -19,11 +19,17 @@ func Measure(layout Layout, observations []Observation, policy MeasurementPolicy
 	if err := policy.validate(); err != nil {
 		return Measurements{}, err
 	}
+
 	ordered := append([]Observation(nil), observations...)
 	for i, o := range ordered {
-		if strings.TrimSpace(o.VehicleID) == "" || o.ObservedAt.IsZero() || !finite(o.ProgressMeters) || !finite(o.DistanceToShapeMeters) || o.DistanceToShapeMeters < 0 {
+		if strings.TrimSpace(o.VehicleID) == "" ||
+			o.ObservedAt.IsZero() ||
+			!finite(o.ProgressMeters) ||
+			!finite(o.DistanceToShapeMeters) ||
+			o.DistanceToShapeMeters < 0 {
 			return Measurements{}, fmt.Errorf("invalid observation at index %d", i)
 		}
+
 		switch o.Match {
 		case Matched:
 			if err := o.Scope.validate(); err != nil {
@@ -34,6 +40,7 @@ func Measure(layout Layout, observations []Observation, policy MeasurementPolicy
 			return Measurements{}, fmt.Errorf("invalid match status at index %d", i)
 		}
 	}
+
 	sort.Slice(ordered, func(i, j int) bool {
 		if ordered[i].VehicleID != ordered[j].VehicleID {
 			return ordered[i].VehicleID < ordered[j].VehicleID
@@ -49,6 +56,7 @@ func Measure(layout Layout, observations []Observation, policy MeasurementPolicy
 				if !sameObservation(last, o) {
 					return Measurements{}, fmt.Errorf("conflicting observations for the same vehicle/timestamp")
 				}
+
 				result.Duplicates++
 				continue
 			}
@@ -60,6 +68,7 @@ func Measure(layout Layout, observations []Observation, policy MeasurementPolicy
 	for _, o := range unique {
 		cursor.advance(layout, o, policy, &result)
 	}
+
 	cursor.abandon(BatchBoundary, &result)
 	return result, nil
 }
@@ -82,6 +91,7 @@ func (c *measurementCursor) abandon(reason Rejection, result *Measurements) {
 func (c *measurementCursor) advance(layout Layout, o Observation, policy MeasurementPolicy, result *Measurements) {
 	previous, pending := c.previous, c.pending
 	defer func() { c.previous, c.pending = previous, pending }()
+
 	abandon := func(reason Rejection) {
 		c.previous, c.pending = previous, pending
 		c.abandon(reason, result)
@@ -98,6 +108,7 @@ func (c *measurementCursor) advance(layout Layout, o Observation, policy Measure
 		previous, pending = nil, nil
 		return
 	}
+
 	o.ProgressMeters = meters(o.ProgressMeters)
 	if previous == nil || previous.VehicleID != o.VehicleID {
 		pending = startAtBoundary(layout, o)
@@ -111,6 +122,7 @@ func (c *measurementCursor) advance(layout Layout, o Observation, policy Measure
 		previous = &o
 		return
 	}
+
 	gap := o.ObservedAt.Sub(previous.ObservedAt)
 	if pending != nil {
 		pending.maximumGap = max(pending.maximumGap, gap)
@@ -177,6 +189,7 @@ func interpolate(a, b Observation, progress float64) Crossing {
 	if progress == b.ProgressMeters {
 		return exactCrossing(b.ObservedAt)
 	}
+
 	fraction := (progress - a.ProgressMeters) / (b.ProgressMeters - a.ProgressMeters)
 	return Crossing{
 		At:       a.ObservedAt.Add(time.Duration(float64(b.ObservedAt.Sub(a.ObservedAt)) * fraction)),
@@ -194,6 +207,7 @@ func rejectObservation(l Layout, o Observation, p MeasurementPolicy) Rejection {
 	if o.DistanceToShapeMeters > p.MaximumDistanceMeters {
 		return OutsideShape
 	}
+
 	progress := meters(o.ProgressMeters)
 	if progress < 0 || progress > l.length {
 		return OutsideProgress
@@ -205,10 +219,12 @@ func rejectEdge(a, b Observation, p MeasurementPolicy) Rejection {
 	if a.Scope != b.Scope {
 		return ScopeChanged
 	}
+
 	gap := b.ObservedAt.Sub(a.ObservedAt)
 	if gap > p.MaximumGap {
 		return GPSGap
 	}
+
 	delta := b.ProgressMeters - a.ProgressMeters
 	if delta < 0 {
 		return Backwards

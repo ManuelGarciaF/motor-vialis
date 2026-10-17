@@ -16,11 +16,13 @@ func TestCheckGTFSFilesValidatesEveryHeaderBeforeReload(t *testing.T) {
 			}
 			content += name
 		}
+
 		content += "\n"
 		if err := os.WriteFile(filepath.Join(directory, definition.FileName), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
+
 	if err := checkGTFSFiles(directory); err != nil {
 		t.Fatalf("checkGTFSFiles returned error: %v", err)
 	}

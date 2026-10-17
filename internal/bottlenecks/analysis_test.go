@@ -29,7 +29,11 @@ func TestAnalysisReport(t *testing.T) {
 		t.Fatalf("report %+v", report)
 	}
 	s := report.Sectors[1]
-	if s.Passages != 1 || s.SameIntervalPassages != 1 || s.InteriorGPSPassages != 0 || s.MedianDurationSeconds == nil || *s.MedianDurationSeconds != 60 {
+	if s.Passages != 1 ||
+		s.SameIntervalPassages != 1 ||
+		s.InteriorGPSPassages != 0 ||
+		s.MedianDurationSeconds == nil ||
+		*s.MedianDurationSeconds != 60 {
 		t.Fatalf("sector %+v", s)
 	}
 	if report.Sectors[0].MedianDurationSeconds != nil || report.Sectors[0].TypicalSpeedKPH != nil {

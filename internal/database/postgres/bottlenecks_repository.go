@@ -37,6 +37,7 @@ func (r *BottlenecksRepository) Load(ctx context.Context, id int64, window bottl
 	if id <= 0 || math.IsNaN(radius) || math.IsInf(radius, 0) || radius < 0 {
 		return bottlenecks.Dataset{}, fmt.Errorf("invalid trajectory query")
 	}
+
 	tx, err := r.database.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return bottlenecks.Dataset{}, fmt.Errorf("begin trajectory snapshot: %w", err)
@@ -44,8 +45,10 @@ func (r *BottlenecksRepository) Load(ctx context.Context, id int64, window bottl
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+
 		_ = tx.Rollback(cleanup)
 	}()
+
 	data, err := r.load(ctx, tx, id, window, radius)
 	if err != nil {
 		return bottlenecks.Dataset{}, err
@@ -58,9 +61,18 @@ func (r *BottlenecksRepository) Load(ctx context.Context, id int64, window bottl
 
 func (r *BottlenecksRepository) load(ctx context.Context, tx pgx.Tx, id int64, window bottlenecks.Window, radius float64) (bottlenecks.Dataset, error) {
 	data := bottlenecks.Dataset{LineID: id, Observations: []bottlenecks.CandidateObservation{}}
-	err := tx.QueryRow(ctx, queryInSchema(`SELECT gtfs_route_id,direction_id,gtfs_shape_id,
- md5(encode(ST_AsEWKB(geom),'hex')),ST_Length(geom::geography),linea,ramal
- FROM vialis.recorridos WHERE id_recorrido=$1`, r.schema), id).Scan(
+	err := tx.QueryRow(ctx, queryInSchema(`
+		SELECT
+		    gtfs_route_id,
+		    direction_id,
+		    gtfs_shape_id,
+		    md5(encode(ST_AsEWKB(geom), 'hex')),
+		    ST_Length(geom::geography),
+		    linea,
+		    ramal
+		FROM vialis.recorridos
+		WHERE id_recorrido = $1
+	`, r.schema), id).Scan(
 		&data.Version.RouteID, &data.Version.Direction, &data.Version.ShapeID, &data.Version.ShapeHash, &data.LengthMeters, &data.Line, &data.Branch)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return bottlenecks.Dataset{}, bottlenecks.ErrLineNotFound
@@ -68,11 +80,13 @@ func (r *BottlenecksRepository) load(ctx context.Context, tx pgx.Tx, id int64, w
 	if err != nil {
 		return bottlenecks.Dataset{}, fmt.Errorf("read trajectory shape: %w", err)
 	}
+
 	rows, err := tx.Query(ctx, queryInSchema(findBottleneckCandidatesSQL, r.schema), id, window.From, window.To, radius)
 	if err != nil {
 		return bottlenecks.Dataset{}, fmt.Errorf("query trajectory projections: %w", err)
 	}
 	defer rows.Close()
+
 	for rows.Next() {
 		var o bottlenecks.CandidateObservation
 		var progress, distances []float64
@@ -84,11 +98,14 @@ func (r *BottlenecksRepository) load(ctx context.Context, tx pgx.Tx, id int64, w
 		if len(progress) != len(distances) {
 			return bottlenecks.Dataset{}, fmt.Errorf("projection arrays have different lengths")
 		}
+
 		for i, p := range progress {
 			o.Candidates = append(o.Candidates, bottlenecks.Projection{ProgressMeters: p, DistanceMeters: distances[i]})
 		}
+
 		data.Observations = append(data.Observations, o)
 	}
+
 	if err := rows.Err(); err != nil {
 		return bottlenecks.Dataset{}, fmt.Errorf("iterate trajectory projections: %w", err)
 	}
@@ -105,19 +122,23 @@ func (r *BottlenecksRepository) listTargets(ctx context.Context, query queryFunc
 	if err := window.Validate(); err != nil {
 		return nil, err
 	}
+
 	rows, err := query(ctx, queryInSchema(listBottleneckAnalysisTargetsSQL, r.schema), window.From, window.To)
 	if err != nil {
 		return nil, fmt.Errorf("list analysis targets: %w", err)
 	}
 	defer rows.Close()
+
 	targets := []bottlenecks.AnalysisTarget{}
 	for rows.Next() {
 		var t bottlenecks.AnalysisTarget
 		if err := rows.Scan(&t.LineID, &t.Version.RouteID, &t.Version.Direction, &t.Version.ShapeID, &t.Version.ShapeHash, &t.ExpectedRawPositions); err != nil {
 			return nil, fmt.Errorf("scan analysis target: %w", err)
 		}
+
 		targets = append(targets, t)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate analysis targets: %w", err)
 	}

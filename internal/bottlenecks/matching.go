@@ -44,6 +44,7 @@ func MatchConservatively(layout Layout, input []CandidateObservation, policy Mea
 	if err := policy.validate(); err != nil {
 		return Matching{}, err
 	}
+
 	rows := append([]CandidateObservation(nil), input...)
 	for i := range rows {
 		r := &rows[i]
@@ -53,16 +54,22 @@ func MatchConservatively(layout Layout, input []CandidateObservation, policy Mea
 		if err := r.Scope.validate(); err != nil {
 			return Matching{}, err
 		}
+
 		candidates := make([]Projection, 0, len(r.Candidates))
 		for _, c := range r.Candidates {
 			if !finite(c.ProgressMeters) || !finite(c.DistanceMeters) || c.DistanceMeters < 0 {
 				return Matching{}, fmt.Errorf("invalid projection")
 			}
+
 			c.ProgressMeters = meters(c.ProgressMeters)
-			if r.Scope.Version == layout.version && c.ProgressMeters >= 0 && c.ProgressMeters <= layout.length && c.DistanceMeters <= policy.MaximumDistanceMeters {
+			if r.Scope.Version == layout.version &&
+				c.ProgressMeters >= 0 &&
+				c.ProgressMeters <= layout.length &&
+				c.DistanceMeters <= policy.MaximumDistanceMeters {
 				candidates = append(candidates, c)
 			}
 		}
+
 		sort.Slice(candidates, func(i, j int) bool {
 			if candidates[i].ProgressMeters != candidates[j].ProgressMeters {
 				return candidates[i].ProgressMeters < candidates[j].ProgressMeters
@@ -76,6 +83,7 @@ func MatchConservatively(layout Layout, input []CandidateObservation, policy Mea
 			}
 		}
 	}
+
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].VehicleID != rows[j].VehicleID {
 			return rows[i].VehicleID < rows[j].VehicleID
@@ -91,16 +99,19 @@ func MatchConservatively(layout Layout, input []CandidateObservation, policy Mea
 				if last.Scope != r.Scope || !reflect.DeepEqual(last.Candidates, r.Candidates) {
 					return Matching{}, fmt.Errorf("conflicting candidate observations for vehicle/timestamp")
 				}
+
 				result.Duplicates++
 				continue
 			}
 		}
 		unique = append(unique, r)
 	}
+
 	initial := make([]int, len(unique))
 	for i := range unique {
 		initial[i] = len(unique[i].Candidates)
 	}
+
 	for changed := true; changed; {
 		changed = false
 		for i := range unique {
@@ -108,6 +119,7 @@ func MatchConservatively(layout Layout, input []CandidateObservation, policy Mea
 			if len(row.Candidates) < 2 {
 				continue
 			}
+
 			var before, after *CandidateObservation
 			if i > 0 && anchorAdjacent(unique[i-1], *row, policy) {
 				before = &unique[i-1]
@@ -118,6 +130,7 @@ func MatchConservatively(layout Layout, input []CandidateObservation, policy Mea
 			if before == nil && after == nil {
 				continue
 			}
+
 			kept := row.Candidates[:0]
 			for _, c := range row.Candidates {
 				if before != nil && !reachable(before.Candidates[0].ProgressMeters, c.ProgressMeters, row.ObservedAt.Sub(before.ObservedAt), policy) {
@@ -126,14 +139,17 @@ func MatchConservatively(layout Layout, input []CandidateObservation, policy Mea
 				if after != nil && !reachable(c.ProgressMeters, after.Candidates[0].ProgressMeters, after.ObservedAt.Sub(row.ObservedAt), policy) {
 					continue
 				}
+
 				kept = append(kept, c)
 			}
+
 			if len(kept) != len(row.Candidates) {
 				changed = true
 			}
 			row.Candidates = kept
 		}
 	}
+
 	for i, r := range unique {
 		o := Observation{VehicleID: r.VehicleID, Scope: r.Scope, ObservedAt: r.ObservedAt}
 		switch len(r.Candidates) {
@@ -152,8 +168,10 @@ func MatchConservatively(layout Layout, input []CandidateObservation, policy Mea
 			o.Match = Ambiguous
 			result.Ambiguous++
 		}
+
 		result.Observations = append(result.Observations, o)
 	}
+
 	return result, nil
 }
 

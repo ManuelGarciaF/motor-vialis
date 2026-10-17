@@ -139,6 +139,7 @@ func decodeBody(request *http.Request, target any) error {
 	if err := decoder.Decode(target); err != nil {
 		return err
 	}
+
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err == nil {
@@ -175,6 +176,7 @@ func (handler *Handler) recoverPanic(next http.Handler) http.Handler {
 				)
 			}
 		}()
+
 		next.ServeHTTP(writer, request)
 	})
 }

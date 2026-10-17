@@ -30,6 +30,7 @@ func TestFindSimilarLinesIntegration(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
@@ -211,46 +212,49 @@ func insertCorridorLine(
 
 	var lineID int64
 	if err := transaction.QueryRow(ctx, `
-        WITH path AS (
-            SELECT ST_GeomFromText($2, 4326)
-                ::GEOMETRY(LineString, 4326) AS geom
-        )
-        INSERT INTO vialis.recorridos (
-            gtfs_route_id,
-            gtfs_shape_id,
-            nombre_publico,
-            linea,
-            ramal,
-            direction_id,
-            destino,
-            geom,
-            distancia_metros,
-            tiempo_total_minutos
-        )
-        SELECT
-            $1,
-            $1 || '-shape',
-            $1,
-            $1,
-            'TRONCAL',
-            0,
-            'Terminal',
-            path.geom,
-            ROUND(ST_Length(path.geom::geography))::INTEGER,
-            $3::SMALLINT
-        FROM path
-        RETURNING id_recorrido
-    `, name, pathWKT, duration).Scan(&lineID); err != nil {
+		WITH path AS (SELECT ST_GeomFromText($2, 4326)::GEOMETRY(LineString, 4326) AS geom) INSERT INTO vialis.recorridos(
+		    gtfs_route_id,
+		    gtfs_shape_id,
+		    nombre_publico,
+		    linea,
+		    ramal,
+		    direction_id,
+		    destino,
+		    geom,
+		    distancia_metros,
+		    tiempo_total_minutos
+		)
+		SELECT
+		    $1,
+		    $1 || '-shape',
+		    $1,
+		    $1,
+		    'TRONCAL',
+		    0,
+		    'Terminal',
+		    path.geom,
+		    ROUND(ST_Length(path.geom::geography))::INTEGER,
+		    $3::SMALLINT
+		FROM path
+		RETURNING id_recorrido
+	`, name, pathWKT, duration).Scan(&lineID); err != nil {
 		t.Fatalf("insert fixture line %q: %v", name, err)
 	}
 
 	for index, endpoint := range []string{"ST_StartPoint", "ST_EndPoint"} {
 		var stopID int64
 		if err := transaction.QueryRow(ctx, fmt.Sprintf(`
-            INSERT INTO vialis.paradas (gtfs_stop_id, nombre, posicion)
-            SELECT $1, $2, %s(ST_GeomFromText($3, 4326))
-            RETURNING id_parada
-        `, endpoint),
+			INSERT INTO vialis.paradas (
+			    gtfs_stop_id,
+			    nombre,
+			    posicion
+			)
+			SELECT
+			    $1,
+			    $2,
+			    %s(ST_GeomFromText($3, 4326))
+			RETURNING id_parada
+		`, endpoint),
 			fmt.Sprintf("%s-stop-%d", name, index),
 			fmt.Sprintf("Parada %d", index),
 			pathWKT,
@@ -258,13 +262,17 @@ func insertCorridorLine(
 			t.Fatalf("insert fixture stop %d of %q: %v", index, name, err)
 		}
 		if _, err := transaction.Exec(ctx, `
-            INSERT INTO vialis.recorridos_paradas (
-                id_recorrido,
-                id_parada,
-                nro_parada
-            )
-            VALUES ($1, $2, $3)
-        `, lineID, stopID, index); err != nil {
+			INSERT INTO vialis.recorridos_paradas (
+			    id_recorrido,
+			    id_parada,
+			    nro_parada
+			)
+			VALUES (
+			    $1,
+			    $2,
+			    $3
+			)
+		`, lineID, stopID, index); err != nil {
 			t.Fatalf("insert fixture route stop %d of %q: %v", index, name, err)
 		}
 	}

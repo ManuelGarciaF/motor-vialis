@@ -123,6 +123,7 @@ func (service *Service) compare(
 	if err != nil {
 		return Comparison{}, fmt.Errorf("simulate baseline: %w", err)
 	}
+
 	proposedResult, err := service.result(ctx, input.Proposed, proposed, fareTravelTime)
 	if err != nil {
 		return Comparison{}, fmt.Errorf("simulate proposed: %w", err)
@@ -135,14 +136,17 @@ func validateDetourStops(input ComparisonInput) error {
 	for order, stop := range input.Baseline.Stops {
 		baselineOrder[stop.ID] = order
 	}
+
 	previous := -1
 	for _, stop := range input.Proposed.Stops {
 		order, found := baselineOrder[stop.ID]
 		if !found || order <= previous {
 			return fmt.Errorf("detour stops must be an ordered subset of baseline stops")
 		}
+
 		previous = order
 	}
+
 	return nil
 }
 
@@ -153,10 +157,12 @@ func detourFareTravelTime(
 	if len(baselineSegments) != len(input.Baseline.Stops)-1 {
 		return traveltime.Result{}, fmt.Errorf("baseline travel time has %d segments, want %d", len(baselineSegments), len(input.Baseline.Stops)-1)
 	}
+
 	baselineOrder := make(map[string]int, len(input.Baseline.Stops))
 	for order, stop := range input.Baseline.Stops {
 		baselineOrder[stop.ID] = order
 	}
+
 	result := traveltime.Result{BySegment: make([]traveltime.SegmentResult, 0, len(input.Proposed.Stops)-1)}
 	for order := 0; order < len(input.Proposed.Stops)-1; order++ {
 		origin := input.Proposed.Stops[order]
@@ -170,12 +176,15 @@ func detourFareTravelTime(
 				segment.DestinationStopID != input.Baseline.Stops[index+1].ID {
 				return traveltime.Result{}, fmt.Errorf("baseline travel-time segments do not match baseline route")
 			}
+
 			distance += segment.DistanceMeters
 		}
+
 		result.BySegment = append(result.BySegment, traveltime.SegmentResult{
 			OriginStopID: origin.ID, DestinationStopID: destination.ID, DistanceMeters: distance,
 		})
 	}
+
 	return result, nil
 }
 
@@ -212,6 +221,7 @@ func rootedValidation(input Route, root string) error {
 	if err == nil {
 		return nil
 	}
+
 	var validationError *route.ValidationError
 	if errors.As(err, &validationError) {
 		return validationError.Rooted(root)

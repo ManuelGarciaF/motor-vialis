@@ -45,12 +45,15 @@ func newRealtimeFixture(t *testing.T, timeout time.Duration) *realtimeFixture {
 		// Rollback must work even if the test's deadline has expired.
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cleanupCancel()
+
 		if err := tx.Rollback(cleanupCtx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
 			t.Errorf("rollback realtime fixture: %v", err)
 		}
 	})
 	schema := fmt.Sprintf("realtime_test_%d", time.Now().UnixNano())
-	if _, err := tx.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize()); err != nil {
+	if _, err := tx.Exec(ctx, `
+		CREATE SCHEMA
+	`+pgx.Identifier{schema}.Sanitize()); err != nil {
 		t.Fatal(err)
 	}
 	return &realtimeFixture{t: t, ctx: ctx, tx: tx, schema: schema}
@@ -91,11 +94,13 @@ func TestRealtimeFixtureIsolation(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
+
 	var schemas []string
 	var transactions []pgx.Tx
 	t.Run("isolated schemas", func(t *testing.T) {
@@ -108,23 +113,38 @@ func TestRealtimeFixtureIsolation(t *testing.T) {
 		transactions = []pgx.Tx{first.tx, second.tx}
 		first.migrate("migrar_realtime.sql", "migrar_realtime.sql")
 		var captures int
-		if err := first.tx.QueryRow(first.ctx, first.sql("SELECT count(*) FROM vialis.capturas_colectivos")).Scan(&captures); err != nil || captures != 0 {
+		if err := first.tx.QueryRow(first.ctx, first.sql(`
+			SELECT count(*)
+			FROM vialis.capturas_colectivos
+		`)).Scan(&captures); err != nil || captures != 0 {
 			t.Fatalf("fresh migrated fixture: %d %v", captures, err)
 		}
 		var tables int
-		if err := second.tx.QueryRow(second.ctx, "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1", second.schema).Scan(&tables); err != nil || tables != 0 {
+		if err := second.tx.QueryRow(second.ctx, `
+			SELECT count(*)
+			FROM pg_class c
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = $1
+		`, second.schema).Scan(&tables); err != nil || tables != 0 {
 			t.Fatalf("empty fixture applied migrations implicitly: %d %v", tables, err)
 		}
 	})
 	// Subtest Cleanup has run: both outer transactions must be closed and
 	// neither the migrated nor the empty schema may remain in the database.
 	for _, tx := range transactions {
-		if _, err := tx.Exec(ctx, "SELECT 1"); !errors.Is(err, pgx.ErrTxClosed) {
+		if _, err := tx.Exec(ctx, `
+			SELECT 1
+		`); !errors.Is(err, pgx.ErrTxClosed) {
 			t.Fatalf("fixture transaction not rolled back: %v", err)
 		}
 	}
+
 	var retained int
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM pg_namespace WHERE nspname=ANY($1::text[])", schemas).Scan(&retained); err != nil || retained != 0 {
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*)
+		FROM pg_namespace
+		WHERE nspname = ANY($1::text [ ])
+	`, schemas).Scan(&retained); err != nil || retained != 0 {
 		t.Fatalf("fixture schemas survived cleanup: %d %v", retained, err)
 	}
 }

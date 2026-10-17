@@ -76,8 +76,10 @@ func (repository *DemandRepository) FindCellCandidates(
 		); err != nil {
 			return nil, fmt.Errorf("scan cell candidate: %w", err)
 		}
+
 		candidates = append(candidates, candidate)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate cell candidates: %w", err)
 	}
@@ -130,8 +132,10 @@ func (repository *DemandRepository) FindDemandByStopPair(
 		); err != nil {
 			return nil, fmt.Errorf("scan demand by stop pair: %w", err)
 		}
+
 		result = append(result, pair)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate demand by stop pair: %w", err)
 	}
