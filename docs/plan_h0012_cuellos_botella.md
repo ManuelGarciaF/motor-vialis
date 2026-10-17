@@ -16,13 +16,17 @@ mappings, existe una base importante de pasajes completos aprovechables. La
 segmentación, matching conservador, medición y cobertura ya tienen implementación
 experimental y validaciones; no hay que comenzar nuevamente desde cero.
 
-La siguiente etapa propuesta es persistir sectores versionados y mediciones
-antes de la purga del raw, con procesamiento incremental reproducible. El usuario
+La capa de persistencia experimental implementa sectores versionados, mediciones
+y checkpoints transaccionales; aún no está conectada a un procesador operativo.
+La siguiente etapa es lectura incremental y matching provisional/buffering antes
+de la purga raw. El usuario
 aprobó conservar **pasajes individuales y metadatos de calidad, sin archivar GPS
 adicionales**, y arrancar con **datos nuevos, sin backfill**. Esto permite
 recalibrar la detección sobre los pasajes, no rehacer su medición con otra
-segmentación/matching después de purgar el GPS. La arquitectura concreta y el
-tratamiento de correcciones posteriores al cierre aún deben precisarse. Esto permite acumular días para calibrar la detección, sin fijar
+segmentación/matching después de purgar el GPS. Se aprobó ejecutar un ciclo independiente dentro de `realtime-worker`, no
+reabrir secuencias cerradas y conservar pasajes sin purga inicial. El buffering
+del matching y la integración al worker siguen pendientes; la persistencia
+transaccional está implementada en una capa separada. Esto permite acumular días para calibrar la detección, sin fijar
 prematuramente qué sectores serán elegibles o cómo se ordenará el Top 10.
 
 ### Hallazgos que condicionan el diseño
@@ -268,7 +272,7 @@ Ver metodología, volumen, interrupciones, validación y límites en
 
 ## Próximas etapas propuestas y condiciones de avance
 
-### 1. Persistencia y procesamiento incremental — siguiente etapa técnica
+### 1. Persistencia implementada; integración incremental pendiente
 
 **Aprobado:** conservar pasajes individuales y sus metadatos de calidad, **no
 archivar series GPS adicionales**. No modificar el raw/retención H0011. Se acepta
@@ -294,15 +298,15 @@ aprobar 4. No prueba que nunca habrá datos posteriores al cierre ni que esos
 pares fueran pasajes espacialmente válidos. Método y límites:
 [h0012_retraso_gps.md](h0012_retraso_gps.md).
 
-**Ejecución en discusión:** el usuario propone aprovechar el mismo proceso
-`realtime-worker`, con una goroutine periódica H0012. Es una alternativa viable
-para simplificar despliegue, no una autorización todavía para modificar el worker.
+**Ejecución aprobada:** aprovechar el mismo proceso `realtime-worker`, con un
+ciclo periódico H0012 independiente. Se autoriza su integración incremental,
+no ejecutar medición dentro de la transacción de captura.
 La separación necesaria es lógica: no ejecutar el cálculo pesado dentro del ciclo
 de captura ni de su transacción H0011. Actualmente ese ciclo es serial y espera
 al finalizar captura/almacenamiento, por lo que agregarle H0012 sin separación
 retrasaría las siguientes capturas.
 
-Si se adopta el mismo proceso: un único ciclo H0012 sin solapamientos, checkpoints
+El mismo proceso requiere un único ciclo H0012 sin solapamientos, checkpoints
 propios, cancelación/apagado coordinados y reintentos independientes de fallos
 operativos; limitar concurrencia y consumo de conexiones. Sigue compartiendo CPU,
 memoria y base de datos con la ingesta: una goroutine no aísla recursos ni fallos
@@ -314,9 +318,16 @@ El backfill de 515.592 GPS tardó 8 min 23,6 s; no debe repetirse completo cada
 trabajo, pero su costo aún no se midió. Crear una goroutine no es el costo
 principal: importa el trabajo PostGIS y la persistencia.
 
-Antes de implementar, precisar esquema/retención de pasajes y metadatos,
-checkpoints/estado operativo mínimo, tratamiento de GPS tardíos posteriores al
-cierre e integración del procesador. El contador de cierre ya fue acordado;
+**Retención aprobada:** pasajes y metadatos sin purga inicial durante la etapa
+experimental; medir crecimiento antes de fijar un plazo. No archivar series GPS.
+**Cierres definitivos:** no reabrir la secuencia cerrada. Un timestamp posterior
+puede iniciar otra secuencia sin unirla a la anterior; los datos anteriores al
+watermark cerrado no corrigen su resultado.
+
+El esquema, checkpoints y estado persistido están documentados en
+[h0012_persistencia.md](h0012_persistencia.md). Antes de activar faltan lectura
+incremental y buffering de GPS tardíos/matching aún pendiente en secuencias
+abiertas. El contador de cierre ya fue acordado;
 no confundirlo con una autorización para archivar GPS ni con un plazo universal
 de llegada.
 Requisitos ya identificados:
@@ -324,7 +335,8 @@ Requisitos ya identificados:
 - Materializar geometría de sectores, longitudes, progresivas y relación con
   paradas; conservar versiones de geometría y modelo/política de medición.
 - Persistir mediciones y soporte de calidad antes de la purga de siete fechas
-  UTC. Los hashes actuales no permiten recuperar una geometría histórica borrada.
+  UTC. Los hashes raw por sí solos no recuperan una geometría histórica borrada;
+  los snapshots persistidos conservan las versiones materializadas.
 - Reprocesar sin duplicar pasajes ni inflar unidades distintas; no mezclar
   versiones, políticas o scopes entre lotes.
 - Conservar la continuidad y la evidencia temporal necesaria entre ejecuciones:
@@ -332,20 +344,32 @@ Requisitos ya identificados:
   No basta con ejecutar el batch actual sobre ventanas independientes.
 - Manejar observaciones tardías y matching pendiente sin congelar prematuramente
   una ambigüedad; documentar qué resultados son provisionales o finales.
-- Mantener el procesamiento fuera de HTTP y no alterar el worker/filtros H0011
-  sin autorización. Consultar cómo integrar el nuevo procesador.
+- Mantener el procesamiento fuera de HTTP y no alterar los filtros H0011.
+  La integración autorizada usa un ciclo independiente dentro del worker.
 
 Validar idempotencia, recuperación tras interrupciones, cambios de versión y
 paridad batch/incremental sobre entradas equivalentes con la misma política de
 recepción/cierre, además de integración PostGIS aislada. Un resultado parcial nunca se publica como agregado completo.
+
+### Primera pieza incremental implementada
+
+`MeasureCapture` conserva entradas soportadas entre capturas, con estado
+serializable, watermark, contador de ausencias y cierre `missing_updates`.
+Comparte el núcleo de medición con `Measure`, sin censura por fin de lote.
+Pruebas de particiones y reinicios JSON verifican paridad con el batch para
+observaciones ya resueltas. La capa de persistencia implementa snapshots,
+mediciones, diagnósticos y checkpoints atómicos, con activación sin backfill y
+protección contra replays/escritores concurrentes. No es todavía un procesador
+operativo: faltan matching provisional, lectura incremental e integración al worker.
+Contrato y límites: [h0012_incremental.md](h0012_incremental.md).
 
 ### 2. Calibración y elegibilidad — decisiones funcionales pendientes
 
 Acumular más fechas y revisar trayectorias reales, especialmente lazos,
 terminales/regulación y sectores con poca evidencia. La cantidad/duración mínima
 del período aún debe acordarse; dos fechas parciales de tipos distintos no la
-resuelven. No hace falta esperar para construir la persistencia técnica, pero sí
-para validar una política de recurrencia.
+resuelven. La capa de persistencia técnica está implementada, pero validar una
+política de recurrencia requiere acumular datos nuevos tras integrar el procesador.
 
 Consultar antes de elegir:
 

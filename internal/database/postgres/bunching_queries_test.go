@@ -35,6 +35,7 @@ func TestBunchingQueriesUseSameEventProjection(t *testing.T) {
 	// same event columns/order, with history adding current_line_id at the end.
 	projection := func(sql string) string {
 		t.Helper()
+		sql = strings.ReplaceAll(sql, "\r\n", "\n")
 		start := strings.Index(sql, "\nSELECT\n")
 		end := strings.Index(sql, "\nFROM vialis.aglutinaciones_colectivos")
 		if start < 0 || end <= start {

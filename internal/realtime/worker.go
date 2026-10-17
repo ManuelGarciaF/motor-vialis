@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
+	"github.com/ManuelGarciaF/vialis-motor/internal/transport/gcba"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -71,7 +72,12 @@ func (w *Worker) Run(ctx context.Context) error {
 		if err != nil {
 			// Never log arbitrary error text: providers and DB drivers may embed URLs,
 			// credentials, SQL values or vehicle identifiers.
-			w.logger.Warn("realtime_capture_failed", "cycle", sequence, "duration_ms", w.options.Now().Sub(started).Milliseconds(), "error_class", ErrorClass(err))
+			attributes := []any{"cycle", sequence, "duration_ms", w.options.Now().Sub(started).Milliseconds(), "error_class", ErrorClass(err)}
+			var providerError *gcba.Error
+			if errors.As(err, &providerError) && providerError.StatusCode != 0 {
+				attributes = append(attributes, "http_status", providerError.StatusCode)
+			}
+			w.logger.Warn("realtime_capture_failed", attributes...)
 		} else {
 			freshIDs := make(map[string]struct{})
 			for _, p := range capture.Positions {
@@ -149,6 +155,10 @@ func ErrorClass(err error) string {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "deadline_exceeded"
+	}
+	var providerError *gcba.Error
+	if errors.As(err, &providerError) {
+		return "gcba_" + string(providerError.Code)
 	}
 	var dbError *pgconn.PgError
 	if errors.As(err, &dbError) {

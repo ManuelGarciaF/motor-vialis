@@ -215,6 +215,19 @@ mantiene eventos de proximidad. Pasos/headways/CV fueron descartados. Ver
   históricos; filtros `from`, `to`, `state`, `limit`, `offset`. Abierto no implica
   activo: la respuesta distingue frescura y falta de confirmación.
 
+## Persistencia experimental H0012
+
+H0012 dispone de medición incremental y persistencia transaccional de sectores,
+pasajes, incompletos y checkpoints, **sin un procesador H0012 ejecutándose en el
+worker todavía**. Faltan la lectura incremental, el matching provisional y su
+integración al ciclo independiente.
+
+En bases existentes requiere una migración explícita; no se aplicó al esquema
+local `vialis`. Crear las tablas no activa modelos ni carga histórico: la
+activación es explícita, sin backfill, y no sucede al arrancar el worker H0011.
+Ver [esquema, migración y contrato de persistencia](docs/h0012_persistencia.md)
+y [estado incremental y pendientes](docs/h0012_incremental.md).
+
 ## Probar una simulación
 
 El ejecutable de prueba recibe un archivo JSON con las paradas ordenadas. Cada

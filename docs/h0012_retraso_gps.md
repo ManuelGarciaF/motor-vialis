@@ -107,9 +107,13 @@ de que nunca aparezca información útil después de cerrar.
 - La frecuencia de ejecución H0012 queda pendiente de medir costo incremental.
   Si procesa varias capturas juntas debe conservar el orden y contar capturas,
   no incrementar una sola vez por ejecución ni varias por reintento.
-- La regla de cierre por falta de actualizaciones no define todavía si un GPS
-  tardío puede corregir un resultado ya finalizado. Esa política y el estado
-  mínimo para recuperación tras reinicio siguen por especificar.
+- Se aprobó no reabrir secuencias cerradas: sus resultados son definitivos.
+  Un timestamp posterior puede iniciar otra secuencia independiente, sin unirla
+  a la cerrada. El estado mínimo tiene una primera implementación de dominio en
+  [h0012_incremental.md](h0012_incremental.md), con
+  [persistencia transaccional](h0012_persistencia.md) implementada. Siguen
+  pendientes la lectura incremental, el buffering del matching en secuencias
+  abiertas y la integración al worker.
 
 ## Reproducción y tests
 

@@ -11,7 +11,7 @@ import (
 // Input order is irrelevant and the caller's slice is not mutated. Output order
 // is vehicle ID, crossing time, sector index. It never extrapolates missing
 // entry/exit evidence or extends time beyond the final observation.
-// This is a batch primitive: streaming persistence/checkpoints are not implemented.
+// Batch completion censors pending entries; incremental consumers use MeasureCapture.
 func Measure(layout Layout, observations []Observation, policy MeasurementPolicy) (Measurements, error) {
 	if len(layout.sectors) == 0 {
 		return Measurements{}, fmt.Errorf("uninitialized layout")
@@ -56,80 +56,97 @@ func Measure(layout Layout, observations []Observation, policy MeasurementPolicy
 		unique = append(unique, o)
 	}
 
-	var previous *Observation
-	var pending *passageStart
+	cursor := measurementCursor{}
+	for _, o := range unique {
+		cursor.advance(layout, o, policy, &result)
+	}
+	cursor.abandon(BatchBoundary, &result)
+	return result, nil
+}
+
+type measurementCursor struct {
+	previous *Observation
+	pending  *passageStart
+}
+
+func (c *measurementCursor) abandon(reason Rejection, result *Measurements) {
+	if c.pending != nil && c.previous != nil {
+		result.Incomplete = append(result.Incomplete, IncompletePassage{
+			VehicleID: c.previous.VehicleID, Scope: c.previous.Scope,
+			Sector: c.pending.sector, Entered: c.pending.crossing, Reason: reason,
+		})
+	}
+	c.pending = nil
+}
+
+func (c *measurementCursor) advance(layout Layout, o Observation, policy MeasurementPolicy, result *Measurements) {
+	previous, pending := c.previous, c.pending
+	defer func() { c.previous, c.pending = previous, pending }()
 	abandon := func(reason Rejection) {
-		if pending != nil && previous != nil {
-			result.Incomplete = append(result.Incomplete, IncompletePassage{
-				VehicleID: previous.VehicleID, Scope: previous.Scope, Sector: pending.sector,
-				Entered: pending.crossing, Reason: reason,
-			})
-		}
+		c.previous, c.pending = previous, pending
+		c.abandon(reason, result)
 		pending = nil
 	}
-	for _, o := range unique {
-		if previous != nil && previous.VehicleID != o.VehicleID {
-			abandon(BatchBoundary)
-			previous = nil
-		}
-		if reason := rejectObservation(layout, o, policy); reason != "" {
-			abandon(reason)
-			result.Rejections[reason]++
-			previous, pending = nil, nil
-			continue
-		}
-		o.ProgressMeters = meters(o.ProgressMeters)
-		if previous == nil || previous.VehicleID != o.VehicleID {
-			pending = startAtBoundary(layout, o)
-			previous = &o
-			continue
-		}
-		if reason := rejectEdge(*previous, o, policy); reason != "" {
-			abandon(reason)
-			result.Rejections[reason]++
-			pending = startAtBoundary(layout, o)
-			previous = &o
-			continue
-		}
-		gap := o.ObservedAt.Sub(previous.ObservedAt)
-		if pending != nil {
-			pending.maximumGap = max(pending.maximumGap, gap)
-		}
-		if o.ProgressMeters > previous.ProgressMeters {
-			// Search only boundaries actually crossed, rather than every sector.
-			first := sort.Search(len(layout.sectors)+1, func(i int) bool {
-				return boundary(layout, i) > previous.ProgressMeters
-			})
-			for i := first; i <= len(layout.sectors) && boundary(layout, i) <= o.ProgressMeters; i++ {
-				crossed := interpolate(*previous, o, boundary(layout, i))
-				if pending != nil && pending.sector.Index == i-1 {
-					duration := crossed.At.Sub(pending.crossing.At)
-					if duration > 0 {
-						result.Passages = append(result.Passages, Passage{
-							VehicleID: o.VehicleID, Scope: o.Scope, Sector: pending.sector,
-							Entered: pending.crossing, Exited: crossed, Duration: duration,
-							SpeedKPH:             pending.sector.LengthMeters() / duration.Seconds() * 3.6,
-							InteriorObservations: pending.interior,
-							MaximumSupportingGap: max(pending.maximumGap, crossed.AfterAt.Sub(crossed.BeforeAt)),
-							SameGPSInterval:      pending.crossing.BeforeAt.Equal(crossed.BeforeAt) && pending.crossing.AfterAt.Equal(crossed.AfterAt),
-						})
-					} else {
-						abandon(DegenerateCrossing)
-					}
-				}
-				pending = nil
-				if i < len(layout.sectors) {
-					pending = &passageStart{sector: layout.sectors[i], crossing: crossed, maximumGap: crossed.AfterAt.Sub(crossed.BeforeAt)}
+
+	if previous != nil && previous.VehicleID != o.VehicleID {
+		abandon(BatchBoundary)
+		previous = nil
+	}
+	if reason := rejectObservation(layout, o, policy); reason != "" {
+		abandon(reason)
+		result.Rejections[reason]++
+		previous, pending = nil, nil
+		return
+	}
+	o.ProgressMeters = meters(o.ProgressMeters)
+	if previous == nil || previous.VehicleID != o.VehicleID {
+		pending = startAtBoundary(layout, o)
+		previous = &o
+		return
+	}
+	if reason := rejectEdge(*previous, o, policy); reason != "" {
+		abandon(reason)
+		result.Rejections[reason]++
+		pending = startAtBoundary(layout, o)
+		previous = &o
+		return
+	}
+	gap := o.ObservedAt.Sub(previous.ObservedAt)
+	if pending != nil {
+		pending.maximumGap = max(pending.maximumGap, gap)
+	}
+	if o.ProgressMeters > previous.ProgressMeters {
+		// Search only boundaries actually crossed, rather than every sector.
+		first := sort.Search(len(layout.sectors)+1, func(i int) bool {
+			return boundary(layout, i) > previous.ProgressMeters
+		})
+		for i := first; i <= len(layout.sectors) && boundary(layout, i) <= o.ProgressMeters; i++ {
+			crossed := interpolate(*previous, o, boundary(layout, i))
+			if pending != nil && pending.sector.Index == i-1 {
+				duration := crossed.At.Sub(pending.crossing.At)
+				if duration > 0 {
+					result.Passages = append(result.Passages, Passage{
+						VehicleID: o.VehicleID, Scope: o.Scope, Sector: pending.sector,
+						Entered: pending.crossing, Exited: crossed, Duration: duration,
+						SpeedKPH:             pending.sector.LengthMeters() / duration.Seconds() * 3.6,
+						InteriorObservations: pending.interior,
+						MaximumSupportingGap: max(pending.maximumGap, crossed.AfterAt.Sub(crossed.BeforeAt)),
+						SameGPSInterval:      pending.crossing.BeforeAt.Equal(crossed.BeforeAt) && pending.crossing.AfterAt.Equal(crossed.AfterAt),
+					})
+				} else {
+					abandon(DegenerateCrossing)
 				}
 			}
+			pending = nil
+			if i < len(layout.sectors) {
+				pending = &passageStart{sector: layout.sectors[i], crossing: crossed, maximumGap: crossed.AfterAt.Sub(crossed.BeforeAt)}
+			}
 		}
-		if pending != nil && o.ProgressMeters > pending.sector.StartMeters && o.ProgressMeters < pending.sector.EndMeters {
-			pending.interior++
-		}
-		previous = &o
 	}
-	abandon(BatchBoundary)
-	return result, nil
+	if pending != nil && o.ProgressMeters > pending.sector.StartMeters && o.ProgressMeters < pending.sector.EndMeters {
+		pending.interior++
+	}
+	previous = &o
 }
 
 type passageStart struct {

@@ -90,6 +90,12 @@ func steps() []step {
 			},
 		},
 		{
+			name: "persistencia H0012 (sql/bottlenecks/crear_tablas.sql)",
+			run: func(ctx context.Context, e *executor) error {
+				return e.runScript(ctx, scripts.CrearBottlenecks)
+			},
+		},
+		{
 			name: "red vial OpenStreetMap",
 			run: func(ctx context.Context, e *executor) error {
 				return e.importStreets(ctx)

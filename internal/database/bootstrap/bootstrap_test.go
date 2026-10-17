@@ -16,6 +16,7 @@ func TestStepNamesAreInPipelineOrder(t *testing.T) {
 	expected := []string{
 		"esquema y extensiones (sql/init_db.sql)",
 		"tablas finales (sql/ddl.sql)",
+		"persistencia H0012 (sql/bottlenecks/crear_tablas.sql)",
 		"red vial OpenStreetMap",
 		"tablas de staging GTFS (sql/recorridos/crear_gtfs_raw.sql)",
 		"importación de los siete archivos GTFS",
@@ -197,6 +198,7 @@ func TestEmbeddedScriptsAreExecutable(t *testing.T) {
 	embedded := map[string]string{
 		"init_db.sql":                   scripts.InitDB,
 		"ddl.sql":                       scripts.DDL,
+		"bottlenecks/crear_tablas.sql":  scripts.CrearBottlenecks,
 		"crear_gtfs_raw.sql":            scripts.CrearGTFSRaw,
 		"transformar_gtfs.sql":          scripts.TransformarGTFS,
 		"transformar_calles.sql":        scripts.TransformarCalles,
