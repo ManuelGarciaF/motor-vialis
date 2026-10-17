@@ -2,6 +2,13 @@
 
 Servicio REST en Go para el motor de simulación de Vialis.
 
+## Orientación del código
+
+El [mapa del código](docs/mapa_codigo.md) describe procesos, responsabilidades,
+consultas SQL y rutas de lectura, incluida la separación entre H0011 operativo
+y H0012 experimental. La [especificación funcional](docs/arquitectura_motor.md)
+y el [contrato HTTP](docs/openapi.yaml) documentan el comportamiento público.
+
 ## Levantar la base de datos
 
 ```bash

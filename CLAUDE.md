@@ -58,10 +58,18 @@ their estimators through `app.NewSimulationService`, so they cannot drift apart;
 
 ## Architecture
 
+Read `docs/mapa_codigo.md` for the process/package map, SQL ownership and the
+H0011/H0012 boundary. Functional simulation rules remain authoritative in
+`docs/arquitectura_motor.md`; H0012 contracts live in `docs/h0012_incremental.md`
+and `docs/h0012_persistencia.md`. Keep those details in their owning document
+rather than duplicating policy thresholds in navigation guides.
+
 ### Layering
 
 ```
 cmd/api, cmd/simulation-test        entry points; flags and transport, no logic
+cmd/realtime-worker                 independent H0011 ingestion process
+cmd/bottlenecks-analysis             experimental read-only H0012 analysis
 internal/app                        composition root for services
 internal/httpapi                    HTTP handlers (/lines, /lines/similar,
                                      /transfers, /simulations, /comparisons,
@@ -74,12 +82,15 @@ internal/simulation/detour          RF05 cut analysis, selection, reconstruction
 internal/simulation/route           shared Route/Position/LineString model + Validate()
 internal/database/postgres          repositories: DB-backed implementations of
                                      each estimator's Repository interface
+internal/realtime, internal/bunching capture loop and proximity-event domain
+internal/transport/gcba              authenticated provider client and decoding
+internal/bottlenecks                 H0012 measurement/state; PassageStore interface
 internal/config                     model parameters and environment settings
 internal/database/bootstrap         fresh-database pipeline used by cmd/initdb
 sql/                                DDL and ETL scripts
 ```
 
-`internal/simulation.Service` is the only orchestrator. It calls, in order:
+`internal/simulation.Service` is the simulation orchestrator. It calls, in order:
 `route.Validate` → `DemandEstimator.Estimate` → `TravelTimeEstimator.Estimate`
 → `RevenueEstimator.Estimate` (revenue depends on both demand and travel-time
 results, since revenue = demand × distance-based tariff). Each estimator is
@@ -87,7 +98,10 @@ defined by an interface in `internal/simulation/service.go` and depends only
 on a `Repository` interface declared in its own package (`demand.Repository`,
 `traveltime.Repository`, `revenue.Repository`) — never on the concrete
 `postgres` package. `internal/database/postgres` implements those interfaces
-against pgx; that's the only place SQL lives in Go code. This keeps domain
+against pgx. Runtime repository SQL belongs here: embed complex queries from
+adjacent `.sql` files and keep parameter binding/schema adaptation in Go. Small
+administrative statements may stay as readable raw multiline strings. Bootstrap
+owns the separate DDL/ETL execution path. This keeps domain
 logic testable without a database (see the `*_test.go` files next to each
 service) while integration tests in `internal/database/postgres` verify the
 SQL against a real PostGIS+H3 instance.
@@ -171,7 +185,9 @@ a README:
   (`vialis.calles`, `vialis.calles_vertices`) plus node-via turn restrictions
   (`vialis.calles_restricciones`, read with osmium because osm2pgrouting drops
   relation roles).
-- `sql/ddl.sql` — final table definitions; `sql/init_db.sql` bootstraps a new
+- `sql/bottlenecks/` — inactive H0012 persistence tables, shared by fresh
+  bootstrap and the explicit existing-database migration; no model activation.
+- `sql/ddl.sql` — core final table definitions; `sql/init_db.sql` bootstraps a new
   database.
 
 `internal/database/bootstrap` is the source of truth for fresh-database order

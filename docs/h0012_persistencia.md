@@ -38,6 +38,9 @@ No se implementa purga de estas tablas durante la etapa experimental.
 
 `bottlenecks.PassageStore` es la interfaz de dominio;
 `postgres.BottlenecksStore` la implementación. No recibe payloads HTTP.
+El [mapa del código](mapa_codigo.md#persistencia-h0012-recorrido-de-lectura)
+ubica sus entry points transaccionales, snapshots, mediciones y consultas
+embebidas por responsabilidad.
 
 ### Activación explícita
 
