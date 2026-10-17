@@ -19,6 +19,9 @@ var findBottleneckCandidatesSQL string
 //go:embed list_bottleneck_analysis_targets.sql
 var listBottleneckAnalysisTargetsSQL string
 
+//go:embed find_bottleneck_analysis_shape.sql
+var findBottleneckAnalysisShapeSQL string
+
 // BottlenecksRepository is an experimental, read-only trajectory source.
 // ST_ClosestPoint(geography) requires PostGIS >= 3.4. It never repairs shapes.
 type BottlenecksRepository struct {
@@ -61,18 +64,7 @@ func (r *BottlenecksRepository) Load(ctx context.Context, id int64, window bottl
 
 func (r *BottlenecksRepository) load(ctx context.Context, tx pgx.Tx, id int64, window bottlenecks.Window, radius float64) (bottlenecks.Dataset, error) {
 	data := bottlenecks.Dataset{LineID: id, Observations: []bottlenecks.CandidateObservation{}}
-	err := tx.QueryRow(ctx, queryInSchema(`
-		SELECT
-		    gtfs_route_id,
-		    direction_id,
-		    gtfs_shape_id,
-		    md5(encode(ST_AsEWKB(geom), 'hex')),
-		    ST_Length(geom::geography),
-		    linea,
-		    ramal
-		FROM vialis.recorridos
-		WHERE id_recorrido = $1
-	`, r.schema), id).Scan(
+	err := tx.QueryRow(ctx, queryInSchema(findBottleneckAnalysisShapeSQL, r.schema), id).Scan(
 		&data.Version.RouteID, &data.Version.Direction, &data.Version.ShapeID, &data.Version.ShapeHash, &data.LengthMeters, &data.Line, &data.Branch)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return bottlenecks.Dataset{}, bottlenecks.ErrLineNotFound

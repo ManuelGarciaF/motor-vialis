@@ -28,6 +28,12 @@ var insertRealtimePositionsSQL string
 //go:embed check_realtime_schema.sql
 var checkRealtimeSchemaSQL string
 
+//go:embed find_realtime_partition.sql
+var findRealtimePartitionSQL string
+
+//go:embed create_realtime_partition.sql
+var createRealtimePartitionSQL string
+
 // RealtimeSchemaReady checks the operational schema required by the worker.
 // Database-specific SQL stays in this package, not in the command entry point.
 func RealtimeSchemaReady(ctx context.Context, database *pgxpool.Pool) (bool, error) {

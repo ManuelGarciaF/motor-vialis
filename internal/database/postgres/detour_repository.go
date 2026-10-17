@@ -44,6 +44,9 @@ var findDetourTopologyPairsSQL string
 //go:embed detour_graph_trace.sql
 var detourGraphTraceSQL string
 
+//go:embed find_unmatched_detour_points.sql
+var findUnmatchedDetourPointsSQL string
+
 // DetourRepository performs the spatial and routing operations for a road cut.
 type DetourRepository struct {
 	database *pgxpool.Pool
@@ -575,13 +578,7 @@ func readUnmatchedPoints(
 	transaction pgx.Tx,
 	points []detour.RoutingPoint,
 ) (detour.RoutingResult, error) {
-	rows, err := transaction.Query(ctx, `
-		SELECT requested.id
-		FROM detour_requested_points requested
-		LEFT JOIN detour_points snapped ON snapped.pid = requested.id
-		WHERE snapped.pid IS NULL
-		ORDER BY requested.route_order
-	`)
+	rows, err := transaction.Query(ctx, findUnmatchedDetourPointsSQL)
 	if err != nil {
 		return detour.RoutingResult{}, fmt.Errorf("find unmatched detour points: %w", err)
 	}

@@ -131,20 +131,12 @@ func (r *RealtimeRepository) MaintainPartitions(ctx context.Context, now time.Ti
 func (r *RealtimeRepository) ensurePartition(ctx context.Context, tx pgx.Tx, day time.Time) (string, bool, error) {
 	name := "posiciones_colectivos_raw_" + day.Format("20060102")
 	var exists bool
-	err := tx.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $1 AND c.relname = $2)
-	`, r.schema, name).Scan(&exists)
+	err := tx.QueryRow(ctx, findRealtimePartitionSQL, r.schema, name).Scan(&exists)
 	if err != nil || exists {
 		return name, false, err
 	}
 
-	query := fmt.Sprintf(`
-		CREATE TABLE %s PARTITION OF %s FOR
-		VALUES
-		FROM('%s') TO(
-		    '%s'
-		)
-	`, pgx.Identifier{r.schema, name}.Sanitize(), pgx.Identifier{r.schema, "posiciones_colectivos_raw"}.Sanitize(), day.Format("2006-01-02"), day.AddDate(0, 0, 1).Format("2006-01-02"))
+	query := fmt.Sprintf(createRealtimePartitionSQL, pgx.Identifier{r.schema, name}.Sanitize(), pgx.Identifier{r.schema, "posiciones_colectivos_raw"}.Sanitize(), day.Format("2006-01-02"), day.AddDate(0, 0, 1).Format("2006-01-02"))
 	_, err = tx.Exec(ctx, query)
 	return name, err == nil, err
 }

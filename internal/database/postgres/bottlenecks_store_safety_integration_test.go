@@ -137,7 +137,12 @@ func TestPassageStorePreservesNanosecondIdentityAndSupport(t *testing.T) {
 		entry := passageEpoch.Add(time.Duration(ns))
 		exit := entry.Add(time.Minute)
 		p := bottlenecks.Passage{VehicleID: "v", Scope: scope, Sector: sector, Entered: bottlenecks.Crossing{At: entry, BeforeAt: entry, AfterAt: entry}, Exited: bottlenecks.Crossing{At: exit, BeforeAt: exit, AfterAt: exit}, Duration: time.Minute, SpeedKPH: sector.LengthMeters() / 60 * 3.6}
-		if err = f.store.insertMeasurement(f.ctx, tx, run, layout.ID, 11, p.VehicleID, p.Scope, p.Sector, p.Entered, true, "", p.Duration, p.SpeedKPH, p); err != nil {
+		record := bottleneckMeasurementRecord{
+			layoutID: layout.ID, captureID: 11,
+			vehicle: p.VehicleID, scope: p.Scope, sector: p.Sector, entry: p.Entered,
+			complete: true, duration: p.Duration, speedKPH: p.SpeedKPH, payload: p,
+		}
+		if err = f.store.insertMeasurement(f.ctx, tx, run, record); err != nil {
 			t.Fatal(err)
 		}
 		var data []byte
