@@ -16,12 +16,15 @@ const (
 	CriterionFewestLostStops Criterion = "MENOR_PARADAS_PERDIDAS"
 )
 
-// Cut is the single WGS 84 barrier supplied for a detour request.
+// Cut is the set of WGS 84 barriers supplied for a detour request. Each entry
+// in Lines is one branch of the cut: a simple street cut has a single branch,
+// while a T- or H-shaped cut is expressed as several branches. A request that
+// supplies a single LineString produces a Cut with one line.
 type Cut struct {
-	LineString route.LineString
+	Lines []route.LineString
 }
 
-// Input contains the route, its single cut, and the selection criterion.
+// Input contains the route, its cut, and the selection criterion.
 type Input struct {
 	Route     route.Route
 	Cut       Cut

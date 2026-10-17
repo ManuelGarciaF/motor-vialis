@@ -1,6 +1,17 @@
 CREATE TEMP TABLE detour_context ON COMMIT DROP AS
 SELECT
-    ST_SetSRID(ST_GeomFromGeoJSON($1::jsonb), 4326) AS search_area,
+    -- $11 es el margen del grafo: normalmente 0 (area tal cual). En el reintento
+    -- por ancla aislada en el borde (ver Service.Plan) llega > 0 y agranda el
+    -- area SOLO para armar el grafo, de modo que las anclas (colocadas sobre el
+    -- borde original por analyze) queden adentro y se conecten con el resto. Las
+    -- paradas obligatorias no cambian: se clasifican por distancia al corte.
+    CASE
+        WHEN $11::double precision > 0 THEN ST_Buffer(
+            ST_SetSRID(ST_GeomFromGeoJSON($1::jsonb), 4326)::geography,
+            $11::double precision
+        )::geometry
+        ELSE ST_SetSRID(ST_GeomFromGeoJSON($1::jsonb), 4326)
+    END AS search_area,
     ST_SetSRID(ST_GeomFromGeoJSON($2::jsonb), 4326) AS forbidden_area;
 
 CREATE TEMP TABLE detour_traffic ON COMMIT DROP AS

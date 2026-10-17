@@ -44,6 +44,56 @@ func TestLineStringRejectsInvalidGeoJSON(t *testing.T) {
 	}
 }
 
+func TestMultiLineStringAcceptsLineStringInput(t *testing.T) {
+	// Back-compat: today's clients send a GeoJSON LineString for the cut.
+	input := `{"type":"LineString","coordinates":[[-58.38,-34.6],[-58.39,-34.61]]}`
+	var decoded MultiLineString
+	if err := json.Unmarshal([]byte(input), &decoded); err != nil {
+		t.Fatalf("Unmarshal(LineString) error = %v", err)
+	}
+	if len(decoded.Lines) != 1 || len(decoded.Lines[0].Positions) != 2 {
+		t.Fatalf("Unmarshal(LineString) = %#v", decoded)
+	}
+	if decoded.Lines[0].Positions[0].Longitude != -58.38 ||
+		decoded.Lines[0].Positions[0].Latitude != -34.60 {
+		t.Fatalf("Unmarshal(LineString) coordinate = %#v", decoded.Lines[0].Positions[0])
+	}
+}
+
+func TestMultiLineStringRoundTrip(t *testing.T) {
+	input := `{"type":"MultiLineString","coordinates":[[[-58.38,-34.6],[-58.39,-34.61]],[[-58.4,-34.62],[-58.41,-34.63]]]}`
+	var decoded MultiLineString
+	if err := json.Unmarshal([]byte(input), &decoded); err != nil {
+		t.Fatalf("Unmarshal(MultiLineString) error = %v", err)
+	}
+	if len(decoded.Lines) != 2 ||
+		len(decoded.Lines[0].Positions) != 2 ||
+		len(decoded.Lines[1].Positions) != 2 {
+		t.Fatalf("Unmarshal(MultiLineString) = %#v", decoded)
+	}
+
+	encoded, err := json.Marshal(decoded)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if string(encoded) != input {
+		t.Fatalf("Marshal() = %s, want %s", encoded, input)
+	}
+}
+
+func TestMultiLineStringRejectsOtherGeometry(t *testing.T) {
+	tests := []string{
+		`{"type":"Point","coordinates":[-58.38,-34.6]}`,
+		`{"type":"MultiLineString","coordinates":[[[-58.38]]]}`,
+	}
+	for _, input := range tests {
+		var multi MultiLineString
+		if err := json.Unmarshal([]byte(input), &multi); err == nil {
+			t.Fatalf("Unmarshal(%s) error = nil", input)
+		}
+	}
+}
+
 func TestRouteJSONOmitsLastPath(t *testing.T) {
 	input := `{
 		"stops": [

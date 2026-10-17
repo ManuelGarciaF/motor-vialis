@@ -89,6 +89,100 @@ func (line *LineString) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MultiLineString is one or more ordered paths in WGS 84.
+//
+// It decodes from either a GeoJSON LineString (treated as a single branch) or a
+// GeoJSON MultiLineString (several branches), and always encodes as a GeoJSON
+// MultiLineString. Like LineString, its coordinate order is longitude followed
+// by latitude.
+type MultiLineString struct {
+	Lines []LineString
+}
+
+// MarshalJSON encodes a MultiLineString as GeoJSON.
+func (multi MultiLineString) MarshalJSON() ([]byte, error) {
+	coordinates := make([][][2]float64, len(multi.Lines))
+	for lineIndex, line := range multi.Lines {
+		lineCoordinates := make([][2]float64, len(line.Positions))
+		for index, position := range line.Positions {
+			lineCoordinates[index] = [2]float64{
+				position.Longitude,
+				position.Latitude,
+			}
+		}
+		coordinates[lineIndex] = lineCoordinates
+	}
+	return json.Marshal(struct {
+		Type        string         `json:"type"`
+		Coordinates [][][2]float64 `json:"coordinates"`
+	}{
+		Type:        "MultiLineString",
+		Coordinates: coordinates,
+	})
+}
+
+// UnmarshalJSON decodes either a GeoJSON LineString (one branch) or a GeoJSON
+// MultiLineString (several branches). A plain LineString keeps working exactly
+// as before, so existing clients that send a single cut are unaffected.
+func (multi *MultiLineString) UnmarshalJSON(data []byte) error {
+	var head struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(data, &head); err != nil {
+		return fmt.Errorf("decode geometry type: %w", err)
+	}
+	switch head.Type {
+	case "LineString":
+		var line LineString
+		if err := line.UnmarshalJSON(data); err != nil {
+			return err
+		}
+		multi.Lines = []LineString{line}
+		return nil
+	case "MultiLineString":
+		var value struct {
+			Type        string              `json:"type"`
+			Coordinates [][]json.RawMessage `json:"coordinates"`
+		}
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return fmt.Errorf("decode MultiLineString: %w", err)
+		}
+		lines := make([]LineString, len(value.Coordinates))
+		for lineIndex, rawLine := range value.Coordinates {
+			positions := make([]Position, len(rawLine))
+			for index, rawCoordinate := range rawLine {
+				var coordinate []float64
+				if err := json.Unmarshal(rawCoordinate, &coordinate); err != nil {
+					return fmt.Errorf(
+						"decode line %d coordinate %d: %w",
+						lineIndex, index, err,
+					)
+				}
+				if len(coordinate) != 2 {
+					return fmt.Errorf(
+						"line %d coordinate %d must contain longitude and latitude",
+						lineIndex, index,
+					)
+				}
+				positions[index] = Position{
+					Longitude: coordinate[0],
+					Latitude:  coordinate[1],
+				}
+			}
+			lines[lineIndex] = LineString{Positions: positions}
+		}
+		multi.Lines = lines
+		return nil
+	default:
+		return fmt.Errorf(
+			"geometry type must be %q or %q: %q",
+			"LineString", "MultiLineString", head.Type,
+		)
+	}
+}
+
 // Stop is one occurrence of a stop in an ordered route.
 type Stop struct {
 	ID         string      `json:"id"`

@@ -19,12 +19,24 @@ WITH raw AS (
         w.tags
     FROM vialis.calles_ways_raw r
     JOIN vialis.osm_ways w ON w.osm_id = r.osm_id
-    WHERE w.tags -> 'highway' = ANY (ARRAY[
-        'motorway', 'trunk', 'primary', 'secondary', 'tertiary',
-        'unclassified', 'residential', 'living_street',
-        'motorway_link', 'trunk_link', 'primary_link',
-        'secondary_link', 'tertiary_link'
-    ])
+    WHERE (
+        w.tags -> 'highway' = ANY (ARRAY[
+            'motorway', 'trunk', 'primary', 'secondary', 'tertiary',
+            'unclassified', 'residential', 'living_street',
+            'motorway_link', 'trunk_link', 'primary_link',
+            'secondary_link', 'tertiary_link'
+        ])
+        -- Carriles exclusivos de bus (Metrobús): vías `service`/`busway`/
+        -- `bus_guideway` SÓLO cuando habilitan bus/psv. Son por donde circula el
+        -- colectivo y donde están sus andenes centrales; sin esto las paradas del
+        -- Metrobús quedan a ~10 m de las calzadas de autos y el desvío cruza de
+        -- una calzada de mano única a la otra. El resto de los `service`
+        -- (estacionamientos, drive-throughs) no entra.
+        OR (
+            w.tags -> 'highway' = ANY (ARRAY['service', 'busway', 'bus_guideway'])
+            AND COALESCE(w.tags -> 'bus', w.tags -> 'psv', '') IN ('yes', 'designated')
+        )
+      )
       AND NOT (
           COALESCE(w.tags -> 'access', '') IN ('no', 'private')
           AND COALESCE(w.tags -> 'bus', w.tags -> 'psv', '') NOT IN ('yes', 'designated')

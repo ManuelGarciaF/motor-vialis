@@ -107,7 +107,7 @@ func TestDetourServiceIntegration(t *testing.T) {
 		}
 		result, err := service.Plan(ctx, detour.Input{
 			Route:     inputRoute,
-			Cut:       detour.Cut{LineString: candidate.cut},
+			Cut:       detour.Cut{Lines: []route.LineString{candidate.cut}},
 			Criterion: detour.CriterionShortestTime,
 		})
 		if err != nil {

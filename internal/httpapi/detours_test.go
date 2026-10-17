@@ -100,7 +100,8 @@ func TestCreateDetourReturnsVariantComparisonUncoveredStopsAndTrace(t *testing.T
 	}
 	if planner.received.Criterion != detour.CriterionShortestTime ||
 		planner.received.Route.Jurisdiction != route.JurisdictionCABA ||
-		len(planner.received.Cut.LineString.Positions) != 2 {
+		len(planner.received.Cut.Lines) != 1 ||
+		len(planner.received.Cut.Lines[0].Positions) != 2 {
 		t.Fatalf("planner received = %#v", planner.received)
 	}
 }

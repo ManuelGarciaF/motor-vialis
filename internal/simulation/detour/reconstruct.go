@@ -250,10 +250,29 @@ func samePosition(left, right route.Position) bool {
 		math.Abs(left.Longitude-right.Longitude) <= 1e-10
 }
 
+// stopNeighborSeparationMeters es la separacion minima para aceptar un vecino
+// como referencia de rumbo: los tramos que llegan y salen suelen compartir un
+// vertice a pocos metros de la parada, y con un umbral chico (0.1 m) se tomaba
+// ESE mismo punto como vecino de los dos lados -> before == after -> rumbo 0
+// espurio, que despues no engancha con la calle real. 5 m deja un vecino a cada
+// lado de verdad.
+const stopNeighborSeparationMeters = 5.0
+
 func stopDirection(input route.Route, order int) float64 {
 	stop := input.Stops[order].Position
-	before, hasBefore := neighboringPosition(input, order, false)
-	after, hasAfter := neighboringPosition(input, order, true)
+	before, hasBefore := neighboringPosition(input, order, false, stop)
+	after, hasAfter := neighboringPosition(input, order, true, stop)
+	// Cuando la geometria GTFS "pincha" hacia la parada y vuelve por el MISMO
+	// vertice (la parada cuelga de la linea como un apendice), el vecino de los
+	// dos lados cae sobre ese vertice compartido aunque este a mas de 5 m: before
+	// y after coinciden y el rumbo vuelve a dar 0, que engancha a una calle
+	// lateral en vez de la avenida (bug del recuadro al pedo sobre el Metrobus).
+	// Se corre el vecino de atras mas alla del vertice compartido para recuperar
+	// el rumbo de la calle.
+	if hasBefore && hasAfter &&
+		route.DistanceMeters(before, after) <= stopNeighborSeparationMeters {
+		before, hasBefore = neighboringPosition(input, order, false, after)
+	}
 	switch {
 	case hasBefore && hasAfter:
 		return bearingDegrees(before, after)
@@ -266,12 +285,20 @@ func stopDirection(input route.Route, order int) float64 {
 	}
 }
 
-func neighboringPosition(input route.Route, order int, forward bool) (route.Position, bool) {
-	const minimumSeparationMeters = 0.1
+// neighboringPosition devuelve el primer punto del tramo (hacia adelante o
+// atras) que esta a mas de stopNeighborSeparationMeters tanto de la parada como
+// de `avoid`. Pasar la parada como `avoid` reproduce el comportamiento de solo
+// exigir distancia a la parada; pasar el vecino opuesto evita volver a caer en
+// el vertice compartido del apendice.
+func neighboringPosition(input route.Route, order int, forward bool, avoid route.Position) (route.Position, bool) {
 	stop := input.Stops[order].Position
+	far := func(position route.Position) bool {
+		return route.DistanceMeters(stop, position) > stopNeighborSeparationMeters &&
+			route.DistanceMeters(avoid, position) > stopNeighborSeparationMeters
+	}
 	if forward && order < len(input.Stops)-1 && input.Stops[order].PathToNext != nil {
 		for _, position := range input.Stops[order].PathToNext.Positions {
-			if route.DistanceMeters(stop, position) > minimumSeparationMeters {
+			if far(position) {
 				return position, true
 			}
 		}
@@ -279,7 +306,7 @@ func neighboringPosition(input route.Route, order int, forward bool) (route.Posi
 	if !forward && order > 0 && input.Stops[order-1].PathToNext != nil {
 		positions := input.Stops[order-1].PathToNext.Positions
 		for index := len(positions) - 1; index >= 0; index-- {
-			if route.DistanceMeters(stop, positions[index]) > minimumSeparationMeters {
+			if far(positions[index]) {
 				return positions[index], true
 			}
 		}

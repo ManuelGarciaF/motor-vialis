@@ -77,7 +77,7 @@ func TestDetourRepositoryAnalyzeIntegration(t *testing.T) {
 	analysis, err := repository.Analyze(
 		ctx,
 		input,
-		detour.Cut{LineString: cut},
+		detour.Cut{Lines: []route.LineString{cut}},
 		config.DetourPolicy(),
 	)
 	if err != nil {
@@ -714,10 +714,10 @@ func TestDetourRepositoryAnalyzeRejectsCutOutsideGraph(t *testing.T) {
 			{ID: "B", Position: path.Positions[1]},
 		},
 	}
-	cut := detour.Cut{LineString: route.LineString{Positions: []route.Position{
+	cut := detour.Cut{Lines: []route.LineString{{Positions: []route.Position{
 		{Latitude: 0, Longitude: 0},
 		{Latitude: 0.001, Longitude: 0},
-	}}}
+	}}}}
 
 	_, err = NewDetourRepository(pool).Analyze(ctx, input, cut, config.DetourPolicy())
 	var detourError *detour.Error

@@ -27,14 +27,26 @@ else
 fi
 osmium tags-filter --overwrite "$output_dir/area.osm.pbf" \
     "w/highway=$allowed_highways" -o "$output_dir/ways.osm.pbf"
+# Carriles exclusivos de bus (Metrobús): en OSM son ways aparte con
+# highway=service|busway|bus_guideway y bus/psv=designated|yes. Se traen porque
+# son por donde circula el colectivo —y donde están sus andenes centrales—, que
+# si no quedan a ~10 m de las calzadas de autos y el ruteo cruza de una a otra.
+# Encadenar dos tags-filter es un AND: primero la clase de vía de bus, después
+# que efectivamente habilite bus/psv, así NO entra el resto de los `service`
+# (estacionamientos, drive-throughs).
+osmium tags-filter --overwrite "$output_dir/area.osm.pbf" \
+    "w/highway=service,busway,bus_guideway" -o "$output_dir/vias-bus.osm.pbf"
+osmium tags-filter --overwrite "$output_dir/vias-bus.osm.pbf" \
+    "w/bus=yes,designated" "w/psv=yes,designated" -o "$output_dir/metrobus.osm.pbf"
 # Las restricciones de giro se filtran aparte y sin sus miembros: los ways y el
 # nodo via que importan ya están en ways.osm.pbf, y traer los referenciados
-# agregaría ways de clases excluidas (service, footway) con todos sus nodos.
+# agregaría ways de clases excluidas (footway, service no-bus) con todos sus nodos.
 osmium tags-filter --overwrite --omit-referenced "$output_dir/area.osm.pbf" \
     "r/type=restriction" -o "$output_dir/restricciones.osm.pbf"
-osmium merge --overwrite "$output_dir/ways.osm.pbf" \
+osmium merge --overwrite "$output_dir/ways.osm.pbf" "$output_dir/metrobus.osm.pbf" \
     "$output_dir/restricciones.osm.pbf" -o "$output_dir/calles.osm.pbf"
-rm "$output_dir/ways.osm.pbf" "$output_dir/restricciones.osm.pbf"
+rm "$output_dir/ways.osm.pbf" "$output_dir/vias-bus.osm.pbf" \
+    "$output_dir/metrobus.osm.pbf" "$output_dir/restricciones.osm.pbf"
 osmium cat --overwrite "$output_dir/calles.osm.pbf" \
     -o "$output_dir/calles.osm"
 osmium fileinfo -e "$output_dir/calles.osm.pbf" \

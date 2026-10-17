@@ -100,8 +100,42 @@ func NewService(
 	}, nil
 }
 
+// detourRetryGraphMarginMeters agranda el grafo (no las anclas) en un reintento
+// cuando el primer intento no encontro desvio por un ancla aislada en el borde
+// del area. Ver planWithMargin / create_detour_graph.sql.
+const detourRetryGraphMarginMeters = 250.0
+
 // Plan builds and evaluates the best local variant for one road cut.
+//
+// Primero intenta con el area normal. Si falla por "no hay desvio" o por un
+// ancla que no engancha —sintomas tipicos de un ancla que cayo justo sobre el
+// borde del area y quedo desconectada del grafo—, reintenta UNA vez con el grafo
+// un poco mas grande (sin mover las anclas ni tocar que paradas son
+// obligatorias). Asi los casos normales no cambian y solo los que fallaban por
+// el borde consiguen su desvio.
 func (service *Service) Plan(ctx context.Context, input Input) (Result, error) {
+	result, err := service.planWithMargin(ctx, input, 0)
+	if err != nil && shouldRetryWithLargerGraph(err) {
+		if retried, retryErr := service.planWithMargin(ctx, input, detourRetryGraphMarginMeters); retryErr == nil {
+			return retried, nil
+		}
+	}
+	return result, err
+}
+
+// shouldRetryWithLargerGraph reconoce los fallos que un grafo mas grande puede
+// destrabar: no se encontro desvio en el area, o un ancla no engancho.
+func shouldRetryWithLargerGraph(err error) bool {
+	var domainError *Error
+	if !errors.As(err, &domainError) {
+		return false
+	}
+	return domainError.Code == ErrorNoDetourWithinSearchArea ||
+		domainError.Code == ErrorAnchorNotMatched ||
+		domainError.Code == ErrorRequiredStopNotMatched
+}
+
+func (service *Service) planWithMargin(ctx context.Context, input Input, graphMarginMeters float64) (Result, error) {
 	if err := route.Validate(input.Route); err != nil {
 		return Result{}, err
 	}
@@ -148,10 +182,11 @@ func (service *Service) Plan(ctx context.Context, input Input) (Result, error) {
 	}
 
 	routing, err := service.repository.Route(ctx, RoutingRequest{
-		Analysis: analysis,
-		Traffic:  snapshot.Segments,
-		Points:   points,
-		Pairs:    pairs,
+		Analysis:          analysis,
+		Traffic:           snapshot.Segments,
+		Points:            points,
+		Pairs:             pairs,
+		GraphMarginMeters: graphMarginMeters,
 	}, service.policy)
 	if err != nil {
 		return Result{}, err

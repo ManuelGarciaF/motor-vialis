@@ -184,7 +184,22 @@ local, a costo infinito: un par sin camino legal no tiene camino.
 
 ## Decisiones de v1
 
-- Se excluyen `service`, `track` y vías no vehiculares.
+- Se excluyen `track` y vías no vehiculares. De `service` se incluyen SÓLO los
+  carriles exclusivos de bus (ver abajo); el resto (estacionamientos,
+  drive-throughs) no.
+- Carriles de bus (Metrobús): se incluyen las vías `service`/`busway`/
+  `bus_guideway` que habilitan `bus`/`psv` (`=yes` o `=designated`). En OSM el
+  Metrobús Norte de Av. Cabildo son ways `highway=service bus=designated`
+  (algunos con `access=no`), separados de las dos calzadas `highway=secondary`.
+  Sin estos ways, el colectivo no tiene en el grafo el carril por el que
+  realmente circula: sus andenes centrales enganchan a una calzada lateral de
+  mano única (~10 m), paradas seguidas caen en calzadas opuestas y el desvío
+  cruza de una a otra por bocacalles. Filtrado en tres lugares que deben seguir
+  coherentes: `obtener_extracto.sh` (dos `tags-filter` encadenados = AND:
+  `highway=service,busway,bus_guideway` y luego `bus/psv=yes,designated`),
+  `mapconfig.xml` (clases `service`/`busway`/`bus_guideway` para que
+  osm2pgrouting las importe) y `transformar_calles.sql` (vuelve a exigir
+  `bus`/`psv` designado).
 - `access=no/private` y `motor_vehicle=no/private` se excluyen, salvo que OSM
   habilite explícitamente `bus` o `psv`.
 - `oneway=reversible/alternating` se trata como bidireccional.
