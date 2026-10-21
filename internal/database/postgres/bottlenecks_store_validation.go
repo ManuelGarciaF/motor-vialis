@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/ManuelGarciaF/vialis-motor/internal/bottlenecks"
 )
 
@@ -37,6 +39,23 @@ func validateStoredMeasurement(layout bottlenecks.Layout, state bottlenecks.Capt
 	if m.Duplicates < 0 || m.LateObservations < 0 {
 		return fmt.Errorf("invalid measurement counters")
 	}
+	var through time.Time
+	if state.Watermark != nil {
+		through = state.Watermark.ObservedAt
+	}
+	if err := validateMeasurementSupport(layout, state.VehicleID, state.Policy, through, m.Measurements); err != nil {
+		return err
+	}
+	if m.Closed && (state.MissingCaptures != bottlenecks.MissingCaptureLimit || state.Previous != nil || state.Pending != nil) {
+		return fmt.Errorf("invalid stream closure")
+	}
+	return nil
+}
+
+func validateMeasurementSupport(layout bottlenecks.Layout, vehicleID string, policy bottlenecks.MeasurementPolicy, through time.Time, m bottlenecks.Measurements) error {
+	if m.Duplicates < 0 {
+		return fmt.Errorf("invalid measurement counters")
+	}
 
 	for _, count := range m.Rejections {
 		if count < 0 {
@@ -46,7 +65,7 @@ func validateStoredMeasurement(layout bottlenecks.Layout, state bottlenecks.Capt
 
 	sectors := layout.Sectors()
 	validate := func(vehicle string, scope bottlenecks.Scope, sector bottlenecks.Sector, c bottlenecks.Crossing) error {
-		if vehicle != state.VehicleID ||
+		if vehicle != vehicleID ||
 			scope.Version != layout.Version() ||
 			scope.ProviderRouteID == "" ||
 			scope.ProviderDirection < 0 ||
@@ -61,9 +80,9 @@ func validateStoredMeasurement(layout bottlenecks.Layout, state bottlenecks.Capt
 			c.AfterAt.IsZero() ||
 			c.At.Before(c.BeforeAt) ||
 			c.At.After(c.AfterAt) ||
-			c.AfterAt.Sub(c.BeforeAt) > state.Policy.MaximumGap ||
-			state.Watermark == nil ||
-			c.AfterAt.After(state.Watermark.ObservedAt) {
+			c.AfterAt.Sub(c.BeforeAt) > policy.MaximumGap ||
+			through.IsZero() ||
+			c.AfterAt.After(through) {
 			return fmt.Errorf("invalid crossing support")
 		}
 		return nil
@@ -82,7 +101,7 @@ func validateStoredMeasurement(layout bottlenecks.Layout, state bottlenecks.Capt
 			p.SpeedKPH != expected ||
 			p.InteriorObservations < 0 ||
 			p.MaximumSupportingGap < 0 ||
-			p.MaximumSupportingGap > state.Policy.MaximumGap ||
+			p.MaximumSupportingGap > policy.MaximumGap ||
 			p.MaximumSupportingGap < p.Entered.AfterAt.Sub(p.Entered.BeforeAt) ||
 			p.MaximumSupportingGap < p.Exited.AfterAt.Sub(p.Exited.BeforeAt) {
 			return fmt.Errorf("invalid passage quality")
@@ -103,8 +122,5 @@ func validateStoredMeasurement(layout bottlenecks.Layout, state bottlenecks.Capt
 		}
 	}
 
-	if m.Closed && (state.MissingCaptures != bottlenecks.MissingCaptureLimit || state.Previous != nil || state.Pending != nil) {
-		return fmt.Errorf("invalid stream closure")
-	}
 	return nil
 }

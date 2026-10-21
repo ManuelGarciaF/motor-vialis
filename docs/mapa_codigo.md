@@ -22,15 +22,18 @@ cmd/realtime-worker ──► internal/transport/gcba
 
 cmd/bottlenecks-analysis ──► internal/bottlenecks ──► lector PostGIS (sólo lectura)
 
-H0012: MeasureCapture ──► StreamTransition ──► PassageStore
-       productor/lectura/matching incremental e integración al worker: pendientes
+cmd/realtime-worker (opt-in H0012, ciclo/pool independiente)
+       └► ProducerWorker ──► ProcessNext ──► ProduceCapture
+                            raw canónico     replay al cerrar ──► mediciones finales
+H0012 legado: MeasureCapture ──► StreamTransition ──► PassageStore
 
 cmd/initdb ──► internal/database/bootstrap ──► scripts sql/ y herramientas ETL
 ```
 
 El API atiende requests; no captura GPS ni ejecuta la ETL. H0011 es otro proceso.
-H0012 tiene medición y almacenamiento probados, pero no un ciclo operativo que
-los conecte. Crear tablas no inicia procesamiento ni activa modelos.
+H0012 tiene un ciclo experimental opt-in, deshabilitado por defecto. Crear tablas
+no inicia procesamiento ni activa modelos. Su prueba operacional/cadencia y los
+criterios de detección siguen pendientes.
 
 ## Dónde buscar cada responsabilidad
 
@@ -57,10 +60,18 @@ scripts de DDL/ETL viven en `sql/` y se embeben desde `sql/sql.go`.
 
 ## Persistencia H0012: recorrido de lectura
 
-La interfaz está en
-[`internal/bottlenecks/persistence.go`](../internal/bottlenecks/persistence.go).
-La implementación se divide por responsabilidad, no por capas adicionales:
+Las interfaces están en
+[`persistence.go`](../internal/bottlenecks/persistence.go) (cursor resuelto) y
+[`producer_repository.go`](../internal/bottlenecks/producer_repository.go)
+(productor). La implementación se divide por responsabilidad:
 
+- [`producer.go`](../internal/bottlenecks/producer.go) y `producer_replay.go`:
+  recepción/descriptor OPEN y finalización con candidatos originales en orden GPS.
+- [`worker.go`](../internal/bottlenecks/worker.go) y `cmd/realtime-worker/h0012.go`:
+  ciclo acotado, habilitación explícita, pool separado y apagado coordinado.
+- [`bottlenecks_producer.go`](../internal/database/postgres/bottlenecks_producer.go),
+  `bottlenecks_producer_source.go` y `bottlenecks_producer_state.go`: lectura de
+  fuente, replay, recovery y commit atómico del productor.
 - [`bottlenecks_store.go`](../internal/database/postgres/bottlenecks_store.go):
   activación, recuperación de estado y controles comunes del repositorio.
 - [`bottlenecks_store_layout.go`](../internal/database/postgres/bottlenecks_store_layout.go):
@@ -81,7 +92,8 @@ que H0011 purga. El soporte y estado JSON conservan nanosegundos; `timestamptz`
 auxiliar tiene precisión de microsegundos. La identidad no se construye usando
 únicamente ese timestamp truncado.
 
-Detalles y obligaciones del productor: [persistencia H0012](h0012_persistencia.md).
+Operación del ciclo: [productor H0012](h0012_productor.md).
+Detalles de almacenamiento: [persistencia H0012](h0012_persistencia.md).
 Medición sin confundir fin de lote con cierre: [estado incremental](h0012_incremental.md).
 Políticas, calibración y alcance pendiente: [plan H0012](plan_h0012_cuellos_botella.md).
 Estos documentos son las referencias del tema; este mapa no replica sus umbrales.

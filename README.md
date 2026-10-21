@@ -222,18 +222,23 @@ mantiene eventos de proximidad. Pasos/headways/CV fueron descartados. Ver
   históricos; filtros `from`, `to`, `state`, `limit`, `offset`. Abierto no implica
   activo: la respuesta distingue frescura y falta de confirmación.
 
-## Persistencia experimental H0012
+## Productor experimental H0012
 
-H0012 dispone de medición incremental y persistencia transaccional de sectores,
-pasajes, incompletos y checkpoints, **sin un procesador H0012 ejecutándose en el
-worker todavía**. Faltan la lectura incremental, el matching provisional y su
-integración al ciclo independiente.
+H0012 dispone de recepción incremental, replay del matching al cerrar secuencias,
+persistencia transaccional y ciclo independiente opt-in en `realtime-worker`.
+**Sin flags H0012 el worker sigue siendo sólo H0011**; no activa modelos ni aplica
+migraciones automáticamente. No hay backfill ni archivo GPS adicional.
 
-En bases existentes requiere una migración explícita; no se aplicó al esquema
-local `vialis`. Crear las tablas no activa modelos ni carga histórico: la
-activación es explícita, sin backfill, y no sucede al arrancar el worker H0011.
-Ver [esquema, migración y contrato de persistencia](docs/h0012_persistencia.md)
-y [estado incremental y pendientes](docs/h0012_incremental.md).
+La migración inicial está aplicada en la base local; falta la migración adicional
+`sql/bottlenecks/migrar_productor.sql`. No se activó un modelo real. La primera
+activación requiere nombre, cadencia y parámetros experimentales explícitos;
+la reanudación recupera modelo y checkpoint sin volver a activarlos.
+
+Ver [migraciones, activación y operación del productor](docs/h0012_productor.md),
+[contrato de persistencia](docs/h0012_persistencia.md) y
+[medición incremental](docs/h0012_incremental.md). La validación operacional y
+calibración con capturas reales siguen pendientes; todavía no hay detector,
+ranking ni API de cuellos de botella.
 
 ## Probar una simulación
 

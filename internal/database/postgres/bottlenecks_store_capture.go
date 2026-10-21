@@ -67,6 +67,9 @@ func (s *BottlenecksStore) prepareCaptureCommit(ctx context.Context, tx pgx.Tx, 
 	if err != nil {
 		return nil, err
 	}
+	if err = s.rejectProducerMode(ctx, tx, model); err != nil {
+		return nil, err
+	}
 	if captureID <= run.Checkpoint {
 		return nil, bottlenecks.ErrCaptureAlreadyProcessed
 	}

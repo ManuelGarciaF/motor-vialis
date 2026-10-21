@@ -92,7 +92,10 @@ func steps() []step {
 		{
 			name: "persistencia H0012 (sql/bottlenecks/crear_tablas.sql)",
 			run: func(ctx context.Context, e *executor) error {
-				return e.runScript(ctx, scripts.CrearBottlenecks)
+				if err := e.runScript(ctx, scripts.CrearBottlenecks); err != nil {
+					return err
+				}
+				return e.runScript(ctx, scripts.CrearBottlenecksProductor)
 			},
 		},
 		{

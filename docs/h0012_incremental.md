@@ -49,23 +49,26 @@ se deben confirmar atómicamente para conseguir idempotencia entre reinicios.
 de una marca global persistida, no recalcularse al reiniciar o descubrir unidades.
 El estado no debe reconstruirse con un checkpoint cero después de una caída.
 
-## Matching y tardíos: límite explícito
+## Cursor resuelto y productor operacional
 
-Esta pieza no consume directamente el raw ni decide qué matching es final.
+`MeasureCapture` no consume directamente raw ni decide qué matching es final.
 Los candidatos ambiguos pueden requerir evidencia posterior; pasarlos como
-barreras definitivas en cada fin de lote perdería información válida.
+barreras definitivas en cada fin de lote perdería información válida. Por eso
+el [productor](h0012_productor.md) usa `ProducerState`/`ProduceCapture`, separados
+del cursor resuelto: cuenta recepción real y confirma mediciones sólo al cierre.
 
 Una observación anterior al watermark activo retorna
 `ErrObservationBeforeWatermark`, sin descartarla silenciosamente ni avanzar el
-checkpoint. El procesador deberá resolver buffering y orden de GPS antes de
-confirmar transiciones, dentro de la retención raw. El replay de un timestamp
+checkpoint. El productor conserva descriptores de la secuencia abierta y relee
+su raw canónico al cierre, dentro de la retención, sin archivar series GPS. El replay de un timestamp
 igual al watermark se acepta sólo si la observación coincide; un conflicto
 rechaza la captura completa.
 
-Por lo tanto esta implementación **no acredita paridad end-to-end de matching
-batch/incremental** ni resuelve todavía las correcciones dentro de secuencias
-abiertas. La paridad probada es del núcleo de medición para entradas ya resueltas
-con orden y política equivalentes.
+La paridad del cursor se valida sobre observaciones ya resueltas. La paridad
+del productor se compara con el matcher y medición batch sobre la misma evidencia
+aceptada y cerrada, incluyendo tardíos y barreras de scope en orden GPS; no con
+una ventana histórica arbitraria que termina censurada. No hay resultados
+provisionales publicados ni un prefijo irreversible de una secuencia abierta.
 
 ## Validación y trabajo pendiente
 
@@ -91,14 +94,13 @@ Los tests PostGIS `TestPassageStore*` pasaron en esquemas aislados, incluidos
 rollback, recuperación, concurrencia y retención. El race detector no pudo
 ejecutarse: este entorno Windows tiene CGO deshabilitado y no dispone de GCC.
 
-Pendiente antes de activar H0012:
+El productor PostgreSQL y su ciclo independiente opt-in están implementados.
+Las pruebas agregan fuente canónica, finalización atómica, reinicio, modo de
+procesamiento, carreras con purga y lifecycle del worker. No se soporta recargar
+GTFS mientras corre el proceso; si falta un snapshot exacto, H0012 se detiene.
 
-1. Lectura incremental, matching provisional, buffering y tratamiento de cambios
-   de catálogo, conservando sólo el contexto operativo necesario.
-2. Productor de transiciones que entregue evidencia completa y respete capturas
-   reales, sin convertir fines de lote en censura ni confirmar matching prematuro.
-3. Ciclo independiente, cancelación y apagado coordinados en el worker.
-4. Validación end-to-end batch/incremental y medición del costo para elegir
-   frecuencia. Ni el batch completo ni ventanas independientes reemplazan esto.
-
-La migración no se aplicó al esquema local `vialis` ni se activó un modelo real.
+Antes de operar: aplicar explícitamente la migración adicional del productor,
+seleccionar parámetros experimentales/cadencia y activar un modelo sin backfill.
+La migración inicial ya se aplicó a `vialis`; la adicional y la activación real
+siguen pendientes. Falta medir costo e impacto sobre captura y validar operación
+con GCBA disponible. Comandos y límites: [productor](h0012_productor.md).

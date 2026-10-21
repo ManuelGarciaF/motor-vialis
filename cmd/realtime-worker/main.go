@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -29,17 +28,12 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, logger *slog.Logger, output io.Writer) error {
-	flags := flag.NewFlagSet("realtime-worker", flag.ContinueOnError)
-	flags.SetOutput(output)
-	interval := flags.Duration("interval", config.RealtimePollInterval, "wait after each completed cycle (e.g. 1m)")
-	if err := flags.Parse(args); err != nil {
+	options, err := parseWorkerOptions(args, output)
+	if err != nil {
 		if err == flag.ErrHelp {
 			return nil
 		}
 		return err
-	}
-	if flags.NArg() != 0 || *interval <= 0 {
-		return fmt.Errorf("invalid realtime-worker arguments")
 	}
 
 	cfg := config.FromEnv()
@@ -90,13 +84,22 @@ func run(ctx context.Context, args []string, logger *slog.Logger, output io.Writ
 		return &startupError{code: "bunching_configuration_failed", hint: "Check bunching policy"}
 	}
 
-	worker, err := realtime.NewWorker(client, repository, logger, realtime.Options{Interval: *interval, DatabaseTimeout: config.RealtimeDatabaseTimeout, CoverageWarningRatio: config.RealtimeCoverageWarningRatio})
+	worker, err := realtime.NewWorker(client, repository, logger, realtime.Options{Interval: options.interval, DatabaseTimeout: config.RealtimeDatabaseTimeout, CoverageWarningRatio: config.RealtimeCoverageWarningRatio})
 	if err != nil {
 		return &startupError{code: "worker_configuration_failed", hint: "Check worker interval and timeouts"}
 	}
 
-	logger.Info("realtime_worker_started", "interval_ms", interval.Milliseconds(), "raw_retention_days", config.RealtimeRawRetentionDays, "endpoint", "vehiclePositionsSimple")
-	err = worker.Run(ctx)
+	producer, closeProducer, err := prepareH0012(ctx, cfg.DatabaseURL, options.h0012, logger)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	}
+	defer closeProducer()
+
+	logger.Info("realtime_worker_started", "interval_ms", options.interval.Milliseconds(), "raw_retention_days", config.RealtimeRawRetentionDays, "endpoint", "vehiclePositionsSimple")
+	err = runWorkerLoops(ctx, worker.Run, producer)
 	if err == nil {
 		logger.Info("realtime_worker_stopped")
 	}

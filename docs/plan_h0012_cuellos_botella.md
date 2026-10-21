@@ -16,17 +16,18 @@ mappings, existe una base importante de pasajes completos aprovechables. La
 segmentación, matching conservador, medición y cobertura ya tienen implementación
 experimental y validaciones; no hay que comenzar nuevamente desde cero.
 
-La capa de persistencia experimental implementa sectores versionados, mediciones
-y checkpoints transaccionales; aún no está conectada a un procesador operativo.
-La siguiente etapa es lectura incremental y matching provisional/buffering antes
-de la purga raw. El usuario
+La capa experimental implementa sectores versionados, mediciones y checkpoints
+transaccionales. El productor lee capturas canónicas y finaliza matching/medición
+al cerrar secuencias; su ciclo independiente está integrado al worker como opt-in.
+La siguiente etapa es validar operación y costo/cadencia con capturas reales,
+sin convertir esta medición en un detector definitivo. El usuario
 aprobó conservar **pasajes individuales y metadatos de calidad, sin archivar GPS
 adicionales**, y arrancar con **datos nuevos, sin backfill**. Esto permite
 recalibrar la detección sobre los pasajes, no rehacer su medición con otra
 segmentación/matching después de purgar el GPS. Se aprobó ejecutar un ciclo independiente dentro de `realtime-worker`, no
-reabrir secuencias cerradas y conservar pasajes sin purga inicial. El buffering
-del matching y la integración al worker siguen pendientes; la persistencia
-transaccional está implementada en una capa separada. Esto permite acumular días para calibrar la detección, sin fijar
+reabrir secuencias cerradas y conservar pasajes sin purga inicial. La recepción se guarda como descriptor OPEN sin archivo GPS; el replay final y
+la persistencia son atómicos. La habilitación del ciclo exige parámetros y modelo
+experimentales explícitos. Esto permite acumular días para calibrar la detección, sin fijar
 prematuramente qué sectores serán elegibles o cómo se ordenará el Top 10.
 
 ### Hallazgos que condicionan el diseño
@@ -272,7 +273,7 @@ Ver metodología, volumen, interrupciones, validación y límites en
 
 ## Próximas etapas propuestas y condiciones de avance
 
-### 1. Persistencia implementada; integración incremental pendiente
+### 1. Productor y ciclo opt-in implementados; validación operacional pendiente
 
 **Aprobado:** conservar pasajes individuales y sus metadatos de calidad, **no
 archivar series GPS adicionales**. No modificar el raw/retención H0011. Se acepta
@@ -325,9 +326,9 @@ puede iniciar otra secuencia sin unirla a la anterior; los datos anteriores al
 watermark cerrado no corrigen su resultado.
 
 El esquema, checkpoints y estado persistido están documentados en
-[h0012_persistencia.md](h0012_persistencia.md). Antes de activar faltan lectura
-incremental y buffering de GPS tardíos/matching aún pendiente en secuencias
-abiertas. El contador de cierre ya fue acordado;
+[h0012_persistencia.md](h0012_persistencia.md). La recepción y el replay final
+están implementados; la [operación del productor](h0012_productor.md) requiere
+migración adicional y activación explícita. No hay modelo real activado. El contador de cierre ya fue acordado;
 no confundirlo con una autorización para archivar GPS ni con un plazo universal
 de llegada.
 Requisitos ya identificados:
@@ -360,8 +361,26 @@ Pruebas de particiones y reinicios JSON verifican paridad con el batch para
 observaciones ya resueltas. La capa de persistencia implementa snapshots,
 mediciones, diagnósticos y checkpoints atómicos, con activación sin backfill y
 protección contra replays/escritores concurrentes. No es todavía un procesador
-operativo: faltan matching provisional, lectura incremental e integración al worker.
+definitivo de detección. El productor/ciclo opt-in agregan lectura canónica,
+descriptores OPEN y replay al cierre; no publican prefijos provisionales.
 Contrato y límites: [h0012_incremental.md](h0012_incremental.md).
+
+### Decisiones del productor confirmadas
+
+- Confirmar mediciones sólo al cerrar la secuencia de la unidad; mientras esté
+  abierta, conservar referencias al raw canónico sin otro archivo GPS. Una unidad
+  que actualice continuamente puede demorar resultados hasta agotar retención.
+- GPS tardío dentro de OPEN se reordena y rematchea al cierre; después del cierre
+  no se reabre evidencia. Los cambios de scope en orden GPS son barreras, sin unir
+  A→B→A; las entradas pendientes quedan incompletas por cambio.
+- Si expira/falta raw necesario o falta la geometría exacta, detener H0012 con
+  aviso, sin perder checkpoint ni frenar H0011. No hay truncado/backfill/reset
+  automático ni un nuevo cierre por tiempo inventado.
+- No actualizar GTFS durante la ejecución del worker. Detenerlo antes de recargar;
+  no se implementa coordinación de recarga en vivo.
+- El ciclo usa pool/cadencia propios, límites técnicos de trabajo y cancelación
+  coordinada. La cadencia debe elegirse explícitamente y medir su impacto sobre
+  captura/DB; una goroutine o pool separado no aísla CPU/IO/locks de mantenimiento.
 
 ### 2. Calibración y elegibilidad — decisiones funcionales pendientes
 

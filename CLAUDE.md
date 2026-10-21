@@ -61,14 +61,15 @@ their estimators through `app.NewSimulationService`, so they cannot drift apart;
 Read `docs/mapa_codigo.md` for the process/package map, SQL ownership and the
 H0011/H0012 boundary. Functional simulation rules remain authoritative in
 `docs/arquitectura_motor.md`; H0012 contracts live in `docs/h0012_incremental.md`
-and `docs/h0012_persistencia.md`. Keep those details in their owning document
+and `docs/h0012_persistencia.md`; opt-in producer operation is documented in
+`docs/h0012_productor.md`. Keep those details in their owning document
 rather than duplicating policy thresholds in navigation guides.
 
 ### Layering
 
 ```
 cmd/api, cmd/simulation-test        entry points; flags and transport, no logic
-cmd/realtime-worker                 independent H0011 ingestion process
+cmd/realtime-worker                 H0011 ingestion; independent opt-in H0012 cycle
 cmd/bottlenecks-analysis             experimental read-only H0012 analysis
 internal/app                        composition root for services
 internal/httpapi                    HTTP handlers (/lines, /lines/similar,

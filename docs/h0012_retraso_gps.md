@@ -111,9 +111,10 @@ de que nunca aparezca información útil después de cerrar.
   Un timestamp posterior puede iniciar otra secuencia independiente, sin unirla
   a la cerrada. El estado mínimo tiene una primera implementación de dominio en
   [h0012_incremental.md](h0012_incremental.md), con
-  [persistencia transaccional](h0012_persistencia.md) implementada. Siguen
-  pendientes la lectura incremental, el buffering del matching en secuencias
-  abiertas y la integración al worker.
+  [persistencia transaccional](h0012_persistencia.md) implementada. El
+  [productor opt-in](h0012_productor.md) separa recepción y medición final:
+  conserva referencias OPEN, relee candidatos originales al cierre y procesa
+  barreras de scope en orden GPS. Falta validar operación/cadencia con datos reales.
 
 ## Reproducción y tests
 

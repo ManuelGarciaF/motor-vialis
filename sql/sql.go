@@ -29,6 +29,11 @@ var DDL string
 //go:embed bottlenecks/crear_tablas.sql
 var CrearBottlenecks string
 
+// CrearBottlenecksProductor stores receipt descriptors without a GPS archive.
+//
+//go:embed bottlenecks/crear_productor.sql
+var CrearBottlenecksProductor string
+
 // CrearGTFSRaw recreates the GTFS staging tables (vialis.gtfs_*_raw).
 //
 //go:embed recorridos/crear_gtfs_raw.sql

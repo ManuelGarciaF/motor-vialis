@@ -1,14 +1,17 @@
 # H0012 — Persistencia experimental
 
 Complementa [el estado incremental](h0012_incremental.md) y
-[el plan funcional](plan_h0012_cuellos_botella.md). No implementa el detector,
-matching incremental, lectura del raw ni el ciclo periódico del worker.
+[el plan funcional](plan_h0012_cuellos_botella.md). El [productor y worker
+opt-in](h0012_productor.md) agregan lectura raw y replay final sobre esta capa.
+No implementa detección de lentitud, ranking ni API H0012.
 
 ## Esquema y migración
 
 Definiciones compartidas por instalaciones nuevas y migración:
 `sql/bottlenecks/crear_tablas.sql`. `cmd/initdb` las ejecuta después de `ddl.sql`,
-sin crear modelos activos ni cargar evidencia histórica.
+sin crear modelos activos ni cargar evidencia histórica. El estado del productor
+se define en `crear_productor.sql`, también compartido por bootstrap y su
+migración explícita `migrar_productor.sql`.
 
 Para una base existente, aplicar explícitamente (requiere PostGIS >= 3.4):
 
@@ -29,6 +32,8 @@ No hay migración implícita al arrancar el worker.
 | `h0012_estados` | Estado derivado mínimo por modelo/trazado/unidad, sin serie GPS ni coordenadas GPS |
 | `h0012_mediciones` | Pasajes completos e incompletos, atribución horaria y soporte de calidad |
 | `h0012_diagnosticos` | Conteos por captura, confirmados junto con resultados y checkpoint |
+| `h0012_productores` | Modo de procesamiento por modelo, para no mezclar productor y cursor resuelto |
+| `h0012_estados_productor` | Recepción por unidad y descriptor OPEN, sin historial de candidatos/GPS |
 
 No hay FK hacia IDs regenerables de GTFS ni hacia capturas/raw sujetos a purga.
 Los snapshots conservan geometría y paradas aunque el catálogo se reemplace.
@@ -75,7 +80,7 @@ indica que no hubo asociación dentro del radio, no que el sector no tenga
 paradas. Estas alternativas **no acreditan** cuál rama usa la parada ni resuelven
 el tratamiento funcional de terminales/regulación.
 
-### Commit por captura
+### Cursor resuelto legado: commit por captura
 
 `LoadStates(nombre)` recupera y valida los estados persistidos junto con el
 checkpoint del modelo bajo el mismo lock de fila usado por los escritores.
@@ -108,11 +113,25 @@ son auxiliares de consulta y tienen precisión de microsegundos; fecha/hora loca
 se calculan desde la entrada original, no redondeada. No se publican IDs de
 vehículos ni este estado operativo en una API.
 
-El repositorio valida consistencia estructural/de soporte; **no vuelve a ejecutar
-el matcher ni puede demostrar que el productor usó todas las observaciones raw**.
-La completitud de las transiciones, buffering, orden temporal y cortes por cambios
-de identidad/versión son obligaciones del procesador, todavía no implementado.
-No usar ventanas batch independientes para producir estos estados.
+Este contrato legado valida consistencia estructural/de soporte de transiciones
+resueltas, no demuestra completitud raw ni resuelve matching provisional. Se
+conserva para pruebas/consumidores explícitos; el worker usa el productor siguiente.
+No mezclar ambos modos en un modelo ni usar ventanas batch independientes.
+
+### Productor: recepción y replay final
+
+`ProcessNext` recupera el modelo, lee la siguiente captura real y verifica fuente,
+estados, versión exacta y recepción de todas las unidades. Guarda descriptores
+OPEN y sólo confirma mediciones cuando la secuencia cierra; en ese momento vuelve
+a ejecutar matching y medición con toda la evidencia canónica, incluidos tardíos.
+El checkpoint avanza con estados, resultados finales y diagnósticos en una sola
+transacción. `LoadProducerStates` recupera modelo y estados coherentes sin activar.
+
+No se usa `CaptureState.Watermark` para representar GPS provisional: la recepción
+vive en `ProducerState.LatestSeenAt`. Cada descriptor conserva límites de captura,
+scopes/layouts, conteo y fingerprint para verificar el replay, sin guardar series
+GPS/candidatos. La selección sigue identidades/versiones del raw, no mappings
+actuales. Detalles de confirmación, retención y operación: [productor](h0012_productor.md).
 
 ## Atraso y retención de la fuente
 
@@ -126,8 +145,12 @@ ni se declara completa una ventana con fuente desconocida.
 
 La comprobación supone que sólo H0011 administra la retención y que su reloj y
 el de PostgreSQL concuerdan en la fecha UTC. No detecta borrados arbitrarios de
-raw ni restaura geometrías anteriores a una activación; la lectura incremental
-deberá verificar disponibilidad/completitud del contexto antes de medir.
+raw ni restaura geometrías anteriores a una activación. El productor verifica
+conteos canónicos nuevos y replay/fingerprint antes de confirmar. Comprueba además
+la fecha del raw OPEN más antiguo aunque el checkpoint global esté actualizado.
+Fija padre/particiones raw con `ACCESS SHARE` y revalida la referencia original
+tras obtener el lock; así una purga concurrente en medianoche no permite saltear
+capturas perdidas. INSERT normales son compatibles; la purga espera al commit.
 
 ## Validación
 
@@ -145,6 +168,7 @@ SQL, doble escritor concurrente, replay e identidad temporal submicrosegundo.
 La suite normal `go test ./...`, build y vet también pasan. No se ejecutó race:
 el entorno Windows actual no tiene CGO/GCC habilitados.
 
-La migración no se aplicó al esquema local `vialis` ni se activó un modelo real.
-La siguiente etapa es lectura incremental y matching provisional/buffering antes
-de conectar el ciclo independiente al worker y medir frecuencia/costo.
+La migración inicial ya está aplicada a `vialis`; la adicional del productor
+sigue pendiente y no se activó un modelo real. El ciclo opt-in está implementado;
+faltan prueba operacional y medición de frecuencia/costo con capturas reales.
+Ver [migración adicional y comandos](h0012_productor.md#migraciones-explícitas).
