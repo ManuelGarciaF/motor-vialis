@@ -16,7 +16,6 @@ func TestStepNamesAreInPipelineOrder(t *testing.T) {
 	expected := []string{
 		"esquema y extensiones (sql/init_db.sql)",
 		"tablas finales (sql/ddl.sql)",
-		"persistencia H0012 (sql/bottlenecks/crear_tablas.sql)",
 		"red vial OpenStreetMap",
 		"tablas de staging GTFS (sql/recorridos/crear_gtfs_raw.sql)",
 		"importación de los siete archivos GTFS",
@@ -197,22 +196,20 @@ func TestStripPsqlDirectives(t *testing.T) {
 // al servidor sin directivas de psql y ninguno puede estar vacío.
 func TestEmbeddedScriptsAreExecutable(t *testing.T) {
 	embedded := map[string]string{
-		"init_db.sql":                     scripts.InitDB,
-		"ddl.sql":                         scripts.DDL,
-		"bottlenecks/crear_tablas.sql":    scripts.CrearBottlenecks,
-		"bottlenecks/crear_productor.sql": scripts.CrearBottlenecksProductor,
-		"crear_gtfs_raw.sql":              scripts.CrearGTFSRaw,
-		"transformar_gtfs.sql":            scripts.TransformarGTFS,
-		"transformar_calles.sql":          scripts.TransformarCalles,
-		"crear_restricciones_raw.sql":     scripts.CrearRestriccionesRaw,
-		"transformar_restricciones.sql":   scripts.TransformarRestricciones,
-		"mapconfig.xml":                   scripts.CallesMapConfig,
-		"amba-margen-10km.geojson":        scripts.CallesScope,
-		"crear_viajes_raw.sql":            scripts.CrearViajesRaw,
-		"transformar_viajes.sql":          scripts.TransformarViajes,
-		"hexagonos_viajes.sql":            scripts.HexagonosViajes,
-		"matriz_origen_destino.sql":       scripts.MatrizOrigenDestino,
-		"insertar_tarifas_vigentes.sql":   scripts.InsertarTarifasVigentes,
+		"init_db.sql":                   scripts.InitDB,
+		"ddl.sql":                       scripts.DDL,
+		"crear_gtfs_raw.sql":            scripts.CrearGTFSRaw,
+		"transformar_gtfs.sql":          scripts.TransformarGTFS,
+		"transformar_calles.sql":        scripts.TransformarCalles,
+		"crear_restricciones_raw.sql":   scripts.CrearRestriccionesRaw,
+		"transformar_restricciones.sql": scripts.TransformarRestricciones,
+		"mapconfig.xml":                 scripts.CallesMapConfig,
+		"amba-margen-10km.geojson":      scripts.CallesScope,
+		"crear_viajes_raw.sql":          scripts.CrearViajesRaw,
+		"transformar_viajes.sql":        scripts.TransformarViajes,
+		"hexagonos_viajes.sql":          scripts.HexagonosViajes,
+		"matriz_origen_destino.sql":     scripts.MatrizOrigenDestino,
+		"insertar_tarifas_vigentes.sql": scripts.InsertarTarifasVigentes,
 	}
 	for name, text := range embedded {
 		if strings.TrimSpace(text) == "" {

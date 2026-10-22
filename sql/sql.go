@@ -24,16 +24,6 @@ var InitDB string
 //go:embed ddl.sql
 var DDL string
 
-// CrearBottlenecks creates inactive, versioned H0012 persistence tables.
-//
-//go:embed bottlenecks/crear_tablas.sql
-var CrearBottlenecks string
-
-// CrearBottlenecksProductor stores receipt descriptors without a GPS archive.
-//
-//go:embed bottlenecks/crear_productor.sql
-var CrearBottlenecksProductor string
-
 // CrearGTFSRaw recreates the GTFS staging tables (vialis.gtfs_*_raw).
 //
 //go:embed recorridos/crear_gtfs_raw.sql

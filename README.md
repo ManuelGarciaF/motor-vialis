@@ -225,20 +225,56 @@ mantiene eventos de proximidad. Pasos/headways/CV fueron descartados. Ver
 ## Productor experimental H0012
 
 H0012 dispone de recepción incremental, replay del matching al cerrar secuencias,
-persistencia transaccional y ciclo independiente opt-in en `realtime-worker`.
-**Sin flags H0012 el worker sigue siendo sólo H0011**; no activa modelos ni aplica
-migraciones automáticamente. No hay backfill ni archivo GPS adicional.
+persistencia transaccional y ciclo independiente que corre siempre en
+`realtime-worker`, junto con captura y aglutinaciones. No hay flags de habilitación,
+backfill ni archivo GPS adicional. No aplica migraciones automáticamente.
 
-La migración inicial está aplicada en la base local; falta la migración adicional
-`sql/bottlenecks/migrar_productor.sql`. No se activó un modelo real. La primera
-activación requiere nombre, cadencia y parámetros experimentales explícitos;
-la reanudación recupera modelo y checkpoint sin volver a activarlos.
+Las cinco tablas operacionales `bottlenecks_*` se definen en `sql/ddl.sql` y ya están aplicadas
+en la base local. `go run ./cmd/realtime-worker` inicializa automáticamente su
+configuración operacional en el primer arranque, sin histórico, y recupera el
+checkpoint en los siguientes. Parámetros de medición, cadencia y recursos están
+en `internal/config/parameters.go`; la política persistida debe coincidir con
+config y nunca se sobrescribe al reiniciar.
 
-Ver [migraciones, activación y operación del productor](docs/h0012_productor.md),
+Ver [esquema, activación y operación del productor](docs/h0012_productor.md),
 [contrato de persistencia](docs/h0012_persistencia.md) y
-[medición incremental](docs/h0012_incremental.md). La validación operacional y
-calibración con capturas reales siguen pendientes; todavía no hay detector,
-ranking ni API de cuellos de botella.
+[medición incremental](docs/h0012_incremental.md). La validación operacional
+sostenida y la calibración con capturas reales siguen pendientes.
+
+### API de detección experimental
+
+`GET /bottlenecks?from=2026-10-21T18:00:00-03:00&to=2026-10-21T20:00:00-03:00`
+lee sectores con **≥2 pasajes completos a <6 km/h** dentro de `[from,to)`, por
+entrada estimada. `from`/`to` son obligatorios; admite `line` (etiqueta exacta) y
+`bbox`. Devuelve geometría, conteos, porcentaje lento, velocidad mediana y progreso
+de fuente; sin límite de sectores, IDs de unidades ni GPS individuales.
+Mantiene detenciones y extremos señalados. Cuenta pasajes, no unidades/fechas
+independientes. No consolida entre líneas ni ofrece Top 10; una lista vacía no
+acredita ausencia de problemas o cobertura completa. Ver
+[contrato y límites](docs/h0012_deteccion.md) y [OpenAPI](docs/openapi.yaml).
+
+### Mapa de diagnóstico del worker
+
+Con `DATABASE_URL` exportada, Node >=20 y `psql` en PATH:
+
+```bash
+node scripts/worker-map.mjs --serve
+```
+
+Abrir **http://127.0.0.1:8088** (no el archivo con `file://`, porque OSM exige
+Referer). Permite filtrar por línea y ver aglutinaciones, sectores medidos y el
+avance del procesamiento. Es un snapshot de sólo lectura, no un detector de
+cuellos de botella. Requiere Internet para Leaflet y el mapa base.
+
+Para actualizar, regenerar el snapshot en otra terminal y recargar el navegador:
+
+```bash
+node scripts/worker-map.mjs
+```
+
+Opciones de ventana/puerto, límites y tests: [herramientas administrativas](scripts/README.md#mapa-de-diagnóstico-del-worker).
+El HTML queda en `.local/worker-map.html`; contiene ubicaciones operacionales y
+no debe publicarse ni incorporarse a Git.
 
 ## Probar una simulación
 

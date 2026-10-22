@@ -3,7 +3,7 @@
 Continuación de [h0012_analisis.md](h0012_analisis.md), por decisión del usuario:
 auditar causas antes de continuar, sin relajar filtros.
 
-Herramienta: `scripts/audit-h0012-matching.sql`. Transacción read-only,
+Herramienta: `scripts/audit-bottlenecks-matching.sql`. Transacción read-only,
 repeatable-read, timeout 5 min; no cambia datos, equivalencias ni filtros.
 Salida agregada sin IDs de unidades ni coordenadas GPS individuales.
 
@@ -11,7 +11,7 @@ Salida agregada sin IDs de unidades ni coordenadas GPS individuales.
 psql "$DATABASE_URL" -X -qAt \
   -v line_id=1015 -v from='2026-10-09T23:50:52.000001Z' \
   -v to='2026-10-10T23:50:52.000001Z' \
-  -f scripts/audit-h0012-matching.sql > .local/h0012/audit-1015.json
+  -f scripts/audit-bottlenecks-matching.sql > .local/h0012/audit-1015.json
 ```
 
 Se ejecutó para IDs 1015, 1155 y 1719 con la misma ventana del análisis, radio
@@ -74,7 +74,7 @@ sigue, **sin modificaciones**.
 
 ## Revisión de equivalencias contra el catálogo completo
 
-Herramienta adicional `scripts/audit-h0012-equivalences.sql`, misma ventana y
+Herramienta adicional `scripts/audit-bottlenecks-equivalences.sql`, misma ventana y
 radio 100 m; read-only/repeatable-read, sin generar reemplazos. Compara todas las
 posiciones de las cuatro identidades con todos los shapes GTFS, incluidos ambos
 sentidos. Conserva hasta diez candidatos por identidad y siempre el asignado.
@@ -84,7 +84,7 @@ mediana de distancia e ID. No es un score aprobado para cambiar mappings.
 ```sh
 psql "$DATABASE_URL" -X -qAt -v line_id=1015 \
   -v from='2026-10-09T23:50:52.000001Z' -v to='2026-10-10T23:50:52.000001Z' \
-  -f scripts/audit-h0012-equivalences.sql > .local/h0012/equivalences-1015.json
+  -f scripts/audit-bottlenecks-equivalences.sql > .local/h0012/equivalences-1015.json
 ```
 
 | GCBA | Posiciones | Próximas al GTFS asignado | Mejor candidato puramente espacial | Cobertura de ese candidato |

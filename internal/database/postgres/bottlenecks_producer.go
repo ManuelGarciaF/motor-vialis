@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -19,7 +18,7 @@ type producerSourceCapture struct {
 	inserted int64
 }
 
-// ProcessNext owns one independent H0012 transaction. It reads one actual H0011
+// ProcessNext owns one independent Bottlenecks transaction. It reads one actual H0011
 // capture, advances receipt state, and finalizes only closed evidence. Neither
 // idle cycles nor SQL retries count as captures. No ingestion advisory lock is
 // acquired; checkpoint/state/results become visible only after this commit.
@@ -32,9 +31,6 @@ func (s *BottlenecksStore) ProcessNext(ctx context.Context, model string) (bottl
 	defer rollbackBottlenecks(tx)
 	run, err := s.readRun(ctx, tx, model, true)
 	if err != nil {
-		return empty, err
-	}
-	if err = s.selectProducerMode(ctx, tx, run); err != nil {
 		return empty, err
 	}
 	reference := run.ActivatedAt
@@ -63,13 +59,13 @@ func (s *BottlenecksStore) ProcessNext(ctx context.Context, model string) (bottl
 	if err != nil {
 		return empty, err
 	}
+	if err = s.checkProducerOpenRetention(ctx, tx, run, states); err != nil {
+		return empty, err
+	}
 	layouts := make(map[int64]bottlenecks.PersistedLayout)
 	for _, state := range states {
 		if state.Open == nil {
 			continue
-		}
-		if err = s.checkRetention(ctx, tx, state.Open.EarliestAt, run.Model.RawRetentionDays); err != nil {
-			return empty, err
 		}
 		for _, ref := range state.Open.Layouts {
 			layout, exists := layouts[ref.ID]
@@ -120,6 +116,9 @@ func (s *BottlenecksStore) ProcessNext(ctx context.Context, model string) (bottl
 	if err = s.ensureProducerLayouts(ctx, tx, run, bounds, layouts); err != nil {
 		return empty, err
 	}
+	if err = s.prepareProducerProjection(ctx, tx, run, layouts); err != nil {
+		return empty, err
+	}
 	rows, err := s.readProducerCandidates(ctx, tx, run, bounds)
 	if err != nil {
 		return empty, err
@@ -129,13 +128,6 @@ func (s *BottlenecksStore) ProcessNext(ctx context.Context, model string) (bottl
 	}
 	result, err := s.processProducerVehicles(ctx, tx, run, capture, states, rows, layouts)
 	if err != nil {
-		return empty, err
-	}
-	diagnostic, err := json.Marshal(result)
-	if err != nil {
-		return empty, err
-	}
-	if _, err = tx.Exec(ctx, s.sql(insertBottleneckDiagnosticSQL), model, capture.id, diagnostic); err != nil {
 		return empty, err
 	}
 	if _, err = tx.Exec(ctx, s.sql(updateBottleneckCheckpointSQL), model, capture.id, capture.received); err != nil {
@@ -171,6 +163,7 @@ func (s *BottlenecksStore) processProducerVehicles(ctx context.Context, tx pgx.T
 	}
 	sort.Strings(vehicles)
 	result := bottlenecks.ProducerProgress{Processed: true, Checkpoint: capture.id, Vehicles: len(vehicles), Rejections: make(map[bottlenecks.Rejection]int)}
+	nextStates := make([]bottlenecks.ProducerState, 0, len(vehicles))
 	for _, vehicle := range vehicles {
 		state := known[vehicle]
 		input := bottlenecks.ProducerCapture{ID: capture.id, ReceivedAt: capture.received, Successful: true, Partial: capture.partial, New: byVehicle[vehicle]}
@@ -187,30 +180,33 @@ func (s *BottlenecksStore) processProducerVehicles(ctx context.Context, tx pgx.T
 				closed := state.ClosedThrough
 				bounds.closedThrough = &closed
 			}
-			if err := s.ensureProducerLayouts(ctx, tx, run, bounds, layouts); err != nil {
-				return empty, err
-			}
+			// Every accepted replay scope already has an OPEN layout reference;
+			// current-capture scopes were registered before preparing the index.
+			// Canonical membership/fingerprint validation rejects altered raw.
 			replay, err := s.readProducerCandidates(ctx, tx, run, bounds)
 			if err != nil {
 				return empty, err
 			}
 			input.Replay = replay
 		}
-		next, produced, err := bottlenecks.ProduceCapture(state, input, producerLayoutsSlice(layouts))
+		vehicleLayouts, err := producerVehicleLayouts(state, input, layouts)
+		if err != nil {
+			return empty, err
+		}
+		next, produced, err := bottlenecks.ProduceCapture(state, input, vehicleLayouts)
 		if err != nil {
 			return empty, fmt.Errorf("%w: %v", bottlenecks.ErrProducerSourceIncomplete, err)
-		}
-		if next.Open != nil {
-			if err = s.checkRetention(ctx, tx, next.Open.EarliestAt, run.Model.RawRetentionDays); err != nil {
-				return empty, err
-			}
 		}
 		if err = s.persistProducerResult(ctx, tx, run, capture.id, next, produced, layouts, &result); err != nil {
 			return empty, err
 		}
-		if err = s.persistProducerState(ctx, tx, next); err != nil {
-			return empty, err
-		}
+		nextStates = append(nextStates, next)
+	}
+	if err := s.checkProducerOpenRetention(ctx, tx, run, nextStates); err != nil {
+		return empty, err
+	}
+	if err := s.persistProducerStates(ctx, tx, run, capture.id, nextStates); err != nil {
+		return empty, err
 	}
 	return result, nil
 }

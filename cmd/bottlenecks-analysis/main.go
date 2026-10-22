@@ -1,4 +1,5 @@
-// bottlenecks-analysis is an experimental read-only H0012 tool, not a detector.
+// bottlenecks-analysis manually inspects historical GPS in a read-only snapshot.
+// It does not ingest, persist operational passages, or classify bottlenecks.
 package main
 
 import (
@@ -36,10 +37,10 @@ func run() error {
 	all := flag.Bool("all", false, "Analyze all targets observed through active H0011 equivalences; emit NDJSON with completion marker")
 	from := flag.String("from", "", "Inclusive RFC3339 GPS timestamp (required)")
 	to := flag.String("to", "", "Exclusive RFC3339 GPS timestamp (required)")
-	nominal := flag.Float64("segment-meters", 500, "Experimental nominal sector length")
-	gap := flag.Duration("max-gap", 3*time.Minute, "Experimental maximum GPS gap")
-	distance := flag.Float64("max-distance", 100, "Experimental maximum geodesic matching distance (m)")
-	speed := flag.Float64("max-speed", 100, "Experimental maximum longitudinal speed (km/h)")
+	nominal := flag.Float64("segment-meters", config.BottlenecksSegmentMeters, "Experimental nominal sector length")
+	gap := flag.Duration("max-gap", config.BottlenecksMaximumGap, "Experimental maximum GPS gap")
+	distance := flag.Float64("max-distance", config.BottlenecksMaximumDistanceMeters, "Experimental maximum geodesic matching distance (m)")
+	speed := flag.Float64("max-speed", config.BottlenecksMaximumSpeedKPH, "Experimental maximum longitudinal speed (km/h)")
 	url := flag.String("database-url", "", "Optional connection override; otherwise DATABASE_URL")
 	flag.Parse()
 	if flag.NArg() != 0 {

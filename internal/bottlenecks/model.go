@@ -1,4 +1,4 @@
-// Package bottlenecks measures commercial bus passages for H0012.
+// Package bottlenecks measures commercial bus passages through versioned sectors.
 // It does not attribute road causes or classify recurrent bottlenecks.
 package bottlenecks
 

@@ -116,7 +116,7 @@ func TestProducerWorkerRetriesTransientFailureWithoutLoggingPayload(t *testing.T
 }
 
 func TestProducerWorkerPermanentFailuresStopOnlyProducer(t *testing.T) {
-	for _, failure := range []error{ErrSourceExpired, ErrProducerSourceIncomplete, ErrProducerGeometryUnavailable, ErrProducerModeConflict, ErrModelChanged, ErrModelNotFound} {
+	for _, failure := range []error{ErrSourceExpired, ErrProducerSourceIncomplete, ErrProducerGeometryUnavailable, ErrModelChanged, ErrModelNotFound} {
 		t.Run(failure.Error(), func(t *testing.T) {
 			var output bytes.Buffer
 			calls := 0

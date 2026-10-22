@@ -2,11 +2,17 @@ package bottlenecks
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 )
+
+const MissingCaptureLimit = 4
+const MissingUpdates Rejection = "missing_updates"
+
+var ErrCaptureAlreadyProcessed = errors.New("capture already processed")
 
 // ProducerLayout identifies a retained static layout without serializing GPS or
 // projection candidates. A layout ID cannot change geometry or policy on restart.

@@ -4,5 +4,5 @@ SELECT
     captura_inicial,
     checkpoint,
     ultima_captura_recibida_en
-FROM vialis.h0012_modelos
+FROM vialis.bottlenecks_modelos
 WHERE nombre = $1

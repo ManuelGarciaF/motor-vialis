@@ -3,7 +3,7 @@
 WITH raw AS MATERIALIZED (
     SELECT p.*, t.id AS layout_id
     FROM vialis.posiciones_colectivos_raw p
-    JOIN vialis.h0012_trazados t
+    JOIN vialis.bottlenecks_trazados t
       ON t.modelo = $1
      AND t.gtfs_route_id = p.gtfs_route_id
      AND t.direction_id = p.gtfs_direction_id
@@ -12,20 +12,6 @@ WITH raw AS MATERIALIZED (
     WHERE p.id_captura BETWEEN $2 AND $3
       AND ($5::text IS NULL OR p.id_vehiculo = $5)
       AND ($6::timestamptz IS NULL OR p.observado_en > $6)
-), shapes AS MATERIALIZED (
-    SELECT t.id, t.geom
-    FROM vialis.h0012_trazados t
-    WHERE t.id IN (SELECT DISTINCT layout_id FROM raw)
-), pieces AS MATERIALIZED (
-    SELECT s.id, (d).path[1] edge, (d).geom geom,
-           ST_Length((d).geom::geography) length_m
-    FROM shapes s CROSS JOIN LATERAL ST_DumpSegments(s.geom) d
-), edges AS MATERIALIZED (
-    SELECT *, coalesce(sum(length_m) OVER (
-        PARTITION BY id ORDER BY edge
-        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-    ), 0) start_m
-    FROM pieces
 )
 SELECT p.id_captura, p.layout_id, p.id_vehiculo, p.gcba_route_id,
        p.gcba_direction, p.gtfs_route_id, p.gtfs_direction_id,
@@ -35,10 +21,10 @@ SELECT p.id_captura, p.layout_id, p.id_vehiculo, p.gcba_route_id,
 FROM raw p
 LEFT JOIN LATERAL (
     WITH nearby AS (
-        SELECT e.*, ST_ClosestPoint(e.geom::geography, p.posicion::geography)::geometry point
-        FROM edges e
-        WHERE e.id = p.layout_id AND e.length_m > 0
-          AND ST_DWithin(e.geom::geography, p.posicion::geography, $4)
+        SELECT e.*, ST_ClosestPoint(e.geog, p.posicion::geography)::geometry point
+        FROM pg_temp.bottlenecks_projection_edges e
+        WHERE e.layout_id = p.layout_id AND e.length_m > 0
+          AND ST_DWithin(e.geog, p.posicion::geography, $4)
     ), projected AS (
         SELECT edge, start_m + ST_Length(ST_LineSubstring(geom, 0,
                ST_LineLocatePoint(geom, point))::geography) progress_m,

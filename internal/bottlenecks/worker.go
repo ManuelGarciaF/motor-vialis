@@ -38,8 +38,8 @@ func NewProducerWorker(processor ProducerProcessor, logger *slog.Logger, options
 }
 
 type producerCycle struct {
-	captures, passages, incomplete int
-	checkpoint                     int64
+	captures int
+	progress ProducerProgress
 }
 
 // Run owns one serial processing loop. Permanent source/model failures stop
@@ -47,21 +47,27 @@ type producerCycle struct {
 // Completed captures remain committed if a later capture exhausts the budget.
 func (w *ProducerWorker) Run(ctx context.Context) error {
 	for ctx.Err() == nil {
+		started := time.Now()
 		cycle, err := w.runCycle(ctx)
 		if ctx.Err() != nil {
 			return nil
 		}
 		if cycle.captures > 0 {
-			w.logger.Info("h0012_captures_committed", "captures", cycle.captures, "checkpoint", cycle.checkpoint,
-				"passages", cycle.passages, "incomplete", cycle.incomplete)
+			p := cycle.progress
+			w.logger.Info("bottlenecks_captures_committed", "captures", cycle.captures, "checkpoint", p.Checkpoint,
+				"duration_ms", time.Since(started).Milliseconds(),
+				"passages", p.Passages, "incomplete", p.Incomplete, "closed_sequences", p.ClosedVehicles,
+				"vehicle_capture_states", p.Vehicles, "late_observations", p.LateObservations, "duplicates", p.Duplicates,
+				"spatially_unique", p.SpatiallyUnique, "temporally_resolved", p.TemporallyResolved,
+				"ambiguous", p.Ambiguous, "unmatched", p.Unmatched, "rejections", p.Rejections)
 		}
 		if err != nil {
 			code, permanent := producerWorkerError(err)
 			if permanent {
-				w.logger.Error("h0012_processing_stopped", "error_class", code, "h0011_continues", true)
+				w.logger.Error("bottlenecks_processing_stopped", "error_class", code, "h0011_continues", true)
 				return err
 			}
-			w.logger.Warn("h0012_cycle_failed", "error_class", code)
+			w.logger.Warn("bottlenecks_cycle_failed", "error_class", code)
 		}
 		if err := w.wait(ctx, w.options.Interval); err != nil {
 			if ctx.Err() != nil {
@@ -77,7 +83,7 @@ func (w *ProducerWorker) runCycle(ctx context.Context) (producerCycle, error) {
 	cycleCtx, cancel := context.WithTimeout(ctx, w.options.CycleTimeout)
 	defer cancel()
 
-	var cycle producerCycle
+	cycle := producerCycle{progress: ProducerProgress{Rejections: make(map[Rejection]int)}}
 	for i := 0; i < w.options.MaxCapturesPerCycle; i++ {
 		if err := cycleCtx.Err(); err != nil {
 			return cycle, err
@@ -90,9 +96,21 @@ func (w *ProducerWorker) runCycle(ctx context.Context) (producerCycle, error) {
 			return cycle, nil
 		}
 		cycle.captures++
-		cycle.passages += progress.Passages
-		cycle.incomplete += progress.Incomplete
-		cycle.checkpoint = progress.Checkpoint
+		p := &cycle.progress
+		p.Checkpoint = progress.Checkpoint
+		p.Passages += progress.Passages
+		p.Incomplete += progress.Incomplete
+		p.Vehicles += progress.Vehicles
+		p.ClosedVehicles += progress.ClosedVehicles
+		p.LateObservations += progress.LateObservations
+		p.Duplicates += progress.Duplicates
+		p.SpatiallyUnique += progress.SpatiallyUnique
+		p.TemporallyResolved += progress.TemporallyResolved
+		p.Ambiguous += progress.Ambiguous
+		p.Unmatched += progress.Unmatched
+		for reason, count := range progress.Rejections {
+			p.Rejections[reason] += count
+		}
 	}
 	return cycle, nil
 }
@@ -105,7 +123,6 @@ func producerWorkerError(err error) (string, bool) {
 		{ErrSourceExpired, "source_expired"},
 		{ErrProducerSourceIncomplete, "source_incomplete"},
 		{ErrProducerGeometryUnavailable, "geometry_unavailable"},
-		{ErrProducerModeConflict, "processing_mode_conflict"},
 		{ErrModelChanged, "model_changed"},
 		{ErrModelNotFound, "model_not_found"},
 	} {

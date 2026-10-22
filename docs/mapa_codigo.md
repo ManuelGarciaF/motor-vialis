@@ -22,18 +22,20 @@ cmd/realtime-worker ──► internal/transport/gcba
 
 cmd/bottlenecks-analysis ──► internal/bottlenecks ──► lector PostGIS (sólo lectura)
 
-cmd/realtime-worker (opt-in H0012, ciclo/pool independiente)
+cmd/realtime-worker (bottlenecks siempre activo, ciclo/pool independiente)
        └► ProducerWorker ──► ProcessNext ──► ProduceCapture
                             raw canónico     replay al cerrar ──► mediciones finales
-H0012 legado: MeasureCapture ──► StreamTransition ──► PassageStore
 
 cmd/initdb ──► internal/database/bootstrap ──► scripts sql/ y herramientas ETL
 ```
 
 El API atiende requests; no captura GPS ni ejecuta la ETL. H0011 es otro proceso.
-H0012 tiene un ciclo experimental opt-in, deshabilitado por defecto. Crear tablas
-no inicia procesamiento ni activa modelos. Su prueba operacional/cadencia y los
-criterios de detección siguen pendientes.
+Bottlenecks corre siempre con el worker en un ciclo independiente. El primer
+arranque inicializa su configuración sin backfill; los siguientes recuperan el
+checkpoint. No hay habilitación ni nombres por CLI. La prueba operacional/cadencia
+sostenida y la calibración definitiva siguen pendientes. `GET /bottlenecks`
+lee pasajes finales con la [regla experimental aprobada](h0012_deteccion.md),
+sin ejecutar el productor desde HTTP.
 
 ## Dónde buscar cada responsabilidad
 
@@ -47,7 +49,7 @@ criterios de detección siguen pendientes.
 | Desvíos | `internal/simulation/detour`, `internal/traffic` | Analizar cortes, seleccionar/reconstruir variantes y usar tráfico en el ruteo |
 | Captura H0011 | `internal/realtime`, `internal/transport/gcba`, `cmd/realtime-worker` | Captura, controles de calidad, almacenamiento y ciclo de aglutinaciones |
 | Aglutinaciones | `internal/bunching` | Reglas de proximidad, continuidad y eventos |
-| Medición H0012 | `internal/bottlenecks` | Layouts, matching conservador, pasajes, cobertura y estado incremental de medición |
+| H0012 | `internal/bottlenecks` | Layouts, matching, pasajes, recepción incremental y lectura de detección experimental (`detection.go`) |
 | Acceso a datos | `internal/database/postgres` | Implementar interfaces de dominio, ejecutar SQL y controlar transacciones |
 | Construcción de datos | `internal/database/bootstrap`, `sql/` | Crear/cargar el esquema en orden y recargar GTFS explícitamente |
 | Configuración | `internal/config/config.go`, `parameters.go` | Entorno/secretos separados de constantes revisables del modelo |
@@ -60,24 +62,23 @@ scripts de DDL/ETL viven en `sql/` y se embeben desde `sql/sql.go`.
 
 ## Persistencia H0012: recorrido de lectura
 
-Las interfaces están en
-[`persistence.go`](../internal/bottlenecks/persistence.go) (cursor resuelto) y
-[`producer_repository.go`](../internal/bottlenecks/producer_repository.go)
-(productor). La implementación se divide por responsabilidad:
+El único camino operacional usa la interfaz de
+[`producer_repository.go`](../internal/bottlenecks/producer_repository.go).
+[`persistence.go`](../internal/bottlenecks/persistence.go) define configuración,
+checkpoint y layouts; no otro procesador. La implementación se divide por responsabilidad:
 
 - [`producer.go`](../internal/bottlenecks/producer.go) y `producer_replay.go`:
   recepción/descriptor OPEN y finalización con candidatos originales en orden GPS.
-- [`worker.go`](../internal/bottlenecks/worker.go) y `cmd/realtime-worker/h0012.go`:
-  ciclo acotado, habilitación explícita, pool separado y apagado coordinado.
+- [`worker.go`](../internal/bottlenecks/worker.go) y `cmd/realtime-worker/bottlenecks.go`:
+  ciclo acotado siempre activo, inicialización automática, pool separado y apagado coordinado.
 - [`bottlenecks_producer.go`](../internal/database/postgres/bottlenecks_producer.go),
   `bottlenecks_producer_source.go` y `bottlenecks_producer_state.go`: lectura de
-  fuente, replay, recovery y commit atómico del productor.
+  fuente, índice geométrico TEMP reutilizado por captura, replay, recovery y
+  commit atómico del productor, con escritura conjunta de estados.
 - [`bottlenecks_store.go`](../internal/database/postgres/bottlenecks_store.go):
   activación, recuperación de estado y controles comunes del repositorio.
 - [`bottlenecks_store_layout.go`](../internal/database/postgres/bottlenecks_store_layout.go):
   snapshot de geometría, sectores y alternativas de asociación de paradas.
-- [`bottlenecks_store_capture.go`](../internal/database/postgres/bottlenecks_store_capture.go):
-  transacción por captura, validación de contexto, streams y checkpoint final.
 - [`bottlenecks_store_measurement.go`](../internal/database/postgres/bottlenecks_store_measurement.go):
   representación e identidad de mediciones completas/incompletas.
 - [`bottlenecks_store_validation.go`](../internal/database/postgres/bottlenecks_store_validation.go):
@@ -86,8 +87,9 @@ Las interfaces están en
   declaraciones `go:embed` de consultas de persistencia.
 
 Los entry points públicos son dueños de la transacción; los helpers no hacen
-commit. Un checkpoint sólo avanza junto con todas sus mediciones, diagnósticos
-y estados. Los resultados no dependen de FKs a IDs GTFS regenerables ni al raw
+commit. Un checkpoint sólo avanza junto con todas sus mediciones y estados.
+Los conteos operacionales se registran en logs, no en tablas de diagnósticos.
+Los resultados no dependen de FKs a IDs GTFS regenerables ni al raw
 que H0011 purga. El soporte y estado JSON conservan nanosegundos; `timestamptz`
 auxiliar tiene precisión de microsegundos. La identidad no se construye usando
 únicamente ese timestamp truncado.

@@ -7,51 +7,7 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/bottlenecks"
 )
 
-// Capture completeness comes from H0011 metadata, not a producer-supplied flag.
-func validateStoredAbsence(old bottlenecks.CaptureState, exists bool, next bottlenecks.CaptureState, measurement bottlenecks.CaptureMeasurement, partial bool) error {
-	if !exists {
-		if next.Watermark == nil || next.MissingCaptures != 0 || measurement.Closed || !next.ClosedThrough.IsZero() {
-			return fmt.Errorf("invalid new stream")
-		}
-		return nil
-	}
-
-	updated := next.Watermark != nil && (old.Watermark == nil || next.Watermark.ObservedAt.After(old.Watermark.ObservedAt))
-	expected := old.MissingCaptures
-	closed := false
-	closedThrough := old.ClosedThrough
-	if updated {
-		expected = 0
-	} else if !partial && old.Watermark != nil && expected < bottlenecks.MissingCaptureLimit {
-		expected++
-		closed = expected == bottlenecks.MissingCaptureLimit
-		if closed {
-			closedThrough = old.Watermark.ObservedAt
-		}
-	}
-	if next.MissingCaptures != expected || measurement.Closed != closed || !next.ClosedThrough.Equal(closedThrough) {
-		return fmt.Errorf("transition disagrees with capture absence metadata")
-	}
-	return nil
-}
-
-func validateStoredMeasurement(layout bottlenecks.Layout, state bottlenecks.CaptureState, m bottlenecks.CaptureMeasurement) error {
-	if m.Duplicates < 0 || m.LateObservations < 0 {
-		return fmt.Errorf("invalid measurement counters")
-	}
-	var through time.Time
-	if state.Watermark != nil {
-		through = state.Watermark.ObservedAt
-	}
-	if err := validateMeasurementSupport(layout, state.VehicleID, state.Policy, through, m.Measurements); err != nil {
-		return err
-	}
-	if m.Closed && (state.MissingCaptures != bottlenecks.MissingCaptureLimit || state.Previous != nil || state.Pending != nil) {
-		return fmt.Errorf("invalid stream closure")
-	}
-	return nil
-}
-
+// Final passages must retain valid temporal support within the closed sequence.
 func validateMeasurementSupport(layout bottlenecks.Layout, vehicleID string, policy bottlenecks.MeasurementPolicy, through time.Time, m bottlenecks.Measurements) error {
 	if m.Duplicates < 0 {
 		return fmt.Errorf("invalid measurement counters")

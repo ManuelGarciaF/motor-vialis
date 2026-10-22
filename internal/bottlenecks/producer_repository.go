@@ -6,7 +6,6 @@ import (
 )
 
 var (
-	ErrProducerModeConflict        = errors.New("measurement model uses another processing mode")
 	ErrProducerSourceIncomplete    = errors.New("canonical producer source is incomplete")
 	ErrProducerGeometryUnavailable = errors.New("exact producer geometry is unavailable")
 )

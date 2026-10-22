@@ -19,9 +19,9 @@ la base persistente ni los parámetros H0011.
 
 Consultas sólo lectura, sin PostGIS ni salida de coordenadas/IDs de unidades:
 
-- `scripts/audit-h0012-gps-delay.sql`: antigüedad = `recibido_en - observado_en`
+- `scripts/audit-bottlenecks-gps-delay.sql`: antigüedad = `recibido_en - observado_en`
   en la primera recepción **persistida** de cada vehículo/timestamp.
-- `scripts/audit-h0012-update-gaps.sql`: sensibilidad temporal de cerrar una
+- `scripts/audit-bottlenecks-update-gaps.sql`: sensibilidad temporal de cerrar una
   secuencia después de 3 o 4 capturas no parciales sin un nuevo GPS.
 
 Cada consulta tardó unos **3,5 s**, incluyendo arranque de herramienta. Usan
@@ -112,7 +112,7 @@ de que nunca aparezca información útil después de cerrar.
   a la cerrada. El estado mínimo tiene una primera implementación de dominio en
   [h0012_incremental.md](h0012_incremental.md), con
   [persistencia transaccional](h0012_persistencia.md) implementada. El
-  [productor opt-in](h0012_productor.md) separa recepción y medición final:
+  [productor del worker](h0012_productor.md) separa recepción y medición final:
   conserva referencias OPEN, relee candidatos originales al cierre y procesa
   barreras de scope en orden GPS. Falta validar operación/cadencia con datos reales.
 
@@ -121,10 +121,10 @@ de que nunca aparezca información útil después de cerrar.
 ```sh
 # Credenciales cargadas sin imprimirlas.
 psql "$DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 \
-  -f scripts/audit-h0012-gps-delay.sql > .local/h0012/gps-delay.json
+  -f scripts/audit-bottlenecks-gps-delay.sql > .local/h0012/gps-delay.json
 psql "$DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 \
-  -f scripts/audit-h0012-update-gaps.sql > .local/h0012/update-gaps.json
-TEST_DATABASE_URL="$DATABASE_URL" python3 scripts/test-h0012-gps-delay.py
+  -f scripts/audit-bottlenecks-update-gaps.sql > .local/h0012/update-gaps.json
+TEST_DATABASE_URL="$DATABASE_URL" python3 scripts/test-bottlenecks-gps-delay.py
 ```
 
 Los tests usan únicamente fixtures TEMP de sesión y consultas contra ellas;

@@ -9,14 +9,11 @@ import (
 	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/bottlenecks"
-	scripts "github.com/ManuelGarciaF/vialis-motor/sql"
 )
 
-func newProducerStoreFixture(t *testing.T) *passageStoreFixture {
+func newProducerStoreFixture(t *testing.T) *bottlenecksStoreFixture {
 	t.Helper()
-	f := newPassageStoreFixture(t)
-	f.exec(scripts.CrearBottlenecksProductor)
-	f.exec(scripts.CrearBottlenecksProductor)
+	f := newBottlenecksStoreFixture(t)
 	f.exec(`ALTER TABLE vialis.capturas_colectivos ADD COLUMN filas_insertadas bigint NOT NULL DEFAULT 0;
  CREATE TABLE vialis.posiciones_colectivos_raw(
  dia_observado date NOT NULL,observado_en timestamptz NOT NULL,recibido_en timestamptz NOT NULL,
@@ -27,7 +24,7 @@ func newProducerStoreFixture(t *testing.T) *passageStoreFixture {
 	return f
 }
 
-func (f *passageStoreFixture) producerRaw(capture int64, vehicle, provider string, seconds int, progress float64) {
+func (f *bottlenecksStoreFixture) producerRaw(capture int64, vehicle, provider string, seconds int, progress float64) {
 	f.t.Helper()
 	f.exec(`INSERT INTO vialis.posiciones_colectivos_raw
  SELECT ($1::timestamptz AT TIME ZONE 'UTC')::date,$1,$2,$3,$4,0,
@@ -37,7 +34,7 @@ func (f *passageStoreFixture) producerRaw(capture int64, vehicle, provider strin
 	f.exec(`UPDATE vialis.capturas_colectivos SET filas_insertadas=filas_insertadas+1 WHERE id_captura=$1`, capture)
 }
 
-func (f *passageStoreFixture) processProducer(model string) bottlenecks.ProducerProgress {
+func (f *bottlenecksStoreFixture) processProducer(model string) bottlenecks.ProducerProgress {
 	f.t.Helper()
 	p, err := f.store.ProcessNext(f.ctx, model)
 	if err != nil {
@@ -46,7 +43,7 @@ func (f *passageStoreFixture) processProducer(model string) bottlenecks.Producer
 	return p
 }
 
-func (f *passageStoreFixture) producerRecovery(model string) (bottlenecks.ProcessingRun, []bottlenecks.ProducerState) {
+func (f *bottlenecksStoreFixture) producerRecovery(model string) (bottlenecks.ProcessingRun, []bottlenecks.ProducerState) {
 	f.t.Helper()
 	run, states, err := f.store.LoadProducerStates(f.ctx, model)
 	if err != nil {
@@ -72,8 +69,8 @@ func TestProducerStoreActivationRecoveryFinalReplayAndLateInsertion(t *testing.T
 		t.Fatal(err)
 	}
 	recovered, states := f.producerRecovery(run.Model.Name)
-	if recovered.Checkpoint != 10 || len(states) != 0 || f.count("h0012_productores") != 0 {
-		t.Fatal("recovery activated producer or backfilled")
+	if recovered.Checkpoint != 10 || len(states) != 0 {
+		t.Fatal("recovery backfilled or changed activation checkpoint")
 	}
 	idle := f.processProducer(run.Model.Name)
 	if idle.Processed || idle.Checkpoint != 10 {
@@ -82,7 +79,7 @@ func TestProducerStoreActivationRecoveryFinalReplayAndLateInsertion(t *testing.T
 	f.capture(11)
 	f.producerRaw(11, "v", "g", 0, 250)
 	first := f.processProducer(run.Model.Name)
-	if first.Passages != 0 || f.count("h0012_mediciones") != 0 {
+	if first.Passages != 0 || f.count("bottlenecks_mediciones") != 0 {
 		t.Fatal("published OPEN prefix")
 	}
 	f.capture(12)
@@ -115,7 +112,7 @@ func TestProducerStoreActivationRecoveryFinalReplayAndLateInsertion(t *testing.T
 		t.Fatal("closure state not recovered")
 	}
 	var data []byte
-	if err = f.pool.QueryRow(f.ctx, f.store.sql(`SELECT soporte FROM vialis.h0012_mediciones WHERE completa`)).Scan(&data); err != nil {
+	if err = f.pool.QueryRow(f.ctx, f.store.sql(`SELECT soporte FROM vialis.bottlenecks_mediciones WHERE completa`)).Scan(&data); err != nil {
 		t.Fatal(err)
 	}
 	var passage bottlenecks.Passage
@@ -125,16 +122,16 @@ func TestProducerStoreActivationRecoveryFinalReplayAndLateInsertion(t *testing.T
 	if passage.InteriorObservations != 1 || passage.SameGPSInterval || passage.Duration < 59*time.Second || passage.Duration > 61*time.Second {
 		t.Fatalf("late sample not used in final measurement: %+v", passage)
 	}
-	before := f.count("h0012_mediciones")
+	before := f.count("bottlenecks_mediciones")
 	idle = f.processProducer(run.Model.Name)
-	if idle.Processed || f.count("h0012_mediciones") != before {
+	if idle.Processed || f.count("bottlenecks_mediciones") != before {
 		t.Fatal("idle/retry duplicated closure")
 	}
 	// Later reception of older GPS is diagnosed, not attached to closed evidence.
 	f.capture(18)
 	f.producerRaw(18, "v", "g", 90, 900)
 	late := f.processProducer(run.Model.Name)
-	if late.LateObservations != 1 || late.ClosedVehicles != 0 || f.count("h0012_mediciones") != before {
+	if late.LateObservations != 1 || late.ClosedVehicles != 0 || f.count("bottlenecks_mediciones") != before {
 		t.Fatalf("reopened: %+v", late)
 	}
 }
@@ -162,7 +159,7 @@ func TestProducerStoreScopeBarriersPreserveEventTimeABA(t *testing.T) {
 		}
 	}
 	var reason string
-	if err = f.pool.QueryRow(f.ctx, f.store.sql(`SELECT motivo FROM vialis.h0012_mediciones`)).Scan(&reason); err != nil || reason != "scope_changed" {
+	if err = f.pool.QueryRow(f.ctx, f.store.sql(`SELECT motivo FROM vialis.bottlenecks_mediciones`)).Scan(&reason); err != nil || reason != "scope_changed" {
 		t.Fatalf("scope terminal reason %q: %v", reason, err)
 	}
 }
@@ -210,7 +207,7 @@ func TestProducerStoreSourceLossAndExpiredOpenDoNotAdvance(t *testing.T) {
 		t.Fatalf("missing source looked empty: %v", err)
 	}
 	recovered, _ := f.producerRecovery(run.Model.Name)
-	if recovered.Checkpoint != 10 || f.count("h0012_diagnosticos") != 0 {
+	if recovered.Checkpoint != 10 || f.count("bottlenecks_estados_productor") != 0 {
 		t.Fatal("source loss advanced checkpoint")
 	}
 	f.exec(`UPDATE vialis.capturas_colectivos SET filas_insertadas=0 WHERE id_captura=11`)
@@ -223,7 +220,7 @@ func TestProducerStoreSourceLossAndExpiredOpenDoNotAdvance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.exec(`UPDATE vialis.h0012_estados_productor SET estado=$2 WHERE modelo=$1`, run.Model.Name, data)
+	f.exec(`UPDATE vialis.bottlenecks_estados_productor SET estado=$2 WHERE modelo=$1`, run.Model.Name, data)
 	f.capture(12)
 	if _, err = f.store.ProcessNext(f.ctx, run.Model.Name); !errors.Is(err, bottlenecks.ErrSourceExpired) {
 		t.Fatalf("old OPEN raw ignored behind fresh run: %v", err)
@@ -247,25 +244,25 @@ func TestProducerStoreMissingExactGeometryAndMultiVehicleRollback(t *testing.T) 
 	if _, err = f.store.ProcessNext(f.ctx, run.Model.Name); !errors.Is(err, bottlenecks.ErrProducerGeometryUnavailable) {
 		t.Fatalf("substituted geometry: %v", err)
 	}
-	if f.count("h0012_trazados") != 0 || f.count("h0012_estados_productor") != 0 {
+	if f.count("bottlenecks_trazados") != 0 || f.count("bottlenecks_estados_productor") != 0 {
 		t.Fatal("partial snapshots/state escaped")
 	}
 	f.exec(`UPDATE vialis.posiciones_colectivos_raw SET gtfs_shape_hash=(SELECT md5(encode(ST_AsEWKB(geom),'hex')) FROM vialis.recorridos WHERE id_recorrido=1)`)
 	f.processProducer(run.Model.Name)
 	_, before := f.producerRecovery(run.Model.Name)
 	// Force a SQL failure after vehicle a writes, before z can be stored.
-	f.exec(`ALTER TABLE vialis.h0012_estados_productor ADD CONSTRAINT reject_z CHECK (vehiculo<>'z' OR checkpoint<12)`)
+	f.exec(`ALTER TABLE vialis.bottlenecks_estados_productor ADD CONSTRAINT reject_z CHECK (vehiculo<>'z' OR checkpoint<12)`)
 	f.capture(12)
 	if _, err = f.store.ProcessNext(f.ctx, run.Model.Name); err == nil {
 		t.Fatal("SQL failure accepted")
 	}
 	recovered, after := f.producerRecovery(run.Model.Name)
-	if recovered.Checkpoint != 11 || !reflect.DeepEqual(before, after) || f.count("h0012_diagnosticos") != 1 {
+	if recovered.Checkpoint != 11 || !reflect.DeepEqual(before, after) {
 		t.Fatal("partial multi-vehicle commit escaped")
 	}
 }
 
-func TestProducerStoreConcurrentWritersAndProcessingModeIsolation(t *testing.T) {
+func TestProducerStoreConcurrentWriters(t *testing.T) {
 	f := newProducerStoreFixture(t)
 	run, err := f.store.Activate(f.ctx, persistenceModel())
 	if err != nil {
@@ -298,23 +295,9 @@ func TestProducerStoreConcurrentWritersAndProcessingModeIsolation(t *testing.T) 
 			processed++
 		}
 	}
-	if processed != 1 || f.count("h0012_diagnosticos") != 1 {
-		t.Fatal("duplicate concurrent processing")
-	}
-	if _, err = f.store.CommitCapture(f.ctx, run.Model.Name, 11, 11, nil); !errors.Is(err, bottlenecks.ErrProducerModeConflict) {
-		t.Fatalf("legacy processor mixed with producer: %v", err)
-	}
-	other := persistenceModel()
-	other.Name = "legacy"
-	if _, err = f.store.Activate(f.ctx, other); err != nil {
-		t.Fatal(err)
-	}
-	f.capture(12)
-	if _, err = f.store.CommitCapture(f.ctx, other.Name, 11, 12, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = f.store.ProcessNext(f.ctx, other.Name); !errors.Is(err, bottlenecks.ErrProducerModeConflict) {
-		t.Fatalf("producer adopted progressed legacy checkpoint: %v", err)
+	recovered, states := f.producerRecovery(run.Model.Name)
+	if processed != 1 || recovered.Checkpoint != 11 || len(states) != 1 || states[0].Open.Observations != 1 {
+		t.Fatal("duplicate concurrent processing or inconsistent recovery")
 	}
 }
 

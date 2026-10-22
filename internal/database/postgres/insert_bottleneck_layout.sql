@@ -1,4 +1,4 @@
-INSERT INTO vialis.h0012_trazados (
+INSERT INTO vialis.bottlenecks_trazados (
     modelo,
     gtfs_route_id,
     direction_id,

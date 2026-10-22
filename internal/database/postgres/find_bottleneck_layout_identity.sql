@@ -1,5 +1,5 @@
 SELECT id
-FROM vialis.h0012_trazados
+FROM vialis.bottlenecks_trazados
 WHERE modelo = $1
     AND gtfs_route_id = $2
     AND direction_id = $3

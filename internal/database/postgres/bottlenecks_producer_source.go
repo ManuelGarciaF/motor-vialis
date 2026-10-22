@@ -78,6 +78,29 @@ func (s *BottlenecksStore) ensureProducerLayouts(ctx context.Context, tx pgx.Tx,
 	return nil
 }
 
+// prepareProducerProjection builds a transaction-local index over static shape
+// edges once per capture. Replays reuse it; no GPS or cache survives the commit.
+func (s *BottlenecksStore) prepareProducerProjection(ctx context.Context, tx pgx.Tx, run bottlenecks.ProcessingRun, layouts map[int64]bottlenecks.PersistedLayout) error {
+	if _, err := tx.Exec(ctx, prepareProducerProjectionSQL); err != nil {
+		return err
+	}
+	ids := make([]int64, 0, len(layouts))
+	for id := range layouts {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	if _, err := tx.Exec(ctx, s.sql(populateProducerProjectionSQL), run.Model.Name, ids); err != nil {
+		return err
+	}
+	if len(ids) != 0 {
+		// Temporary tables have no autovacuum statistics. Analyze only this
+		// geometry index, once per capture, not during per-vehicle replays.
+		_, err := tx.Exec(ctx, `ANALYZE pg_temp.bottlenecks_projection_edges`)
+		return err
+	}
+	return nil
+}
+
 func (s *BottlenecksStore) readProducerCandidates(ctx context.Context, tx pgx.Tx, run bottlenecks.ProcessingRun, bounds producerSourceBounds) ([]bottlenecks.ProducerObservation, error) {
 	rows, err := tx.Query(ctx, s.sql(findProducerCandidatesSQL), run.Model.Name, bounds.first, bounds.last, run.Model.Policy.MaximumDistanceMeters, bounds.vehicle, bounds.closedThrough)
 	if err != nil {
@@ -101,6 +124,35 @@ func (s *BottlenecksStore) readProducerCandidates(ctx context.Context, tx pgx.Tx
 		result = append(result, row)
 	}
 	return result, rows.Err()
+}
+
+// Each unit needs only its own OPEN/current/replay layouts, not the entire
+// catalog. Passing hundreds of unrelated layouts rebuilt/sorted a map per unit.
+func producerVehicleLayouts(state bottlenecks.ProducerState, input bottlenecks.ProducerCapture, layouts map[int64]bottlenecks.PersistedLayout) ([]bottlenecks.PersistedLayout, error) {
+	needed := make(map[int64]bottlenecks.PersistedLayout)
+	add := func(id int64) error {
+		layout, ok := layouts[id]
+		if !ok {
+			return bottlenecks.ErrProducerGeometryUnavailable
+		}
+		needed[id] = layout
+		return nil
+	}
+	if state.Open != nil {
+		for _, ref := range state.Open.Layouts {
+			if err := add(ref.ID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for _, rows := range [][]bottlenecks.ProducerObservation{input.New, input.Replay} {
+		for _, row := range rows {
+			if err := add(row.LayoutID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return producerLayoutsSlice(needed), nil
 }
 
 func producerLayoutsSlice(layouts map[int64]bottlenecks.PersistedLayout) []bottlenecks.PersistedLayout {

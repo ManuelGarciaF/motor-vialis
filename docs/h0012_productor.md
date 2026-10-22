@@ -1,157 +1,150 @@
-# H0012 — Productor y ciclo del worker
+# H0012 — Productor de cuellos de botella en el worker
 
-Estado: productor implementado y validado con datos sintéticos/PostGIS aislado;
-sin modelo real activado ni calibración de detección. La operación real depende
-de que GCBA vuelva a entregar capturas. Ver [plan funcional](plan_h0012_cuellos_botella.md),
-[medición incremental](h0012_incremental.md) y [persistencia](h0012_persistencia.md).
+El productor se ejecuta siempre dentro de `realtime-worker`, en un ciclo y pool
+independientes de la captura H0011. No necesita flags de habilitación, nombres de
+experimentos ni una activación manual. Sigue siendo medición experimental, no un
+detector de lentitud recurrente. Referencias: [plan](plan_h0012_cuellos_botella.md),
+[procesamiento incremental](h0012_incremental.md) y [persistencia](h0012_persistencia.md).
 
-## Qué se confirma y cuándo
+## Ejecución
 
-El productor distingue recepción de GPS y medición final. Mientras una secuencia
-está abierta, guarda sólo un descriptor operacional: unidad, capturas de primera
-y última recepción, límites GPS, scopes/layouts, contador y fingerprint de la
-evidencia canónica. No guarda listas GPS, coordenadas ni candidatos históricos.
+Exportar `DATABASE_URL`, `GCBA_TRANSPORT_CLIENT_ID` y
+`GCBA_TRANSPORT_CLIENT_SECRET`; no se carga `.env` automáticamente.
 
-Un timestamp nuevo reinicia ausencias aunque la unidad siga quieta o no tenga
-matching. Las capturas parciales aportan actualizaciones pero no suman ausencia;
-los errores del proveedor no generan capturas procesables. Se cierra tras cuatro
-capturas correctas no parciales sin timestamp más nuevo, procesando primero sus
-novedades. Los ticks del scheduler, reintentos e inactividad del procesador no
-son capturas ni ausencias.
-
-Al cerrar se relee el raw original aceptado, se verifica membresía por recepción,
-conteo/fingerprint, y se ordena por tiempo GPS. El matcher se ejecuta sobre las
-alternativas originales, no sobre candidatos ya podados. La medición final se
-confirma una sola vez. Una entrada sin salida queda incompleta; el cierre no
-inventa velocidad ni duración hasta la hora del cierre.
-
-Los cambios de identidad proveedor, sentido o versión son barreras en ese orden
-GPS: A→B→A no se une. Sus entradas pendientes terminan como `scope_changed`;
-el remanente de la última secuencia usa `missing_updates`. La separación se
-resuelve en el replay final, no se fija irreversiblemente por orden de llegada.
-GPS tardío dentro de una secuencia abierta puede cambiar la reconstrucción;
-evidencia anterior/al watermark final no reabre una secuencia cerrada.
-
-**Latencia:** no se publica un prefijo provisional. Una unidad que actualice
-continuamente puede demorar sus resultados indefinidamente. Si su evidencia
-necesaria sale de retención, H0012 se detiene con aviso, sin truncarla ni forzar
-un cierre adicional. Esta limitación es deliberada; no hay plazo de tardanza
-inventado ni archivo adicional de GPS.
-
-## Lectura y transacción
-
-`BottlenecksStore.ProcessNext` procesa una captura real por transacción:
-
-1. Recupera/bloquea el modelo y verifica modo/checkpoint y retención.
-2. Fija el padre raw y sus particiones con `ACCESS SHARE`; vuelve a validar la
-   referencia original después de obtener el lock, cubriendo cruces de fecha UTC.
-3. Verifica el número de filas canónicas nuevas contra `filas_insertadas`.
-4. Proyecta contra snapshots de geometría exactos, siguiendo la identidad guardada
-   en raw, sin reinterpretar datos con equivalencias actuales.
-5. Avanza todos los estados de unidades, incluidas ausencias. Hace replay sólo
-   para las que cierran y verifica todo su contexto original.
-6. Confirma estado de recepción, mediciones finales, diagnósticos y checkpoint
-   atómicamente. Un fallo no entrega resultados parciales como confirmados.
-
-El pin raw es compatible con INSERT normales, pero demora la purga de particiones
-hasta terminar la transacción. No usa el advisory lock de ingesta. Los cambios de
-particiones y snapshots del catálogo también comparten recursos PostgreSQL: la
-separación de goroutines/pools no garantiza aislamiento de CPU, IO o DDL. Medir
-el costo y el impacto sobre captura antes de dar por calibrada la cadencia.
-
-`LoadProducerStates` recupera el estado confirmado sin activar modelos. Los modos
-productor y cursor resuelto legado no se pueden mezclar sobre el mismo modelo.
-Un modelo usado por `CommitCapture` requiere otro nombre para el productor;
-no se convierte ni se resetea su checkpoint automáticamente.
-
-No se soporta recargar GTFS durante la ejecución del worker: detenerlo antes de
-actualizar el catálogo. Los snapshots ya materializados sobreviven a recargas;
-si falta la versión exacta necesaria, se detiene H0012, sin sustituir otro shape.
-
-## Migraciones explícitas
-
-Instalaciones nuevas ejecutan ambos scripts desde `cmd/initdb`, sin activar
-modelos. Para una base existente, ejecutar en orden con el worker detenido:
-
-```powershell
-psql -h localhost -p 5433 -U postgres -d vialis -X -v ON_ERROR_STOP=1 -f sql/bottlenecks/migrar_persistencia.sql
-psql -h localhost -p 5433 -U postgres -d vialis -X -v ON_ERROR_STOP=1 -f sql/bottlenecks/migrar_productor.sql
+```sh
+go run ./cmd/realtime-worker
 ```
 
-La segunda migración incorpora `h0012_productores` y `h0012_estados_productor`.
-En la base local de esta entrega sólo se aplicó la primera; **la segunda sigue
-pendiente**. Ninguna se ejecuta implícitamente desde el worker. Crear tablas no
-activa modelos ni incorpora histórico.
+Este comando inicia captura, aglutinaciones y medición de pasajes. Para pruebas,
+apuntar `DATABASE_URL` a una copia: la captura administra retención raw y puede
+purgar histórico vencido. No ejecutar simultáneamente otro poller de GCBA.
 
-## Ejecución opt-in
+Parámetros, versiones y recursos están en `internal/config/parameters.go`:
+500 m / 180 s / 100 m / 100 km/h, espera de 2 minutos entre ciclos, pool de dos
+conexiones y turnos de hasta 32 capturas o cinco minutos. Son valores
+experimentales, no una cadencia calibrada ni umbrales de publicación.
 
-Sin flags H0012 el proceso conserva exclusivamente la captura/aglutinaciones
-H0011 y no consulta su esquema/modelo. Variables necesarias en ambos casos:
-`DATABASE_URL`, `GCBA_TRANSPORT_CLIENT_ID`, `GCBA_TRANSPORT_CLIENT_SECRET`.
-No se carga `.env` automáticamente; exportarlas sin compartir credenciales.
+## Inicialización y reinicios
 
-### Primera activación experimental
+Antes de iniciar captura, el worker verifica el esquema y busca su configuración
+operacional única (`config.BottlenecksModel()`). El nombre interno estable sólo
+sirve para recuperar estado y checkpoint; no lo elige el usuario.
 
-Requiere nombre, intervalo y los cuatro parámetros de medición explícitos.
-**Los siguientes valores son ejemplos experimentales, no defaults aprobados de
-producción ni una frecuencia validada:**
+Si no existe, la inicializa automáticamente excluyendo capturas ya almacenadas:
+**sin backfill**. En reinicios recupera configuración y checkpoint originales,
+sin volver a activarlos ni cambiar la marca inicial. Se compara toda la política
+persistida con config; incompatibilidades o fallos DB no se interpretan como una
+configuración ausente y no provocan resets. Un cambio de política sobre datos
+existentes requiere administración explícita, no otro flag.
 
-```powershell
-$env:DATABASE_URL = "postgresql://postgres:postgres@localhost:5433/vialis"
-go run ./cmd/realtime-worker `
-  -h0012-model=experimento-v1 -h0012-interval=2m -h0012-activate `
-  -h0012-segment-meters=500 -h0012-max-gap=180s `
-  -h0012-max-distance-meters=100 -h0012-max-speed-kph=100
-```
+El worker no crea ni migra tablas. `sql/ddl.sql` define las cinco tablas
+operacionales; en una base existente, las actualizaciones se administran con el
+worker detenido. No ejecutar todo el DDL sobre una base poblada.
 
-La activación y compatibilidad se verifican antes de iniciar ingesta. La marca
-inicial excluye capturas existentes; no hay backfill. Reusar el nombre con otros
-parámetros falla. El modelo registra versiones de algoritmos, zona, cierre y
-retención de la fuente; no modifica H0011 ni sus filtros.
+## Recepción y confirmación
 
-### Reanudación
+Mientras una secuencia está abierta, guarda sólo un descriptor: unidad,
+referencias a capturas/layouts/scopes, límites GPS, contador y fingerprint. No
+archiva listas GPS, coordenadas ni candidatos históricos adicionales.
 
-```powershell
-go run ./cmd/realtime-worker -h0012-model=experimento-v1 -h0012-interval=2m
-```
+Un timestamp nuevo reinicia ausencias aunque la unidad esté quieta o sin matching.
+Capturas parciales aportan actualizaciones, pero no suman ausencias. Errores del
+proveedor, ticks, reintentos e inactividad no son capturas ni ausencias.
+Tras cuatro capturas correctas no parciales sin timestamp más nuevo, se relee el
+raw aceptado, se verifica conteo/fingerprint y se ordena por tiempo GPS.
 
-No usar `-h0012-activate` ni volver a pasar parámetros de medición al reanudar.
-Se recuperan configuración y checkpoint originales; si no existe el modelo, el
-arranque falla explícitamente. El intervalo positivo se elige en cada arranque,
-porque es cadencia operacional, no política de medición. Ejecutar una instancia.
+El matcher usa las alternativas originales. Cambios de identidad, sentido o
+versión son barreras: A→B→A no se une. GPS tardío dentro de OPEN puede cambiar la
+reconstrucción; después del cierre no se reabre. Las entradas sin salida quedan
+incompletas, sin inventar velocidad ni duración hasta la hora del cierre.
 
-### Recursos, errores y apagado
+No se publican prefijos provisionales. Una unidad que actualice continuamente
+puede demorar resultados hasta agotar retención. Si falta raw necesario o la
+geometría exacta, el productor se detiene con aviso, sin truncar contexto, forzar
+cierres, hacer backfill ni saltar el checkpoint. H0011 continúa.
 
-- Pool H0012 separado con máximo dos conexiones; no consume las del pool de ingesta.
-- Un solo ciclo H0012, máximo 32 capturas o cinco minutos por turno, seguido del
-  intervalo indicado. Son límites de trabajo, no cierres de secuencia ni nuevos
-  límites de hueco GPS. Las capturas ya confirmadas sobreviven al fin del turno.
-- Fallos transitorios/timeout: diagnóstico seguro y reintento en el siguiente ciclo.
-- Pérdida/expiración de fuente, geometría exacta ausente o modelo incompatible:
-  `h0012_processing_stopped`, sin resets ni salto de checkpoint; **H0011 continúa**.
-- Errores de esquema/modelo al arrancar impiden iniciar el proceso habilitado.
-- Cancelación o fin de ingesta cancela y espera H0012 antes de cerrar pools.
-- Logs por clasificación y conteos, sin payloads GPS, identificadores de unidades,
-  URLs autenticadas ni textos arbitrarios de drivers.
+## Transacción y recursos
+
+`BottlenecksStore.ProcessNext` confirma una captura por transacción:
+
+1. Bloquea configuración/checkpoint y valida retención.
+2. Fija padre y particiones raw con ACCESS SHARE; revalida la referencia original
+   después del lock, incluso al cruzar medianoche UTC.
+3. Verifica filas canónicas contra `filas_insertadas` y usa la identidad/versiones
+   del raw, sin reinterpretarlas con mappings actuales.
+4. Avanza todos los estados de recepción y rematchea/mide sólo las secuencias que
+   cierran, con su evidencia canónica completa.
+5. Confirma mediciones finales, estado y checkpoint atómicamente.
+
+Los conteos de avance, calidad y rechazos se registran en logs después de commits,
+no en otra tabla. La calidad de cada pasaje permanece en su medición.
+
+La proyección prepara una tabla TEMP de aristas originales por captura, con índices
+por trazado y `geography`. Sólo contiene geometría estática; se elimina al commit
+(o rollback) y se reutiliza para todos los cierres de esa captura. `ANALYZE` se
+ejecuta una sola vez sobre esa tabla, nunca por unidad ni sobre tablas operativas.
+Los cálculos geodésicos y las alternativas de matching no cambian.
+
+La retención OPEN se comprueba mediante el timestamp más antiguo, antes y después
+de las transiciones. Los estados se guardan con un único UPSERT por captura;
+mediciones, estados y checkpoint siguen siendo atómicos. Cada unidad recibe sólo
+sus propios layouts, sin reconstruir el catálogo completo en cada transición.
+
+El pool se identifica como `application_name=vialis-bottlenecks` para inspeccionar
+`pg_stat_activity`. El log `bottlenecks_captures_committed` incluye `duration_ms`
+del turno, sin incluir la espera entre ciclos.
+
+El pin raw permite INSERT normales, pero demora la purga. El pool separado no
+aísla CPU, IO ni locks de mantenimiento: medir impacto sobre captura y DB.
+No recargar GTFS mientras corre el worker; detenerlo antes de actualizar catálogo.
+
+El ciclo es serial, sin solapamientos. Fallos transitorios se reintentan en el
+siguiente turno. Pérdida/expiración de fuente, geometría ausente o política
+incompatible detienen sólo el productor con `bottlenecks_processing_stopped`.
+Errores de esquema/configuración al arrancar impiden iniciar el worker.
+Cancelación o fin de ingesta cancela y espera el productor antes de cerrar pools.
+Logs sin GPS, IDs de unidades, URLs autenticadas ni textos arbitrarios de drivers.
+
+### Medición de la optimización
+
+Comparación puntual sobre la captura real 900, con una muestra determinista de
+500 posiciones, en el mismo snapshot. Se leyó producción sin cambiar checkpoints,
+estados ni mediciones; las únicas escrituras fueron TEMP y se hizo rollback.
+
+| Trabajo | Tiempo observado |
+|---|---:|
+| Proyección anterior, 500 posiciones | 4.836 ms |
+| Proyección indexada, mismas 500 posiciones | 61 ms |
+| Preparar 226.720 aristas e índices + ANALYZE, una vez | ~1.925 ms |
+| Proyección indexada, captura completa de 3.624 posiciones | 326 ms |
+
+Los resultados de las 500 posiciones dieron el mismo hash, incluyendo identidad,
+timestamps y todas las alternativas/distancias. El plan nuevo usa BitmapAnd de
+los índices espacial y de trazado. La preparación es un costo adicional por
+captura: no interpretar la diferencia de las consultas como mejora equivalente
+del worker completo. Estas cifras se midieron con el worker anterior activo;
+falta validar CPU/IO y tiempos totales después de reiniciarlo con el código nuevo.
+No requiere migración, cambio de parámetros ni reset de estado.
 
 ## Validación y pendientes
 
-```powershell
+```sh
 go test ./...
 go build ./...
 go vet ./...
-$env:TEST_DATABASE_URL = "postgresql://postgres:postgres@localhost:5433/vialis"
-go test ./internal/database/postgres -run '^TestProducerStore|^TestPassageStore|^TestBottlenecks' -count=1
+TEST_DATABASE_URL="$DATABASE_URL" go test ./internal/database/postgres \
+  -run '^TestProducerStore|^TestBottlenecks' -count=1
 ```
 
-Tests sintéticos cubren todas las particiones de una trayectoria, reinicios JSON,
-tardíos, ambigüedad reconsiderada, A→B→A y cierres por capturas reales. PostGIS
-cubre replay/rollback/concurrencia, geometría exacta, modos, fuente perdida y una
-purga intercalada en medianoche, además de compatibilidad de inserts durante el
-pin. Tests de loop/CLI usan fakes y no llaman al proveedor real.
+Tests de arranque verifican inicialización automática sólo cuando falta la
+configuración, recuperación sin reset y rechazo de incompatibilidades. Las
+pruebas de loop usan fakes, sin llamar al proveedor. Dominio/PostGIS cubren
+particiones/reinicios, tardíos, ambigüedad, A→B→A, cierres reales, rollback,
+concurrencia y purga intercalada, incluyendo DDL completo y soporte de calidad.
 
-La revisión independiente del dominio, ciclo y corrección de purga no encontró
-hallazgos pendientes. Falta calibración de costo/cadencia con capturas reales y
-prueba operacional cuando GCBA funcione. Race depende de
-CGO/compilador C y no se ejecutó en este entorno. Esto no implementa todavía
-criterios de lentitud/recurrencia, consolidación territorial, ranking ni API H0012.
+El [corte operacional del 21/10/2026](h0012_estado_operacional.md) verificó
+avance y pasajes persistidos, con atraso de cero/una captura durante la inspección.
+Falta validar costo/cadencia e impacto sostenidos con capturas reales. La
+[detección experimental](h0012_deteccion.md) implementa la primera lectura HTTP
+con ≥2 pasajes a <6 km/h. No hay todavía criterios definitivos calibrados,
+consolidación territorial ni ranking.

@@ -29,18 +29,6 @@ var insertBottleneckSectorSQL string
 //go:embed update_bottleneck_layout_stops.sql
 var updateBottleneckLayoutStopsSQL string
 
-//go:embed list_bottleneck_states.sql
-var listBottleneckStatesSQL string
-
-//go:embed find_next_bottleneck_capture.sql
-var findNextBottleneckCaptureSQL string
-
-//go:embed upsert_bottleneck_state.sql
-var upsertBottleneckStateSQL string
-
-//go:embed insert_bottleneck_diagnostic.sql
-var insertBottleneckDiagnosticSQL string
-
 //go:embed update_bottleneck_checkpoint.sql
 var updateBottleneckCheckpointSQL string
 

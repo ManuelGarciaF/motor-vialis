@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 
-SQL = Path(__file__).with_name("spike-h0012-segments.sql").read_text()
+SQL = Path(__file__).with_name("spike-bottlenecks-segments.sql").read_text()
 # Redirect all source tables to session-local fixtures; production schema untouched.
 SQL = SQL.replace("vialis.", "pg_temp.")
 FIXTURE = r"""

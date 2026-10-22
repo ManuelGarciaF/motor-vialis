@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate/describe a COMPLETE H0012 NDJSON run; never accept partial batches.
+"""Validate/describe a COMPLETE Bottlenecks NDJSON run; never accept partial batches.
 Descriptive volume cuts below are not publication or recurrence thresholds.
 No raw vehicle IDs or coordinates are consumed or emitted.
 """

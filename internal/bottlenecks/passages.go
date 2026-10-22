@@ -11,7 +11,8 @@ import (
 // Input order is irrelevant and the caller's slice is not mutated. Output order
 // is vehicle ID, crossing time, sector index. It never extrapolates missing
 // entry/exit evidence or extends time beyond the final observation.
-// Batch completion censors pending entries; incremental consumers use MeasureCapture.
+// Batch completion censors pending entries; the producer finalizes sequences
+// with the same measurement cursor and an explicit closure reason.
 func Measure(layout Layout, observations []Observation, policy MeasurementPolicy) (Measurements, error) {
 	if len(layout.sectors) == 0 {
 		return Measurements{}, fmt.Errorf("uninitialized layout")

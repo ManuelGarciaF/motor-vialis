@@ -3,6 +3,61 @@
 No forman parte de la API ni del worker. Incluyen auditoría, backfills one-off,
 mantenimiento de equivalencias GCBA–GTFS y spikes exploratorios.
 
+## Mapa de diagnóstico del worker
+
+Con Node >=20, `psql` en PATH y `DATABASE_URL` exportada (URI PostgreSQL):
+
+```sh
+node scripts/worker-map.mjs --serve
+# Abrir http://127.0.0.1:8088 (Ctrl+C detiene el servidor).
+# Opcional: ventana y tamaño máximo de eventos (sectores sin límite)
+node scripts/worker-map.mjs --hours 24 --limit 2000 --output .local/worker-map.html
+# Cliente temporal si falta psql
+nix shell nixpkgs#postgresql -c node scripts/worker-map.mjs --serve
+# Tests sin DB ni red
+node --test scripts/test-worker-map.mjs
+```
+
+Abrir `http://127.0.0.1:8088`, no el archivo con `file://`: OSM exige un
+`Referer` válido desde páginas web. El servidor sólo escucha en loopback y sólo
+expone el snapshot, sin listar directorios ni consultar DB por HTTP. Usar
+`--port 8089` si el puerto está ocupado.
+
+Es un snapshot estático: ejecutar de nuevo el generador sin `--serve` y recargar
+la página para actualizar, o detener/reiniciar el comando con `--serve`. Lee en una
+transacción read-only con timeout; no inicia otro worker ni captura GPS. No carga
+`.env` automáticamente. Leaflet y las teselas OpenStreetMap requieren Internet.
+La [política de teselas OSM](https://operations.osmfoundation.org/policies/tiles/)
+requiere atribución visible, URL canónica, Referer y caché normal del navegador.
+No hay proxy, descarga anticipada, suplantación de headers ni cambio automático
+de proveedor ante bloqueos. Abierto con `file://`, no solicita teselas.
+
+Permite filtrar por línea y alternar dos capas:
+- Aglutinaciones operacionales: abiertas/cerradas, línea, ramal, sentido,
+  observaciones y duración. El punto es el centro de las últimas posiciones del
+  par, no su recorrido. No aplica los filtros de publicación de la API.
+- Sectores con pasajes: completos/incompletos, longitud real, duración y velocidad
+  comercial medianas. **Violeta**: cuello de botella recurrente experimental,
+  con **2 o más pasajes completos a menos de 6 km/h** dentro de la ventana.
+  Rojo: un solo pasaje lento; verde: completos sin pasajes lentos;
+  naranja: sólo incompletos. El popup muestra cantidad y porcentaje de
+  pasajes <6 km/h, sin usar incompletos como velocidades ni como denominador.
+  Para 500 m, 5 min equivalen a 6 km/h; se usa velocidad real y el corte es
+  estrictamente <6 km/h, incluso en sectores de longitud diferente.
+  Incluye detenciones por pasajeros y puede contar varios pasajes de una unidad.
+  Los sectores primero/último siguen incluidos y se identifican en el popup
+  para revisar regulación de cabecera. No exige unidades ni fechas distintas;
+  la recurrencia usa sólo el conteo inclusivo ≥2 en la ventana seleccionada.
+  Son **alertas exploratorias, no detecciones definitivas**.
+
+Incluye última captura, checkpoint, capturas pendientes y secuencias OPEN.
+Los sectores se exportan sin límite de cantidad dentro de la ventana elegida.
+`--limit` sólo limita los eventos de aglutinación y avisa si los trunca.
+No exporta IDs
+vehiculares ni series GPS raw. El HTML contiene ubicaciones operacionales: dejarlo
+en `.local`, no publicarlo ni incorporarlo a Git. No sobrescribir otros archivos
+con `--output`.
+
 ## Spike H0012: segmentación GPS
 
 Consulta sólo lectura, timeout de cinco minutos y snapshot consistente por
@@ -13,17 +68,17 @@ No usa los filtros de publicación de aglutinaciones.
 
 ```sh
 mkdir -p .local/h0012
-psql "$DATABASE_URL" -X -qAt -f scripts/spike-h0012-segments.sql \
+psql "$DATABASE_URL" -X -qAt -f scripts/spike-bottlenecks-segments.sql \
   > .local/h0012/segments-default.json
 # Fijar siempre la misma ventana para comparar experimentos:
 psql "$DATABASE_URL" -X -qAt \
   -v from='2026-10-09T23:50:52.000001Z' -v to='2026-10-10T23:50:52.000001Z' \
   -v max_gap_seconds=120 -v max_distance_meters=100 -v max_speed_kph=100 \
-  -f scripts/spike-h0012-segments.sql > .local/h0012/segments-gap120.json
+  -f scripts/spike-bottlenecks-segments.sql > .local/h0012/segments-gap120.json
 # Tests sintéticos: sólo tablas TEMP en la sesión, nada persistente.
-python3 scripts/test-h0012-segments.py
+python3 scripts/test-bottlenecks-segments.py
 # Si faltan herramientas:
-nix shell nixpkgs#postgresql nixpkgs#python3 -c python3 scripts/test-h0012-segments.py
+nix shell nixpkgs#postgresql nixpkgs#python3 -c python3 scripts/test-bottlenecks-segments.py
 ```
 
 Cargar `DATABASE_URL` desde el entorno sin imprimir credenciales. Desde el
@@ -54,7 +109,7 @@ Auditoría espacial complementaria, también sólo lectura y agregada:
 ```sh
 psql "$DATABASE_URL" -X -qAt -v line_id=1015 \
   -v from='2026-10-09T23:50:52.000001Z' -v to='2026-10-10T23:50:52.000001Z' \
-  -f scripts/audit-h0012-matching.sql > .local/h0012/audit-1015.json
+  -f scripts/audit-bottlenecks-matching.sql > .local/h0012/audit-1015.json
 ```
 
 Comparación de equivalencias contra el catálogo completo, sin aplicar cambios:
@@ -62,7 +117,7 @@ Comparación de equivalencias contra el catálogo completo, sin aplicar cambios:
 ```sh
 psql "$DATABASE_URL" -X -qAt -v line_id=1015 \
   -v from='2026-10-09T23:50:52.000001Z' -v to='2026-10-10T23:50:52.000001Z' \
-  -f scripts/audit-h0012-equivalences.sql > .local/h0012/equivalences-1015.json
+  -f scripts/audit-bottlenecks-equivalences.sql > .local/h0012/equivalences-1015.json
 ```
 
 Hallazgos: [`h0012_auditoria_matching.md`](../docs/h0012_auditoria_matching.md).
@@ -74,8 +129,8 @@ Auditoría global usando explícitamente la tabla de equivalencias activa de H00
 ```sh
 psql "$DATABASE_URL" -X -qAt -v compare_catalog=true \
   -v from='2026-10-08T17:01:10Z' -v to='2026-10-11T00:46:52.000001Z' \
-  -f scripts/audit-h0012-global.sql > .local/h0012/audit-global-retained-full.json
-python3 scripts/test-h0012-global.py
+  -f scripts/audit-bottlenecks-global.sql > .local/h0012/audit-global-retained-full.json
+python3 scripts/test-bottlenecks-global.py
 ```
 
 Usa tablas/índice TEMP de sesión autorizados para la búsqueda global. Lee fuentes
@@ -95,10 +150,10 @@ Consultas rápidas read-only, sin PostGIS ni salida de ubicaciones/IDs de unidad
 
 ```sh
 psql "$DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 \
-  -f scripts/audit-h0012-gps-delay.sql > .local/h0012/gps-delay.json
+  -f scripts/audit-bottlenecks-gps-delay.sql > .local/h0012/gps-delay.json
 psql "$DATABASE_URL" -X -qAt -v ON_ERROR_STOP=1 \
-  -f scripts/audit-h0012-update-gaps.sql > .local/h0012/update-gaps.json
-TEST_DATABASE_URL="$DATABASE_URL" python3 scripts/test-h0012-gps-delay.py
+  -f scripts/audit-bottlenecks-update-gaps.sql > .local/h0012/update-gaps.json
+TEST_DATABASE_URL="$DATABASE_URL" python3 scripts/test-bottlenecks-gps-delay.py
 ```
 
 La primera mide antigüedad al recibir el GPS por primera vez, no latencia de red
@@ -117,9 +172,9 @@ global autorizado: 15 min; por target: 5 min. No cambia filtros GPS.
 go run ./cmd/bottlenecks-analysis -all \
   -from '2026-10-08T17:01:10Z' -to '2026-10-11T00:46:52.000001Z' \
   > .local/h0012/coverage-retained.ndjson
-python3 scripts/summarize-h0012-coverage.py .local/h0012/coverage-retained.ndjson \
+python3 scripts/summarize-bottlenecks-coverage.py .local/h0012/coverage-retained.ndjson \
   > .local/h0012/coverage-retained-summary.json
-python3 scripts/test-h0012-coverage-summary.py
+python3 scripts/test-bottlenecks-coverage-summary.py
 ```
 
 NDJSON con manifiesto, resultados por target y marcador `complete`. Sin ese

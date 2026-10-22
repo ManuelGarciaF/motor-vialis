@@ -31,15 +31,3 @@ func TestPersistenceModelRequiresExplicitPolicyAndVersions(t *testing.T) {
 		})
 	}
 }
-
-func TestCaptureStateValidateDoesNotAdvanceOrCensor(t *testing.T) {
-	layout := testLayout(t, 1500, 500)
-	state := captureState(t, layout)
-	state, _ = applyCapture(t, layout, state, capture(11, observation(0, 250), observation(60, 750)))
-	if err := state.Validate(layout); err != nil {
-		t.Fatal(err)
-	}
-	if state.LastCaptureID != 11 || state.Pending == nil {
-		t.Fatal("validation modified state")
-	}
-}

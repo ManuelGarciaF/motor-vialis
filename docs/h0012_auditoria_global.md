@@ -28,7 +28,7 @@ no están en esta población y no se pueden auditar desde esta tabla.
 
 ## Método y permisos
 
-Herramienta: `scripts/audit-h0012-global.sql`; resultados completos agregados en
+Herramienta: `scripts/audit-bottlenecks-global.sql`; resultados completos agregados en
 `.local/h0012/audit-global-retained-full.json` y
 `.local/h0012/audit-global-original-window.json` (sin versionar). No expone IDs de
 unidades ni posiciones individuales. Radio fijo aprobado **100 m**, distancias
@@ -140,11 +140,11 @@ También se ejecutó sobre
 ```sh
 psql "$DATABASE_URL" -X -qAt -v compare_catalog=true \
   -v from='2026-10-08T17:01:10Z' -v to='2026-10-11T00:46:52.000001Z' \
-  -f scripts/audit-h0012-global.sql > .local/h0012/audit-global-retained-full.json
-python3 scripts/test-h0012-global.py
+  -f scripts/audit-bottlenecks-global.sql > .local/h0012/audit-global-retained-full.json
+python3 scripts/test-bottlenecks-global.py
 ```
 
-`test-h0012-global.py` pasó en PostGIS con tablas fuente TEMP aisladas: IDs
+`test-bottlenecks-global.py` pasó en PostGIS con tablas fuente TEMP aisladas: IDs
 GCBA/GTFS distintos y colisión deliberada de un ID GCBA con otro ID GTFS,
 sentidos distintos, mapping histórico, hash viejo, equivalencia/destino ausentes,
 ventana semiabierta, catálogo próximo/no próximo y raw vacío. Un zigzag de 301

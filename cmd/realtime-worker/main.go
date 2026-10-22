@@ -89,7 +89,7 @@ func run(ctx context.Context, args []string, logger *slog.Logger, output io.Writ
 		return &startupError{code: "worker_configuration_failed", hint: "Check worker interval and timeouts"}
 	}
 
-	producer, closeProducer, err := prepareH0012(ctx, cfg.DatabaseURL, options.h0012, logger)
+	producer, closeProducer, err := prepareBottlenecks(ctx, cfg.DatabaseURL, logger)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil

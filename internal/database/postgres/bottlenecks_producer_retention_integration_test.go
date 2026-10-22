@@ -89,7 +89,7 @@ type producerMidnightErrorRow struct{ err error }
 
 func (r producerMidnightErrorRow) Scan(...any) error { return r.err }
 
-func partitionProducerRetentionSource(t *testing.T, f *passageStoreFixture, oldest time.Time) (string, string) {
+func partitionProducerRetentionSource(t *testing.T, f *bottlenecksStoreFixture, oldest time.Time) (string, string) {
 	t.Helper()
 	oldName, freshName := "producer_raw_oldest", "producer_raw_fresh"
 	f.exec(`
@@ -133,7 +133,7 @@ func TestProducerStoreMidnightPurgeDoesNotSkipOriginalReference(t *testing.T) {
 					f.processProducer(run.Model.Name)
 					expectedCheckpoint, lostCapture = 11, 12
 				} else {
-					f.exec(`UPDATE vialis.h0012_modelos SET activado_en=$1 WHERE nombre=$2`, oldest, run.Model.Name)
+					f.exec(`UPDATE vialis.bottlenecks_modelos SET activado_en=$1 WHERE nombre=$2`, oldest, run.Model.Name)
 				}
 				f.capture(lostCapture)
 				f.exec(`UPDATE vialis.capturas_colectivos SET recibido_en=$1 WHERE id_captura=$2`, oldest, lostCapture)
@@ -141,7 +141,6 @@ func TestProducerStoreMidnightPurgeDoesNotSkipOriginalReference(t *testing.T) {
 				if survivingCapture {
 					f.capture(lostCapture + 1)
 				}
-				diagnostics, modes := f.count("h0012_diagnosticos"), f.count("h0012_productores")
 
 				clock := &producerMidnightBeginner{database: f.pool, before: passageEpoch, after: passageEpoch.AddDate(0, 0, 1), nextCaptureQuery: f.store.sql(findNextProducerCaptureSQL)}
 				clock.purge = func(ctx context.Context) error {
@@ -167,7 +166,7 @@ func TestProducerStoreMidnightPurgeDoesNotSkipOriginalReference(t *testing.T) {
 					t.Fatalf("original reference was not revalidated after pin: purged=%v pinned=%v refs=%v", clock.purged, clock.pinned, clock.references)
 				}
 				recovered, states := f.producerRecovery(run.Model.Name)
-				if recovered.Checkpoint != expectedCheckpoint || len(states) != 0 || f.count("h0012_mediciones") != 0 || f.count("h0012_diagnosticos") != diagnostics || f.count("h0012_productores") != modes {
+				if recovered.Checkpoint != expectedCheckpoint || len(states) != 0 || f.count("bottlenecks_mediciones") != 0 {
 					t.Fatalf("purge failure committed partial producer progress: %+v", recovered)
 				}
 			})

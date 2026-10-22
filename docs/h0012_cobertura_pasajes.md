@@ -169,9 +169,9 @@ Esto no acredita suficiencia en cada hora ni exactitud de la identidad operativa
 go run ./cmd/bottlenecks-analysis -all \
   -from '2026-10-08T17:01:10Z' -to '2026-10-11T00:46:52.000001Z' \
   > .local/h0012/coverage-retained.ndjson
-python3 scripts/summarize-h0012-coverage.py .local/h0012/coverage-retained.ndjson \
+python3 scripts/summarize-bottlenecks-coverage.py .local/h0012/coverage-retained.ndjson \
   > .local/h0012/coverage-retained-summary.json
-python3 scripts/test-h0012-coverage-summary.py
+python3 scripts/test-bottlenecks-coverage-summary.py
 ```
 
 Archivos locales sin versionar; el NDJSON completo ocupa unos 52,8 MB. El

@@ -7,7 +7,7 @@ import runpy
 import tempfile
 import unittest
 
-summarize = runpy.run_path(str(Path(__file__).with_name("summarize-h0012-coverage.py")))["summarize"]
+summarize = runpy.run_path(str(Path(__file__).with_name("summarize-bottlenecks-coverage.py")))["summarize"]
 
 
 def records():

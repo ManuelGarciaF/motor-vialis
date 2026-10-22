@@ -1,7 +1,7 @@
 # H0012 — Spike inicial de segmentación GPS
 
 Plan: [plan_h0012_cuellos_botella.md](plan_h0012_cuellos_botella.md).
-Herramienta: `scripts/spike-h0012-segments.sql` (sólo lectura).
+Herramienta: `scripts/spike-bottlenecks-segments.sql` (sólo lectura).
 
 ## Ventana y método
 
@@ -72,7 +72,7 @@ El spike todavía no identifica cuellos de botella ni mide recurrencia:
 
 ## Verificación y siguientes pasos
 
-`test-h0012-segments.py` pasó contra PostGIS usando exclusivamente tablas TEMP:
+`test-bottlenecks-segments.py` pasó contra PostGIS usando exclusivamente tablas TEMP:
 conteos de límites, remanentes, velocidad uniforme, huecos, versiones de shape,
 posiciones fuera del corredor, retrocesos y entrada vacía. `git diff --check`
 sin errores. No se modificó código del motor ni datos persistentes.

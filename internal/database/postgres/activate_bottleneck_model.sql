@@ -1,4 +1,4 @@
-INSERT INTO vialis.h0012_modelos (
+INSERT INTO vialis.bottlenecks_modelos (
     nombre,
     configuracion,
     captura_inicial,

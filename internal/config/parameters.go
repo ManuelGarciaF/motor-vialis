@@ -3,6 +3,7 @@ package config
 import (
 	"time"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/bottlenecks"
 	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
 	"github.com/ManuelGarciaF/vialis-motor/internal/combinaciones"
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
@@ -127,9 +128,63 @@ const (
 	RealtimeCoverageWarningRatio = 0.7
 )
 
-// H0012 experimental coverage uses fixed local clock hours, attributed to entry.
-// This is not a recurrence/publication policy.
-const BottlenecksAnalysisTimeZone = "America/Argentina/Buenos_Aires"
+// Bottlenecks measurement parameters remain experimental, not calibrated
+// recurrence/publication thresholds. The realtime worker always runs the producer.
+const (
+	BottlenecksMeasurementVersion    = "commercial-v1"
+	BottlenecksMatcherVersion        = "conservative-v1"
+	BottlenecksSegmentMeters         = 500.0
+	BottlenecksMaximumGap            = 180 * time.Second
+	BottlenecksMaximumDistanceMeters = 100.0
+	BottlenecksMaximumSpeedKPH       = 100.0
+	// Coverage uses local clock hours attributed to estimated entry.
+	BottlenecksAnalysisTimeZone = "America/Argentina/Buenos_Aires"
+)
+
+// Scheduling/resource limits do not close sequences or change GPS validity.
+// The initial cadence is experimental; measure its cost and ingestion impact.
+const (
+	BottlenecksInterval            = 2 * time.Minute
+	BottlenecksPoolMaxConnections  = 2
+	BottlenecksCycleTimeout        = 5 * time.Minute
+	BottlenecksMaxCapturesPerCycle = 32
+)
+
+// Experimental classification thresholds, independent of measurement policy.
+const (
+	BottlenecksSlowSpeedKPH        = 6.0
+	BottlenecksMinimumSlowPassages = 2
+)
+
+// BottlenecksDetectionPolicy is the initial experimental API rule. It does not
+// alter measurement, producer state, or require distinct vehicles/dates.
+func BottlenecksDetectionPolicy() bottlenecks.DetectionPolicy {
+	return bottlenecks.DetectionPolicy{SpeedBelowKPH: BottlenecksSlowSpeedKPH, MinimumSlowPassages: BottlenecksMinimumSlowPassages}
+}
+
+func BottlenecksMeasurementPolicy() bottlenecks.MeasurementPolicy {
+	return bottlenecks.MeasurementPolicy{
+		MaximumGap:            BottlenecksMaximumGap,
+		MaximumDistanceMeters: BottlenecksMaximumDistanceMeters,
+		MaximumSpeedKPH:       BottlenecksMaximumSpeedKPH,
+	}
+}
+
+// BottlenecksModel is the worker's single operational configuration. Its stable
+// internal name locates the checkpoint; it is not selected by the caller.
+// Resuming must match this policy and must never overwrite old settings.
+func BottlenecksModel() bottlenecks.PersistenceModel {
+	return bottlenecks.PersistenceModel{
+		Name:               "operational",
+		MeasurementVersion: BottlenecksMeasurementVersion,
+		MatcherVersion:     BottlenecksMatcherVersion,
+		NominalMeters:      BottlenecksSegmentMeters,
+		Policy:             BottlenecksMeasurementPolicy(),
+		TimeZone:           BottlenecksAnalysisTimeZone,
+		RawRetentionDays:   RealtimeRawRetentionDays,
+		ClosureCaptures:    bottlenecks.MissingCaptureLimit,
+	}
+}
 
 // Bunching reports proximity, not groups or a service severity level.
 const (

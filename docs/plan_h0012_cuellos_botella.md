@@ -8,6 +8,17 @@ intervenciones. No detectar incidentes puntuales ni demostrar causas con GPS.
 La unidad publicada es el sector territorial, no el evento ni la línea.
 La cobertura se limita a unidades observadas y vinculadas al catálogo.
 
+## API experimental aprobada después de la validación del productor
+
+Se aprobó implementar `GET /bottlenecks` usando la regla del mapa: **≥2 pasajes
+completos a <6 km/h en el período solicitado**, sin exigir unidades/fechas
+independientes. Mantiene detenciones por pasajeros y extremos identificados.
+Filtros por período, línea y bbox; sin consolidación territorial, ranking ni
+Top 10. Contrato y límites en [detección experimental](h0012_deteccion.md).
+Esto habilita esta API inicial; los criterios de avance y las decisiones
+pendientes que siguen corresponden al detector territorial definitivo, no son
+un bloqueo para esta entrega experimental. El productor no cambia.
+
 ## Estado actual y preparación para implementar
 
 **Listos para comenzar la implementación técnica incremental, no para publicar
@@ -18,7 +29,7 @@ experimental y validaciones; no hay que comenzar nuevamente desde cero.
 
 La capa experimental implementa sectores versionados, mediciones y checkpoints
 transaccionales. El productor lee capturas canónicas y finaliza matching/medición
-al cerrar secuencias; su ciclo independiente está integrado al worker como opt-in.
+al cerrar secuencias; su ciclo independiente corre siempre con el worker.
 La siguiente etapa es validar operación y costo/cadencia con capturas reales,
 sin convertir esta medición en un detector definitivo. El usuario
 aprobó conservar **pasajes individuales y metadatos de calidad, sin archivar GPS
@@ -26,8 +37,9 @@ adicionales**, y arrancar con **datos nuevos, sin backfill**. Esto permite
 recalibrar la detección sobre los pasajes, no rehacer su medición con otra
 segmentación/matching después de purgar el GPS. Se aprobó ejecutar un ciclo independiente dentro de `realtime-worker`, no
 reabrir secuencias cerradas y conservar pasajes sin purga inicial. La recepción se guarda como descriptor OPEN sin archivo GPS; el replay final y
-la persistencia son atómicos. La habilitación del ciclo exige parámetros y modelo
-experimentales explícitos. Esto permite acumular días para calibrar la detección, sin fijar
+la persistencia son atómicos. El ciclo corre siempre con el worker, con parámetros
+experimentales en config e inicialización automática de su checkpoint, sin backfill.
+Esto permite acumular días para calibrar la detección, sin fijar
 prematuramente qué sectores serán elegibles o cómo se ordenará el Top 10.
 
 ### Hallazgos que condicionan el diseño
@@ -172,6 +184,7 @@ Elegir la menor longitud con suficiente evidencia y estabilidad. Inspeccionar
 trayectorias y geometrías de ejemplos reales, especialmente lazos y terminales.
 Validar después referencias comparables, recurrencia y consolidación territorial.
 No implementar API definitiva antes de comprobar la calidad de medición.
+La API experimental aprobada posteriormente tiene el alcance acotado descrito arriba.
 
 ## Primera implementación — rama `feature/h0012-cuellos-botella`
 
@@ -273,7 +286,7 @@ Ver metodología, volumen, interrupciones, validación y límites en
 
 ## Próximas etapas propuestas y condiciones de avance
 
-### 1. Productor y ciclo opt-in implementados; validación operacional pendiente
+### 1. Productor integrado al worker; validación operacional pendiente
 
 **Aprobado:** conservar pasajes individuales y sus metadatos de calidad, **no
 archivar series GPS adicionales**. No modificar el raw/retención H0011. Se acepta
@@ -312,7 +325,8 @@ propios, cancelación/apagado coordinados y reintentos independientes de fallos
 operativos; limitar concurrencia y consumo de conexiones. Sigue compartiendo CPU,
 memoria y base de datos con la ingesta: una goroutine no aísla recursos ni fallos
 de proceso. Medir carga sobre la captura antes de dar por segura la integración.
-No fijar `N` minutos hasta medir costo y atraso del procesamiento incremental.
+La cadencia inicial de config es experimental; no darla por calibrada hasta
+medir costo y atraso del procesamiento incremental.
 
 El backfill de 515.592 GPS tardó 8 min 23,6 s; no debe repetirse completo cada
 `N` minutos. Procesar sólo novedades y el contexto pendiente debería reducir
@@ -327,8 +341,10 @@ watermark cerrado no corrigen su resultado.
 
 El esquema, checkpoints y estado persistido están documentados en
 [h0012_persistencia.md](h0012_persistencia.md). La recepción y el replay final
-están implementados; la [operación del productor](h0012_productor.md) requiere
-migración adicional y activación explícita. No hay modelo real activado. El contador de cierre ya fue acordado;
+están implementados; el esquema completo `bottlenecks_*` de `sql/ddl.sql` ya está
+aplicado a la base local. La [operación del productor](h0012_productor.md) se inicia
+siempre con el worker: inicialización automática sin backfill la primera vez y
+recuperación del checkpoint después. El contador de cierre ya fue acordado;
 no confundirlo con una autorización para archivar GPS ni con un plazo universal
 de llegada.
 Requisitos ya identificados:
@@ -352,17 +368,19 @@ Validar idempotencia, recuperación tras interrupciones, cambios de versión y
 paridad batch/incremental sobre entradas equivalentes con la misma política de
 recepción/cierre, además de integración PostGIS aislada. Un resultado parcial nunca se publica como agregado completo.
 
-### Primera pieza incremental implementada
+### Implementación operacional simplificada
 
-`MeasureCapture` conserva entradas soportadas entre capturas, con estado
-serializable, watermark, contador de ausencias y cierre `missing_updates`.
-Comparte el núcleo de medición con `Measure`, sin censura por fin de lote.
-Pruebas de particiones y reinicios JSON verifican paridad con el batch para
-observaciones ya resueltas. La capa de persistencia implementa snapshots,
-mediciones, diagnósticos y checkpoints atómicos, con activación sin backfill y
-protección contra replays/escritores concurrentes. No es todavía un procesador
-definitivo de detección. El productor/ciclo opt-in agregan lectura canónica,
-descriptores OPEN y replay al cierre; no publican prefijos provisionales.
+El único camino es `ProcessNext` → `ProduceCapture`, con lectura canónica,
+descriptores OPEN y replay al cierre, sin prefijos provisionales. Se conserva
+configuración/checkpoint, trazados, sectores, mediciones y estado de recepción:
+cinco tablas en `sql/ddl.sql`. Mediciones, estado y checkpoint se confirman
+atómicamente; los conteos operacionales van a logs.
+
+La primera entrega tenía un cursor resuelto separado (`MeasureCapture`). Se
+retiró junto con su persistencia y la selección de modos, porque el worker ya
+usa el productor. No se cambian matching, medición ni cierre por cuatro capturas.
+Tests del productor verifican paridad batch, recuperación, rollback de cierres
+y escritores concurrentes. No es todavía un detector definitivo.
 Contrato y límites: [h0012_incremental.md](h0012_incremental.md).
 
 ### Decisiones del productor confirmadas
@@ -379,8 +397,9 @@ Contrato y límites: [h0012_incremental.md](h0012_incremental.md).
 - No actualizar GTFS durante la ejecución del worker. Detenerlo antes de recargar;
   no se implementa coordinación de recarga en vivo.
 - El ciclo usa pool/cadencia propios, límites técnicos de trabajo y cancelación
-  coordinada. La cadencia debe elegirse explícitamente y medir su impacto sobre
-  captura/DB; una goroutine o pool separado no aísla CPU/IO/locks de mantenimiento.
+  coordinada. Parámetros, cadencia y recursos están en
+  `internal/config/parameters.go`; falta medir su impacto sobre captura/DB.
+  Una goroutine o pool separado no aísla CPU/IO/locks de mantenimiento.
 
 ### 2. Calibración y elegibilidad — decisiones funcionales pendientes
 
@@ -418,5 +437,6 @@ elegible/elegible. Publicar agregados sin IDs de unidades ni GPS individuales.
 No fijar ahora una API definitiva ni tratar falta de detecciones como ausencia
 de problemas.
 
-**Este plan actualizado no autoriza políticas nuevas ni cambios de datos.** Las
-etapas requieren las consultas indicadas; la historia H0012 aún no está completa.
+La política experimental aprobada al comienzo de este documento habilita la API
+inicial, sin cambios a medición ni datos del productor. Las demás etapas requieren
+las consultas indicadas; la historia H0012 aún no está completa.

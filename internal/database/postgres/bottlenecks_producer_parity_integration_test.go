@@ -25,6 +25,10 @@ func TestProducerStoreLoopProjectionAndClosedBatchParity(t *testing.T) {
 	f.producerRaw(12, "v", "g", 60, 250)
 	f.producerRaw(12, "v", "g", 180, 1250)
 	f.processProducer(run.Model.Name)
+	snapshot, err := f.store.RegisterLayout(f.ctx, run.Model.Name, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tx, err := f.pool.Begin(f.ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -32,6 +36,10 @@ func TestProducerStoreLoopProjectionAndClosedBatchParity(t *testing.T) {
 	repo := &BottlenecksRepository{schema: f.store.schema}
 	dataset, err := repo.load(f.ctx, tx, 1, bottlenecks.Window{From: passageEpoch.Add(-time.Second), To: passageEpoch.Add(181 * time.Second)}, run.Model.Policy.MaximumDistanceMeters)
 	if err != nil {
+		rollbackBottlenecks(tx)
+		t.Fatal(err)
+	}
+	if err = f.store.prepareProducerProjection(f.ctx, tx, run, map[int64]bottlenecks.PersistedLayout{snapshot.ID: snapshot}); err != nil {
 		rollbackBottlenecks(tx)
 		t.Fatal(err)
 	}
@@ -74,7 +82,7 @@ func TestProducerStoreLoopProjectionAndClosedBatchParity(t *testing.T) {
 			t.Fatalf("closure/batch mismatch: %+v / %+v", result, expected)
 		}
 	}
-	rows, err := f.pool.Query(f.ctx, f.store.sql(`SELECT soporte FROM vialis.h0012_mediciones WHERE completa ORDER BY entrada_en,sector`))
+	rows, err := f.pool.Query(f.ctx, f.store.sql(`SELECT soporte FROM vialis.bottlenecks_mediciones WHERE completa ORDER BY entrada_en,sector`))
 	if err != nil {
 		t.Fatal(err)
 	}

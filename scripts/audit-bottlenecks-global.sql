@@ -1,4 +1,4 @@
--- Global H0012 spatial diagnostics, using the SAME active mapping as H0011.
+-- Global Bottlenecks spatial diagnostics, using the SAME active mapping as H0011.
 -- Required: psql -v from=<timestamp> -v to=<timestamp>.
 -- Source tables read-only; only session-local TEMP fragments/index are written.
 -- No ID equality assumption between GCBA and GTFS; no remapping.
@@ -21,14 +21,14 @@
 \endif
 -- Empty TEMP structure/index are created before the read-only snapshot because
 -- PostgreSQL prohibits CREATE TABLE there. No source rows are read yet.
-CREATE TEMP TABLE h0012_catalog_fragments(geog geography(LineString,4326));
-CREATE INDEX ON h0012_catalog_fragments USING GIST(geog);
+CREATE TEMP TABLE bottlenecks_catalog_fragments(geog geography(LineString,4326));
+CREATE INDEX ON bottlenecks_catalog_fragments USING GIST(geog);
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL statement_timeout='5min';
 \if :compare_catalog
 -- Only TEMP rows are written inside this read-only transaction. Every original
 -- edge is retained; chunks overlap at existing vertices (no interpolated points).
-INSERT INTO pg_temp.h0012_catalog_fragments(geog)
+INSERT INTO pg_temp.bottlenecks_catalog_fragments(geog)
 WITH vertices AS (
  SELECT r.id_recorrido,(d).path[1] AS vertex,(d).geom AS point
  FROM vialis.recorridos r CROSS JOIN LATERAL ST_DumpPoints(r.geom) d
@@ -41,7 +41,7 @@ WITH vertices AS (
 )
 SELECT ST_MakeLine(point ORDER BY vertex)::geography
 FROM assigned GROUP BY id_recorrido,bucket HAVING count(*)>=2;
-ANALYZE pg_temp.h0012_catalog_fragments;
+ANALYZE pg_temp.bottlenecks_catalog_fragments;
 \endif
 WITH active AS MATERIALIZED (
  SELECT e.gcba_route_id,e.gcba_direction,e.gtfs_route_id,e.gtfs_direction_id,
@@ -74,7 +74,7 @@ WITH active AS MATERIALIZED (
  ON a.gcba_route_id=j.gcba_route_id AND a.gcba_direction=j.gcba_direction
 ), classified AS MATERIALIZED (
  SELECT *,CASE WHEN :'compare_catalog'::boolean AND distance_m>100 THEN EXISTS (
- SELECT 1 FROM pg_temp.h0012_catalog_fragments other
+ SELECT 1 FROM pg_temp.bottlenecks_catalog_fragments other
  WHERE ST_DWithin(other.geog,measured.posicion::geography,100)
  ) END AS near_another_shape
  FROM measured
@@ -118,12 +118,12 @@ WITH active AS MATERIALIZED (
 SELECT jsonb_pretty(jsonb_build_object(
  'from',:'from','to',:'to','radiusMeters',100,
  'catalogComparisonEnabled',:'compare_catalog'::boolean,
- 'catalogFragments',(SELECT count(*) FROM pg_temp.h0012_catalog_fragments),
+ 'catalogFragments',(SELECT count(*) FROM pg_temp.bottlenecks_catalog_fragments),
  'fragmentIntegrity',CASE WHEN :'compare_catalog'::boolean THEN jsonb_build_object(
  'originalEdges',(SELECT sum(ST_NPoints(geom)-1) FROM vialis.recorridos),
- 'fragmentEdges',(SELECT sum(ST_NPoints(geog::geometry)-1) FROM pg_temp.h0012_catalog_fragments),
+ 'fragmentEdges',(SELECT sum(ST_NPoints(geog::geometry)-1) FROM pg_temp.bottlenecks_catalog_fragments),
  'originalLengthMeters',(SELECT sum(ST_Length(geom::geography)) FROM vialis.recorridos),
- 'fragmentLengthMeters',(SELECT sum(ST_Length(geog)) FROM pg_temp.h0012_catalog_fragments)) END,
+ 'fragmentLengthMeters',(SELECT sum(ST_Length(geog)) FROM pg_temp.bottlenecks_catalog_fragments)) END,
  'sourceTransactionReadOnly',current_setting('transaction_read_only')::boolean,
  'mappingTable','vialis.equivalencias_recorridos_gcba',
  'mappingJoin','GCBA route + direction -> explicit GTFS route + direction',

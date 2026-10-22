@@ -1,4 +1,4 @@
--- Experimental H0012 reader. $1: line ID; $2/$3: UTC [from,to);
+-- Experimental Bottlenecks reader. $1: line ID; $2/$3: UTC [from,to);
 -- $4: maximum geodesic distance to any local projection (meters).
 -- All alternatives within the radius are retained, not just nearest + margin.
 WITH shape AS MATERIALIZED (

@@ -1,4 +1,4 @@
-INSERT INTO vialis.h0012_sectores (
+INSERT INTO vialis.bottlenecks_sectores (
     trazado,
     indice,
     inicio_metros,
@@ -11,5 +11,5 @@ SELECT
     $3,
     $4,
     ST_LineSubstring(geom::geography, $5, $6)::geometry
-FROM vialis.h0012_trazados
+FROM vialis.bottlenecks_trazados
 WHERE id = $1

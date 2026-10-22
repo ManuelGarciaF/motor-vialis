@@ -38,7 +38,7 @@ class GPSDelaySQLTest(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_delay_and_bins(self):
-        report = self.execute("audit-h0012-gps-delay.sql")
+        report = self.execute("audit-bottlenecks-gps-delay.sql")
         sample = next(p for p in report["ages"] if p["sample"] == "all_retained")
         self.assertEqual(sample["positions"], 2)
         self.assertEqual(sample["p50_p90_p95_p99_age_s"][0], 55)
@@ -47,7 +47,7 @@ class GPSDelaySQLTest(unittest.TestCase):
         self.assertEqual(report["arrival_order"]["older_than_previously_received"], 0)
 
     def test_three_missing_before_fourth_update(self):
-        report = self.execute("audit-h0012-update-gaps.sql")
+        report = self.execute("audit-bottlenecks-update-gaps.sql")
         sample = next(p for p in report["hypothetical_closure_sensitivity"] if p["sample"] == "all_retained")
         self.assertEqual(sample["temporally_compatible_pairs"], 1)
         self.assertEqual(sample["pairs_arriving_after_three_missing_captures"], 1)
@@ -58,19 +58,19 @@ class GPSDelaySQLTest(unittest.TestCase):
         INSERT INTO capturas_colectivos VALUES(6,'2026-10-14T12:05:00Z',false,1,0);
         UPDATE posiciones_colectivos_raw SET recibido_en='2026-10-14T12:05:00Z',id_captura=6 WHERE id_captura=5;
         """
-        report = self.execute("audit-h0012-update-gaps.sql", extra)
+        report = self.execute("audit-bottlenecks-update-gaps.sql", extra)
         sample = next(p for p in report["hypothetical_closure_sensitivity"] if p["sample"] == "all_retained")
         self.assertEqual(sample["maximum_missing_complete_captures"], 4)
         self.assertEqual(sample["pairs_arriving_after_four_missing_captures"], 1)
 
     def test_partial_does_not_increment_counter(self):
-        report = self.execute("audit-h0012-update-gaps.sql", "UPDATE capturas_colectivos SET cobertura_parcial=true WHERE id_captura=3;")
+        report = self.execute("audit-bottlenecks-update-gaps.sql", "UPDATE capturas_colectivos SET cobertura_parcial=true WHERE id_captura=3;")
         sample = next(p for p in report["hypothetical_closure_sensitivity"] if p["sample"] == "all_retained")
         self.assertEqual(sample["maximum_missing_complete_captures"], 2)
         self.assertEqual(sample["pairs_arriving_after_three_missing_captures"], 0)
 
     def test_update_on_third_capture_prevents_expiry(self):
-        report = self.execute("audit-h0012-update-gaps.sql", "UPDATE posiciones_colectivos_raw SET recibido_en='2026-10-14T12:03:00Z',id_captura=4 WHERE id_captura=5;")
+        report = self.execute("audit-bottlenecks-update-gaps.sql", "UPDATE posiciones_colectivos_raw SET recibido_en='2026-10-14T12:03:00Z',id_captura=4 WHERE id_captura=5;")
         sample = next(p for p in report["hypothetical_closure_sensitivity"] if p["sample"] == "all_retained")
         self.assertEqual(sample["maximum_missing_complete_captures"], 2)
         self.assertEqual(sample["pairs_arriving_after_three_missing_captures"], 0)

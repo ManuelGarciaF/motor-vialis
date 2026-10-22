@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 
-SQL = Path(__file__).with_name("audit-h0012-global.sql").read_text().replace("vialis.", "pg_temp.")
+SQL = Path(__file__).with_name("audit-bottlenecks-global.sql").read_text().replace("vialis.", "pg_temp.")
 FIXTURE = r"""
 CREATE TEMP TABLE equivalencias_recorridos_gcba(
  gcba_route_id text,gcba_direction smallint,gtfs_route_id text,gtfs_direction_id smallint);

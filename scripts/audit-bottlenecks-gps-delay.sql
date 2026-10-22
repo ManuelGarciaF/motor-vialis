@@ -1,7 +1,7 @@
 -- Read-only: GPS age at FIRST persisted reception, not pure network latency.
 -- Existing raw is canonical by vehicle/observed timestamp; repetitions are absent.
 -- No coordinates or vehicle IDs are emitted. Fresh<=300s is the existing H0011
--- age limit, used only to describe the sample, not a new H0012 filter.
+-- age limit, used only to describe the sample, not a new Bottlenecks filter.
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL statement_timeout = '30s';
 WITH raw AS MATERIALIZED (

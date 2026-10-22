@@ -2,7 +2,7 @@
 -- Se guardan alternativas locales, no una parada proyectada arbitrariamente.
 WITH pieces AS MATERIALIZED (
  SELECT (d).path[1] edge,(d).geom geom,ST_Length((d).geom::geography) length_m
- FROM vialis.h0012_trazados t CROSS JOIN LATERAL ST_DumpSegments(t.geom) d WHERE t.id=$1
+ FROM vialis.bottlenecks_trazados t CROSS JOIN LATERAL ST_DumpSegments(t.geom) d WHERE t.id=$1
 ), edges AS MATERIALIZED (
  SELECT *,coalesce(sum(length_m) OVER(ORDER BY edge ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) start_m FROM pieces
 )
@@ -28,8 +28,8 @@ LEFT JOIN LATERAL (
  GROUP BY progress_m
  )
  SELECT jsonb_agg(jsonb_build_object('progressMeters',progress_m,'distanceMeters',distance_m,
- 'sectorIndex',(SELECT indice FROM vialis.h0012_sectores s WHERE s.trazado=$1
- AND (progress_m<s.fin_metros OR s.indice=(SELECT max(indice) FROM vialis.h0012_sectores WHERE trazado=$1))
+ 'sectorIndex',(SELECT indice FROM vialis.bottlenecks_sectores s WHERE s.trazado=$1
+ AND (progress_m<s.fin_metros OR s.indice=(SELECT max(indice) FROM vialis.bottlenecks_sectores WHERE trazado=$1))
  ORDER BY indice LIMIT 1)) ORDER BY progress_m) candidates FROM minima
 ) c ON true
 WHERE rp.id_recorrido=$2;

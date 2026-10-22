@@ -4,51 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/bottlenecks"
 	"github.com/jackc/pgx/v5"
 )
-
-// Legacy resolved transitions can run against the original six-table schema.
-// Once producer mode is selected it remains selected even for zero vehicles.
-func (s *BottlenecksStore) rejectProducerMode(ctx context.Context, tx pgx.Tx, model string) error {
-	var installed bool
-	if err := tx.QueryRow(ctx, `
-		SELECT to_regclass(format('%I.h0012_productores', $1::text)) IS NOT NULL
-	`, s.schema).Scan(&installed); err != nil {
-		return err
-	}
-	if !installed {
-		return nil
-	}
-	var exists bool
-	if err := tx.QueryRow(ctx, s.sql(`
-		SELECT EXISTS(SELECT 1 FROM vialis.h0012_productores WHERE modelo=$1)
-	`), model).Scan(&exists); err != nil {
-		return err
-	}
-	if exists {
-		return bottlenecks.ErrProducerModeConflict
-	}
-	return nil
-}
-
-func (s *BottlenecksStore) selectProducerMode(ctx context.Context, tx pgx.Tx, run bottlenecks.ProcessingRun) error {
-	var producer, legacy bool
-	err := tx.QueryRow(ctx, s.sql(findBottleneckProcessingModesSQL), run.Model.Name).Scan(&producer, &legacy)
-	if err != nil {
-		return err
-	}
-	if legacy || !producer && run.Checkpoint != run.ActivationCaptureID {
-		return bottlenecks.ErrProducerModeConflict
-	}
-	if !producer {
-		_, err = tx.Exec(ctx, s.sql(`
-			INSERT INTO vialis.h0012_productores(modelo) VALUES($1)
-		`), run.Model.Name)
-	}
-	return err
-}
 
 func (s *BottlenecksStore) readProducerStates(ctx context.Context, tx pgx.Tx, run bottlenecks.ProcessingRun) ([]bottlenecks.ProducerState, error) {
 	rows, err := tx.Query(ctx, s.sql(listProducerStatesSQL), run.Model.Name)
@@ -79,8 +39,8 @@ func (s *BottlenecksStore) readProducerStates(ctx context.Context, tx pgx.Tx, ru
 	return states, rows.Err()
 }
 
-// ProducerSchemaReady checks explicit migration prerequisites without creating
-// tables, registering a processing mode or activating a model.
+// ProducerSchemaReady checks the operational schema without creating tables or
+// activating a measurement configuration.
 func (s *BottlenecksStore) ProducerSchemaReady(ctx context.Context) (bool, error) {
 	tx, err := s.database.Begin(ctx)
 	if err != nil {
@@ -98,7 +58,7 @@ func (s *BottlenecksStore) ProducerSchemaReady(ctx context.Context) (bool, error
 }
 
 // LoadProducerStates recovers a coherent committed source checkpoint and receipt
-// states. It does not register a processing mode, activate, or mutate any model.
+// states. It does not activate or mutate the measurement configuration.
 func (s *BottlenecksStore) LoadProducerStates(ctx context.Context, model string) (bottlenecks.ProcessingRun, []bottlenecks.ProducerState, error) {
 	empty := bottlenecks.ProcessingRun{}
 	tx, err := s.database.Begin(ctx)
@@ -110,13 +70,6 @@ func (s *BottlenecksStore) LoadProducerStates(ctx context.Context, model string)
 	if err != nil {
 		return empty, nil, err
 	}
-	var producer, legacy bool
-	if err = tx.QueryRow(ctx, s.sql(findBottleneckProcessingModesSQL), model).Scan(&producer, &legacy); err != nil {
-		return empty, nil, err
-	}
-	if legacy || !producer && run.Checkpoint != run.ActivationCaptureID {
-		return empty, nil, bottlenecks.ErrProducerModeConflict
-	}
 	states, err := s.readProducerStates(ctx, tx, run)
 	if err != nil {
 		return empty, nil, err
@@ -127,11 +80,29 @@ func (s *BottlenecksStore) LoadProducerStates(ctx context.Context, model string)
 	return run, states, nil
 }
 
-func (s *BottlenecksStore) persistProducerState(ctx context.Context, tx pgx.Tx, state bottlenecks.ProducerState) error {
-	data, err := json.Marshal(state)
+func (s *BottlenecksStore) persistProducerStates(ctx context.Context, tx pgx.Tx, run bottlenecks.ProcessingRun, captureID int64, states []bottlenecks.ProducerState) error {
+	if len(states) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(states)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, s.sql(upsertProducerStateSQL), state.Model.Name, state.VehicleID, state.LastCaptureID, data)
+	_, err = tx.Exec(ctx, s.sql(upsertProducerStateSQL), run.Model.Name, captureID, data)
 	return err
+}
+
+// Expiry is monotone in the oldest OPEN timestamp: checking the minimum once
+// protects every unit, including across UTC midnight, without N database calls.
+func (s *BottlenecksStore) checkProducerOpenRetention(ctx context.Context, tx pgx.Tx, run bottlenecks.ProcessingRun, states []bottlenecks.ProducerState) error {
+	var oldest time.Time
+	for _, state := range states {
+		if state.Open != nil && (oldest.IsZero() || state.Open.EarliestAt.Before(oldest)) {
+			oldest = state.Open.EarliestAt
+		}
+	}
+	if oldest.IsZero() {
+		return nil
+	}
+	return s.checkRetention(ctx, tx, oldest, run.Model.RawRetentionDays)
 }

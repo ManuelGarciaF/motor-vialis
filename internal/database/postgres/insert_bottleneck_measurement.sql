@@ -1,4 +1,4 @@
-INSERT INTO vialis.h0012_mediciones (
+INSERT INTO vialis.bottlenecks_mediciones (
     modelo,
     identidad,
     trazado,

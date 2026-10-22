@@ -13,7 +13,8 @@ import (
 )
 
 // BottlenecksStore persists derived evidence. It never runs migrations, captures
-// GPS, rematches raw, or activates a worker loop implicitly.
+// GPS or activates a worker loop implicitly. ProcessNext is its only capture
+// processing entry point.
 type BottlenecksStore struct {
 	database realtimeBeginner
 	schema   string
@@ -123,87 +124,7 @@ func (s *BottlenecksStore) Activate(ctx context.Context, model bottlenecks.Persi
 	return run, nil
 }
 
-func (s *BottlenecksStore) loadStates(ctx context.Context, tx pgx.Tx, run bottlenecks.ProcessingRun) ([]bottlenecks.PersistedStream, error) {
-	rows, err := tx.Query(ctx, s.sql(listBottleneckStatesSQL), run.Model.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	streams := []bottlenecks.PersistedStream{}
-	for rows.Next() {
-		var stream bottlenecks.PersistedStream
-		var vehicle string
-		var checkpoint int64
-		var state []byte
-		if err = rows.Scan(&stream.LayoutID, &vehicle, &checkpoint, &state); err != nil {
-			break
-		}
-		if err = json.Unmarshal(state, &stream.State); err != nil {
-			break
-		}
-		if stream.State.VehicleID != vehicle || stream.State.LastCaptureID != checkpoint || checkpoint != run.Checkpoint {
-			err = fmt.Errorf("inconsistent stream checkpoint")
-			break
-		}
-
-		streams = append(streams, stream)
-	}
-
-	rowErr := rows.Err()
-	rows.Close()
-	if err != nil {
-		return nil, err
-	}
-	if rowErr != nil {
-		return nil, rowErr
-	}
-
-	layouts := make(map[int64]bottlenecks.PersistedLayout)
-	for _, stream := range streams {
-		layout, exists := layouts[stream.LayoutID]
-		if !exists {
-			layout, err = s.readLayout(ctx, tx, run, stream.LayoutID)
-			if err != nil {
-				return nil, err
-			}
-
-			layouts[stream.LayoutID] = layout
-		}
-		if stream.State.Policy != run.Model.Policy {
-			return nil, bottlenecks.ErrModelChanged
-		}
-		if err = stream.State.Validate(layout.Layout); err != nil {
-			return nil, err
-		}
-	}
-
-	return streams, nil
-}
-
-func (s *BottlenecksStore) LoadStates(ctx context.Context, model string) ([]bottlenecks.PersistedStream, error) {
-	tx, err := s.database.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer rollbackBottlenecks(tx)
-	// Match model checkpoint and all states from one committed writer version.
-	run, err := s.readRun(ctx, tx, model, true)
-	if err != nil {
-		return nil, err
-	}
-
-	streams, err := s.loadStates(ctx, tx, run)
-	if err != nil {
-		return nil, err
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-	return streams, nil
-}
-
-// Metadata/ID gaps cannot prove whether purged captures once existed. Refuse to
-// advance a stale run rather than treating missing source as empty observations.
+// Refuse stale checkpoints rather than treating missing source as empty input.
 func (s *BottlenecksStore) checkRetention(ctx context.Context, tx pgx.Tx, reference time.Time, days int) error {
 	var expired bool
 	err := tx.QueryRow(ctx, checkBottleneckRetentionSQL, reference, days).Scan(&expired)
@@ -215,5 +136,3 @@ func (s *BottlenecksStore) checkRetention(ctx context.Context, tx pgx.Tx, refere
 	}
 	return nil
 }
-
-var _ bottlenecks.PassageStore = (*BottlenecksStore)(nil)

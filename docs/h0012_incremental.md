@@ -1,106 +1,67 @@
-# H0012 — Estado incremental de medición
+# H0012 — Procesamiento incremental
 
-Plan funcional: [plan_h0012_cuellos_botella.md](plan_h0012_cuellos_botella.md).
-Regla de ausencia: [h0012_retraso_gps.md](h0012_retraso_gps.md).
+Referencias: [plan funcional](plan_h0012_cuellos_botella.md),
+[regla de ausencia](h0012_retraso_gps.md), [persistencia](h0012_persistencia.md)
+y [operación del productor](h0012_productor.md).
 
-## Decisiones confirmadas
+## Un único camino operacional
 
-- Ciclo H0012 independiente en el mismo proceso `realtime-worker`, sin bloquear
-  la ingesta ni ejecutar medición dentro de su transacción.
-- Cierres por cuatro capturas correctas no parciales sin timestamp nuevo,
-  definitivos: no reabrir la secuencia ni completar su entrada con GPS posterior.
-- Pasajes y metadatos sin purga inicial. Sin archivo adicional de series GPS.
-- Activación con datos nuevos, sin backfill. La caída del proveedor no cambia
-  los acuerdos ni justifica procesar retrospectivamente el backup.
+`ProcessNext` lee una captura canónica real; `ProduceCapture` es la transición
+pura de recepción por unidad. No hay otro cursor resuelto ni selección de modos.
+El antiguo `MeasureCapture` y su persistencia fueron retirados: conservar dos
+caminos obligaba a almacenar estado duplicado y coordinar mecanismos que el
+worker no necesitaba.
 
-## Componente de medición implementado
+El estado mínimo es `ProducerState`: configuración, unidad, checkpoints,
+timestamps de recepción/GPS, watermark cerrado, contador de ausencias y descriptor
+OPEN. Este último conserva referencias a capturas/layouts/scopes y un conteo y
+fingerprint de evidencia. No guarda listas GPS ni candidatos históricos.
 
-`internal/bottlenecks/incremental.go` incorpora `MeasureCapture`: transición pura
-para **una unidad, layout y política**, sobre observaciones ya resueltas por
-matching. `Measure` y esta transición comparten `measurementCursor`, por lo que
-la interpolación, los cortes de continuidad y la medición comercial usan el
-mismo núcleo. No se fijan defaults de producción.
+## Recepción y cierre
 
-`CaptureState` incluye identidad, configuración inmutable, checkpoint de captura,
-watermark GPS, última observación resuelta admisible y entrada pendiente con
-soporte y contadores de calidad. Se puede serializar con JSON sin coordenadas
-GPS ni una serie histórica de ubicaciones. La progresiva de continuidad es
-estado operativo mínimo, no un archivo de trayectorias.
+Cada transición procesa una captura real, no un tick del scheduler:
 
-Cada llamada procesa una captura real en orden, no una ejecución del scheduler:
+1. Procesa actualizaciones antes de sumar ausencias. Un timestamp más nuevo
+   reinicia el contador, incluso con coordenadas iguales o sin matching.
+2. Capturas parciales aportan novedades, pero no suman ausencias. Errores del
+   proveedor tampoco suman.
+3. Tras cuatro capturas correctas no parciales sin timestamp nuevo, cierra la
+   secuencia y relee toda su evidencia canónica aceptada.
+4. Ordena por tiempo GPS, ejecuta el matcher sobre alternativas originales y mide
+   pasajes con el mismo núcleo batch. Los cambios A→B→A son barreras, no se unen.
+5. Confirma resultados finales una sola vez. Entradas sin salida son incompletas
+   por `missing_updates` o cambio de scope, sin extrapolar duración ni lentitud.
 
-1. Valida estado, identidad, metadatos y conflictos antes de emitir resultados.
-2. Procesa timestamps nuevos antes de contar ausencia. Coordenada/progresiva
-   idéntica con timestamp posterior reinicia el contador.
-3. Las capturas parciales pueden aportar observaciones, pero no sumar ausencias.
-   Fallos no aportan observaciones ni suman ausencias.
-4. Al alcanzar cuatro ausencias elegibles, emite la entrada pendiente como
-   incompleta (`missing_updates`), sin salida ni duración inventadas. El contador
-   satura y el cierre no se repite.
-5. GPS posterior puede empezar otra secuencia independiente. Evidencia anterior
-   al watermark de una secuencia cerrada se cuenta como tardía y no la reabre.
+GPS tardío dentro de OPEN puede cambiar matching e interpolación al cierre. Tras
+cerrar, no se reabre ni corrige evidencia; GPS más nuevo puede iniciar otra
+secuencia. El máximo hueco de soporte de 180 s experimental no cambia por usar
+cuatro capturas de cierre.
 
-Los IDs de captura repetidos retornan `ErrCaptureAlreadyProcessed` sin emisiones.
-Un error no entrega estado avanzado ni resultados parciales; la entrada no se
-muta. Este contrato **no sustituye una transacción DB**: resultados y checkpoint
-se deben confirmar atómicamente para conseguir idempotencia entre reinicios.
+## Persistencia y límites
 
-`NewCaptureState` recibe el ID de captura de activación; ese valor debe provenir
-de una marca global persistida, no recalcularse al reiniciar o descubrir unidades.
-El estado no debe reconstruirse con un checkpoint cero después de una caída.
+Configuración/checkpoint, trazados, sectores, mediciones y estado de recepción
+son las cinco tablas de `sql/ddl.sql`. Resultados, estados y checkpoint se
+confirman atómicamente. Los conteos operacionales van a logs, no a otra tabla.
 
-## Cursor resuelto y productor operacional
+No se publican prefijos provisionales. Si una secuencia permanece abierta hasta
+perder su raw o falta su geometría exacta, se detiene el productor sin resetear ni
+saltar el checkpoint; H0011 continúa. No hay backfill, archivo GPS adicional ni
+purga inicial de pasajes. No recargar GTFS con el worker activo.
 
-`MeasureCapture` no consume directamente raw ni decide qué matching es final.
-Los candidatos ambiguos pueden requerir evidencia posterior; pasarlos como
-barreras definitivas en cada fin de lote perdería información válida. Por eso
-el [productor](h0012_productor.md) usa `ProducerState`/`ProduceCapture`, separados
-del cursor resuelto: cuenta recepción real y confirma mediciones sólo al cierre.
+Tests de dominio y PostGIS verifican particiones/reinicios, tardíos, ambigüedad
+reconsiderada, barreras de scope, cierres por capturas reales, soporte/calidad,
+rollback y concurrencia. La paridad batch se compara con la misma evidencia
+aceptada y cerrada, no con una ventana histórica arbitraria censurada.
 
-Una observación anterior al watermark activo retorna
-`ErrObservationBeforeWatermark`, sin descartarla silenciosamente ni avanzar el
-checkpoint. El productor conserva descriptores de la secuencia abierta y relee
-su raw canónico al cierre, dentro de la retención, sin archivar series GPS. El replay de un timestamp
-igual al watermark se acepta sólo si la observación coincide; un conflicto
-rechaza la captura completa.
+## Próximo paso
 
-La paridad del cursor se valida sobre observaciones ya resueltas. La paridad
-del productor se compara con el matcher y medición batch sobre la misma evidencia
-aceptada y cerrada, incluyendo tardíos y barreras de scope en orden GPS; no con
-una ventana histórica arbitraria que termina censurada. No hay resultados
-provisionales publicados ni un prefijo irreversible de una secuencia abierta.
-
-## Validación y trabajo pendiente
-
-Tests de dominio cubren:
-
-- Entradas entre capturas sin censura de lote y recuperación JSON del estado.
-- Todas las 128 particiones de una trayectoria de ocho observaciones, con
-  reinicio entre lotes y resultado igual al batch.
-- Actualización en la cuarta captura, detenciones, parciales, errores y cierre
-  único; no se amplía el máximo hueco GPS.
-- Cambios de identidad, replays, tardíos, conflictos y validación del estado.
-- Paridad por particiones con cortes por ambigüedad, hueco GPS, retroceso,
-  cambio de identidad y velocidad implausible.
-
-La [capa de persistencia](h0012_persistencia.md) implementa snapshots de geometría,
-sectores y paradas, mediciones e incompletos, diagnósticos y estado/checkpoint
-transaccionales. La activación es explícita, sin backfill; los resultados no
-referencian el catálogo reemplazable ni raw sujeto a purga. Las asociaciones de
-paradas a sectores conservan candidatos, no decisiones arbitrarias en lazos.
-
-Validación local: `go test ./...`, `go build ./...` y `go vet ./...` pasaron.
-Los tests PostGIS `TestPassageStore*` pasaron en esquemas aislados, incluidos
-rollback, recuperación, concurrencia y retención. El race detector no pudo
-ejecutarse: este entorno Windows tiene CGO deshabilitado y no dispone de GCC.
-
-El productor PostgreSQL y su ciclo independiente opt-in están implementados.
-Las pruebas agregan fuente canónica, finalización atómica, reinicio, modo de
-procesamiento, carreras con purga y lifecycle del worker. No se soporta recargar
-GTFS mientras corre el proceso; si falta un snapshot exacto, H0012 se detiene.
-
-Antes de operar: aplicar explícitamente la migración adicional del productor,
-seleccionar parámetros experimentales/cadencia y activar un modelo sin backfill.
-La migración inicial ya se aplicó a `vialis`; la adicional y la activación real
-siguen pendientes. Falta medir costo e impacto sobre captura y validar operación
-con GCBA disponible. Comandos y límites: [productor](h0012_productor.md).
+El esquema operacional está aplicado en la base local. El corte del 21/10/2026
+verificó configuración activa y pasajes persistidos; ver
+[estado operacional](h0012_estado_operacional.md).
+Los parámetros experimentales y la cadencia están en
+`internal/config/parameters.go`. El worker lo ejecuta siempre: inicializa su
+configuración en el primer arranque sin backfill y recupera el checkpoint en los
+siguientes. Falta medir costo, atraso e impacto sobre captura con GCBA disponible.
+La [detección experimental](h0012_deteccion.md) lee los pasajes finales sin
+cambiar este procesamiento. Calibración definitiva, consolidación territorial y
+ranking siguen pendientes; esta simplificación no cambia políticas de medición.

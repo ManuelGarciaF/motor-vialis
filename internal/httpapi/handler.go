@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/bottlenecks"
 	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
 	"github.com/ManuelGarciaF/vialis-motor/internal/combinaciones"
 	"github.com/ManuelGarciaF/vialis-motor/internal/lines"
@@ -56,6 +57,10 @@ type Transfers interface {
 	) (combinaciones.Page, error)
 }
 
+type Bottlenecks interface {
+	List(context.Context, bottlenecks.DetectionQuery) (bottlenecks.DetectionPage, error)
+}
+
 type Bunching interface {
 	Get(context.Context, int64) (bunching.Current, error)
 	List(context.Context, bunching.HistoryQuery) (bunching.EventPage, error)
@@ -64,14 +69,15 @@ type Bunching interface {
 
 // Handler exposes the service's endpoints over HTTP.
 type Handler struct {
-	logger     *slog.Logger
-	simulator  Simulator
-	comparator Comparator
-	detours    DetourPlanner
-	lines      Lines
-	transfers  Transfers
-	bunching   Bunching
-	timeout    time.Duration
+	logger      *slog.Logger
+	simulator   Simulator
+	comparator  Comparator
+	detours     DetourPlanner
+	lines       Lines
+	transfers   Transfers
+	bunching    Bunching
+	bottlenecks Bottlenecks
+	timeout     time.Duration
 }
 
 func NewHandler(
@@ -100,9 +106,16 @@ func NewHandler(
 	}
 }
 
+// WithBottlenecks configures the optional reader before Routes is served.
+func (handler *Handler) WithBottlenecks(service Bottlenecks) *Handler {
+	handler.bottlenecks = service
+	return handler
+}
+
 func (handler *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /lines", handler.listLines)
+	mux.HandleFunc("GET /bottlenecks", handler.listBottlenecks)
 	mux.HandleFunc("GET /bunching", handler.listBunching)
 	mux.HandleFunc("GET /bunching/recurrence", handler.getBunchingRecurrence)
 	// "POST /lines/similar" and "GET /lines/{id}" do not compete: a pattern
