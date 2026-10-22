@@ -76,7 +76,13 @@ func TestBunchingReportingPolicy(t *testing.T) {
 }
 
 func TestGCBALimitsAreCoherent(t *testing.T) {
-	if GCBARequestTimeout <= 0 || GCBAMaximumBodyBytes <= 0 || GCBAMaximumPositionAge <= 0 || GCBAMaximumFutureSkew < 0 || GCBAMaximumAttempts < 1 || GCBAInitialBackoff <= 0 || GCBAMaximumBackoff < GCBAInitialBackoff {
+	if GCBARequestTimeout <= 0 ||
+		GCBAMaximumBodyBytes <= 0 ||
+		GCBAMaximumPositionAge <= 0 ||
+		GCBAMaximumFutureSkew < 0 ||
+		GCBAMaximumAttempts < 1 ||
+		GCBAInitialBackoff <= 0 ||
+		GCBAMaximumBackoff < GCBAInitialBackoff {
 		t.Fatal("invalid GCBA policy")
 	}
 }
@@ -97,11 +103,15 @@ func TestLinesPolicyIsCoherent(t *testing.T) {
 }
 
 func TestTomTomPolicyIsCoherent(t *testing.T) {
-	if TomTomTrafficTTL <= 0 || TomTomRequestTimeout <= 0 ||
-		TomTomCacheEntries <= 0 || TomTomCacheBytes <= 0 ||
-		TomTomMaximumTileBytes <= 0 || TomTomRequestsPerSecond <= 0 ||
+	if TomTomTrafficTTL <= 0 ||
+		TomTomRequestTimeout <= 0 ||
+		TomTomCacheEntries <= 0 ||
+		TomTomCacheBytes <= 0 ||
+		TomTomMaximumTileBytes <= 0 ||
+		TomTomRequestsPerSecond <= 0 ||
 		TomTomMaximumTileFeatures <= 0 ||
-		TomTomTileMargin < 0 || TomTomTileMargin > 0.1 {
+		TomTomTileMargin < 0 ||
+		TomTomTileMargin > 0.1 {
 		t.Fatalf("invalid TomTom policy")
 	}
 }

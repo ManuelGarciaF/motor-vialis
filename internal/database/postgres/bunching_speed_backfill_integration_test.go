@@ -17,7 +17,13 @@ func TestBunchingSpeedBackfillIntegration(t *testing.T) {
 	repo := fixture.realtimeRepository()
 	start := time.Date(2026, 10, 8, 23, 50, 0, 0, time.UTC)
 	end := start.Add(20 * time.Minute)
-	if _, err := tx.Exec(ctx, repo.sql(`CREATE TABLE vialis.posiciones_colectivos_raw_test PARTITION OF vialis.posiciones_colectivos_raw FOR VALUES FROM ('2026-10-08') TO ('2026-10-10')`)); err != nil {
+	if _, err := tx.Exec(ctx, repo.sql(`
+		CREATE TABLE vialis.posiciones_colectivos_raw_test PARTITION OF vialis.posiciones_colectivos_raw FOR
+		VALUES
+		FROM('2026-10-08') TO(
+		    '2026-10-10'
+		)
+	`)); err != nil {
 		t.Fatal(err)
 	}
 	batch := &pgx.Batch{}
@@ -28,16 +34,70 @@ func TestBunchingSpeedBackfillIntegration(t *testing.T) {
 		}
 		queueEvent(batch, repo, e)
 	}
+
 	if err := tx.SendBatch(ctx, batch).Close(); err != nil {
 		t.Fatal(err)
 	}
 	add := func(vehicle string, at, received time.Time, speed float64, scope bunching.Scope, partial, analyzed bool) {
 		t.Helper()
 		var captureID int64
-		if err := tx.QueryRow(ctx, repo.sql(`INSERT INTO vialis.capturas_colectivos(recibido_en,filas_totales,filas_validas,filas_invalidas,filas_duplicadas,filas_stale,cobertura_parcial,aglutinaciones_analizadas) VALUES($1,1,1,0,0,0,$2,$3) RETURNING id_captura`), received, partial, analyzed).Scan(&captureID); err != nil {
+		if err := tx.QueryRow(ctx, repo.sql(`
+			INSERT INTO vialis.capturas_colectivos (
+			    recibido_en,
+			    filas_totales,
+			    filas_validas,
+			    filas_invalidas,
+			    filas_duplicadas,
+			    filas_stale,
+			    cobertura_parcial,
+			    aglutinaciones_analizadas
+			)
+			VALUES (
+			    $1,
+			    1,
+			    1,
+			    0,
+			    0,
+			    0,
+			    $2,
+			    $3
+			)
+			RETURNING id_captura
+		`), received, partial, analyzed).Scan(&captureID); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := tx.Exec(ctx, repo.sql(`INSERT INTO vialis.posiciones_colectivos_raw(dia_observado,observado_en,recibido_en,id_vehiculo,gcba_route_id,gcba_direction,gtfs_route_id,gtfs_direction_id,gtfs_shape_id,gtfs_shape_hash,posicion,velocidad_metros_segundo,id_captura) VALUES(($1::timestamptz AT TIME ZONE 'UTC')::date,$1,$2,$3,$4,$5,$6,$7,$8,$9,ST_SetSRID(ST_MakePoint(-58.4,-34.6),4326),$10,$11)`), at, received, vehicle, scope.GCBARouteID, scope.GCBADirection, scope.GTFSRouteID, scope.GTFSDirection, scope.ShapeID, scope.ShapeHash, speed, captureID); err != nil {
+		if _, err := tx.Exec(ctx, repo.sql(`
+			INSERT INTO vialis.posiciones_colectivos_raw (
+			    dia_observado,
+			    observado_en,
+			    recibido_en,
+			    id_vehiculo,
+			    gcba_route_id,
+			    gcba_direction,
+			    gtfs_route_id,
+			    gtfs_direction_id,
+			    gtfs_shape_id,
+			    gtfs_shape_hash,
+			    posicion,
+			    velocidad_metros_segundo,
+			    id_captura
+			)
+			VALUES (
+			    ($1::timestamptz AT TIME ZONE 'UTC')::date,
+			    $1,
+			    $2,
+			    $3,
+			    $4,
+			    $5,
+			    $6,
+			    $7,
+			    $8,
+			    $9,
+			    ST_SetSRID(ST_MakePoint(- 58.4, - 34.6), 4326),
+			    $10,
+			    $11
+			)
+		`), at, received, vehicle, scope.GCBARouteID, scope.GCBADirection, scope.GTFSRouteID, scope.GTFSDirection, scope.ShapeID, scope.ShapeHash, speed, captureID); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -79,7 +139,13 @@ func TestBunchingSpeedBackfillIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	var samplesA, samplesB int64
-	if err := tx.QueryRow(ctx, `SELECT samples_a,samples_b FROM bunching_speed_backfill WHERE before_a=5`).Scan(&samplesA, &samplesB); err != nil || samplesA != 1 || samplesB != 1 {
+	if err := tx.QueryRow(ctx, `
+		SELECT
+		    samples_a,
+		    samples_b
+		FROM bunching_speed_backfill
+		WHERE before_a = 5
+	`).Scan(&samplesA, &samplesB); err != nil || samplesA != 1 || samplesB != 1 {
 		t.Fatalf("raw selection: %d %d %v", samplesA, samplesB, err)
 	}
 	updateSQL := repo.sql(script[updateStart:updateEnd])
@@ -88,14 +154,30 @@ func TestBunchingSpeedBackfillIntegration(t *testing.T) {
 		t.Fatalf("updated: %d %v", updated, err)
 	}
 	var maxA, maxB float64
-	if err := tx.QueryRow(ctx, repo.sql(`SELECT velocidad_maxima_a_metros_segundo,velocidad_maxima_b_metros_segundo FROM vialis.aglutinaciones_colectivos WHERE id_vehiculo_a='moving-a'`)).Scan(&maxA, &maxB); err != nil || maxA != 5 || maxB != 1 {
+	if err := tx.QueryRow(ctx, repo.sql(`
+		SELECT
+		    velocidad_maxima_a_metros_segundo,
+		    velocidad_maxima_b_metros_segundo
+		FROM vialis.aglutinaciones_colectivos
+		WHERE id_vehiculo_a = 'moving-a'
+	`)).Scan(&maxA, &maxB); err != nil || maxA != 5 || maxB != 1 {
 		t.Fatalf("maxima: %v %v %v", maxA, maxB, err)
 	}
 	if err := tx.QueryRow(ctx, updateSQL).Scan(&updated); err != nil || updated != 0 {
 		t.Fatalf("non-idempotent update: %d %v", updated, err)
 	}
 	var unchanged int
-	if err := tx.QueryRow(ctx, repo.sql(`SELECT count(*) FROM vialis.aglutinaciones_colectivos WHERE id_vehiculo_a!='moving-a' AND velocidad_maxima_a_metros_segundo=0 AND velocidad_maxima_b_metros_segundo=0 AND observaciones=16 AND primero_observado_en=$1 AND ultimo_observado_en=$2 AND cerrado_en=$2`), start, end).Scan(&unchanged); err != nil || unchanged != 2 {
+	if err := tx.QueryRow(ctx, repo.sql(`
+		SELECT count(*)
+		FROM vialis.aglutinaciones_colectivos
+		WHERE id_vehiculo_a != 'moving-a'
+		    AND velocidad_maxima_a_metros_segundo = 0
+		    AND velocidad_maxima_b_metros_segundo = 0
+		    AND observaciones = 16
+		    AND primero_observado_en = $1
+		    AND ultimo_observado_en = $2
+		    AND cerrado_en = $2
+	`), start, end).Scan(&unchanged); err != nil || unchanged != 2 {
 		t.Fatalf("other events/lifecycle changed: %d %v", unchanged, err)
 	}
 }

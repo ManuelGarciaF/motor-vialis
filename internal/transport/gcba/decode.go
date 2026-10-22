@@ -30,6 +30,7 @@ func decode(body []byte, receivedAt time.Time, maximumAge, maximumFutureSkew tim
 	if trimmed := bytes.TrimSpace(body); len(trimmed) == 0 || trimmed[0] != '[' {
 		return bunching.Capture{}, &Error{Code: ErrorInvalidResponse, Message: "GCBA response is not a JSON array"}
 	}
+
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	var rows []json.RawMessage
 	if err := decoder.Decode(&rows); err != nil {
@@ -39,6 +40,7 @@ func decode(body []byte, receivedAt time.Time, maximumAge, maximumFutureSkew tim
 			Cause:   err,
 		}
 	}
+
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return bunching.Capture{}, &Error{Code: ErrorInvalidResponse, Message: "GCBA response has trailing JSON values"}
@@ -56,22 +58,26 @@ func decode(body []byte, receivedAt time.Time, maximumAge, maximumFutureSkew tim
 			capture.Stats.InvalidRows++
 			continue
 		}
+
 		position, err := validate(raw, receivedAt, maximumAge, maximumFutureSkew)
 		if err != nil {
 			capture.Stats.InvalidRows++
 			continue
 		}
+
 		key := fmt.Sprintf("%s\x00%d", position.VehicleID, position.ObservedAt.Unix())
 		if _, exists := seen[key]; exists {
 			capture.Stats.DuplicateRows++
 			continue
 		}
+
 		seen[key] = struct{}{}
 		if !position.Fresh {
 			capture.Stats.StaleRows++
 		}
 		capture.Positions = append(capture.Positions, position)
 	}
+
 	capture.Stats.ValidRows = len(capture.Positions)
 	return capture, nil
 }
@@ -98,6 +104,7 @@ func validate(raw rawPosition, receivedAt time.Time, maximumAge, maximumFutureSk
 	if raw.Timestamp == nil || *raw.Timestamp <= 0 {
 		return bunching.Position{}, fmt.Errorf("timestamp is invalid")
 	}
+
 	observedAt := time.Unix(*raw.Timestamp, 0).UTC()
 	age := receivedAt.Sub(observedAt)
 	if age < -maximumFutureSkew {

@@ -58,6 +58,7 @@ func (s *Service) Get(ctx context.Context, id int64) (Current, error) {
 	if err != nil {
 		return current, err
 	}
+
 	page, err := s.repository.FindRecurrence(ctx, &id, now, s.policy, s.recurrencePolicy)
 	if err != nil {
 		return current, err
@@ -65,6 +66,7 @@ func (s *Service) Get(ctx context.Context, id int64) (Current, error) {
 	if len(page.Lines) != 1 {
 		return current, fmt.Errorf("missing bunching recurrence summary")
 	}
+
 	current.Recurrence = page.Lines[0].RecurrenceSummary
 	return current, nil
 }

@@ -58,6 +58,7 @@ func Select(
 			if containsRequired(stops[start+1 : end]) {
 				continue
 			}
+
 			for category, previous := range bestByEnd[start] {
 				if previous == nil {
 					continue
@@ -70,6 +71,7 @@ func Select(
 				if reversesAtJunction(previous, connection) {
 					continue
 				}
+
 				candidate := &selectionState{
 					kept:        appendCopy(previous.kept, end),
 					connections: appendConnection(previous.connections, connection),
@@ -104,6 +106,7 @@ func Select(
 			best = candidate
 		}
 	}
+
 	if best == nil {
 		return Selection{}, &Error{
 			Code:    ErrorNoDetourWithinSearchArea,
@@ -116,12 +119,14 @@ func Select(
 	for _, order := range best.kept {
 		keptSet[order] = struct{}{}
 	}
+
 	omitted := make([]int, 0, len(stops)-len(best.kept))
 	for order := range stops {
 		if _, retained := keptSet[order]; !retained {
 			omitted = append(omitted, order)
 		}
 	}
+
 	return Selection{
 		KeptStopOrders:    append([]int(nil), best.kept...),
 		OmittedStopOrders: omitted,
@@ -142,6 +147,7 @@ func reversesAtJunction(previous *selectionState, next Connection) bool {
 	if len(previous.connections) == 0 {
 		return false
 	}
+
 	last := previous.connections[len(previous.connections)-1]
 	arriving, ok1 := arrivingBearing(last.Path)
 	leaving, ok2 := leavingBearing(next.Path)
@@ -165,6 +171,7 @@ func leavingBearing(path route.LineString) (float64, bool) {
 	if len(p) < 3 {
 		return rawLeavingBearing(p)
 	}
+
 	base := p[1]       // saltea el stub de origen (p[0]→p[1])
 	last := len(p) - 2 // saltea el stub de destino (p[n-2]→p[n-1])
 	acc := 0.0
@@ -174,6 +181,7 @@ func leavingBearing(path route.LineString) (float64, bool) {
 			return bearingBetween(base, p[i])
 		}
 	}
+
 	return bearingBetween(base, p[last])
 }
 
@@ -182,6 +190,7 @@ func arrivingBearing(path route.LineString) (float64, bool) {
 	if len(p) < 3 {
 		return rawArrivingBearing(p)
 	}
+
 	end := p[len(p)-2] // saltea el stub de destino
 	first := 1         // saltea el stub de origen
 	acc := 0.0
@@ -191,6 +200,7 @@ func arrivingBearing(path route.LineString) (float64, bool) {
 			return bearingBetween(p[i], end)
 		}
 	}
+
 	return bearingBetween(p[first], end)
 }
 
@@ -201,6 +211,7 @@ func rawLeavingBearing(p []route.Position) (float64, bool) {
 			return bearing, true
 		}
 	}
+
 	return 0, false
 }
 
@@ -210,6 +221,7 @@ func rawArrivingBearing(p []route.Position) (float64, bool) {
 			return bearing, true
 		}
 	}
+
 	return 0, false
 }
 
@@ -229,6 +241,7 @@ func bearingBetween(a, b route.Position) (float64, bool) {
 	if math.Abs(north) < 1e-12 && math.Abs(east) < 1e-12 {
 		return 0, false
 	}
+
 	degrees := math.Atan2(east, north) * 180 / math.Pi
 	if degrees < 0 {
 		degrees += 360
@@ -260,12 +273,14 @@ func validateSelectorInput(stops []ClassifiedStop, connections []Connection) err
 		if stop.Order != index {
 			return fmt.Errorf("select detour: stop order %d at position %d", stop.Order, index)
 		}
+
 		switch stop.Availability {
 		case StopForcedUnavailable, StopOptional, StopRequired:
 		default:
 			return fmt.Errorf("select detour: stop %d has invalid availability %q", index, stop.Availability)
 		}
 	}
+
 	for _, connection := range connections {
 		if connection.FromStopOrder < 0 ||
 			connection.ToStopOrder >= len(stops) ||
@@ -286,6 +301,7 @@ func validateSelectorInput(stops []ClassifiedStop, connections []Connection) err
 			)
 		}
 	}
+
 	return nil
 }
 
@@ -295,6 +311,7 @@ func containsRequired(stops []ClassifiedStop) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -340,6 +357,7 @@ func compareInts(left, right []int) int {
 			return 1
 		}
 	}
+
 	if len(left) < len(right) {
 		return -1
 	}
@@ -358,6 +376,7 @@ func compareInts64(left, right []int64) int {
 			return 1
 		}
 	}
+
 	if len(left) < len(right) {
 		return -1
 	}
@@ -372,6 +391,7 @@ func flattenEdgeIDs(connections []Connection) []int64 {
 	for _, connection := range connections {
 		result = append(result, connection.EdgeIDs...)
 	}
+
 	return result
 }
 
@@ -391,6 +411,7 @@ func cloneConnections(values []Connection) []Connection {
 	for index, value := range values {
 		result[index] = cloneConnection(value)
 	}
+
 	return result
 }
 

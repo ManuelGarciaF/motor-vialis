@@ -20,7 +20,17 @@ type Policy struct {
 }
 
 func (p Policy) Validate() error {
-	if math.IsNaN(p.DistanceMeters) || math.IsInf(p.DistanceMeters, 0) || p.DistanceMeters <= 0 || p.MaximumAge <= 0 || p.MaximumFutureSkew < 0 || p.MissingCaptureTolerance < 0 || p.MinimumObservations < 2 || p.MinimumDuration < 0 || math.IsNaN(p.MinimumSpeedMetersPerSecond) || math.IsInf(p.MinimumSpeedMetersPerSecond, 0) || p.MinimumSpeedMetersPerSecond < 0 {
+	if math.IsNaN(p.DistanceMeters) ||
+		math.IsInf(p.DistanceMeters, 0) ||
+		p.DistanceMeters <= 0 ||
+		p.MaximumAge <= 0 ||
+		p.MaximumFutureSkew < 0 ||
+		p.MissingCaptureTolerance < 0 ||
+		p.MinimumObservations < 2 ||
+		p.MinimumDuration < 0 ||
+		math.IsNaN(p.MinimumSpeedMetersPerSecond) ||
+		math.IsInf(p.MinimumSpeedMetersPerSecond, 0) ||
+		p.MinimumSpeedMetersPerSecond < 0 {
 		return fmt.Errorf("invalid bunching policy")
 	}
 	return nil
@@ -122,15 +132,18 @@ func Advance(open []Event, s Snapshot, p Policy) ([]Event, error) {
 	if s.ReceivedAt.IsZero() {
 		return nil, fmt.Errorf("snapshot time is required")
 	}
+
 	changes := make([]Event, 0)
 	if s.Partial {
 		return changes, nil
 	}
+
 	blocked := make(map[PairKey]bool)
 	for _, event := range open {
 		if event.ClosedAt != nil {
 			continue
 		}
+
 		key := event.key()
 		blocked[key] = true
 		a, hasA := s.Positions[event.VehicleA]
@@ -171,10 +184,16 @@ func Advance(open []Event, s Snapshot, p Policy) ([]Event, error) {
 			}
 			continue
 		}
-		if hasA && a.Scope != event.Scope && a.ObservedAt.After(event.ObservedA) || hasB && b.Scope != event.Scope && b.ObservedAt.After(event.ObservedB) {
+		if hasA &&
+			a.Scope != event.Scope &&
+			a.ObservedAt.After(event.ObservedA) ||
+			hasB &&
+				b.Scope != event.Scope &&
+				b.ObservedAt.After(event.ObservedB) {
 			close("identity_changed")
 			continue
 		}
+
 		distance, measured := s.Distances[key]
 		if sameA && sameB && measured {
 			if advances {
@@ -182,6 +201,7 @@ func Advance(open []Event, s Snapshot, p Policy) ([]Event, error) {
 					close("separated")
 					continue
 				}
+
 				event.ObservedA = a.ObservedAt
 				event.ObservedB = b.ObservedAt
 				event.LastObservedAt = maximumTime(a.ObservedAt, b.ObservedAt)
@@ -205,21 +225,32 @@ func Advance(open []Event, s Snapshot, p Policy) ([]Event, error) {
 			}
 		}
 	}
+
 	for key, distance := range s.Distances {
 		if !s.HasNewPositions || blocked[key] || distance > p.DistanceMeters || math.IsNaN(distance) || math.IsInf(distance, 0) {
 			continue
 		}
+
 		a, hasA := s.Positions[key.A]
 		b, hasB := s.Positions[key.B]
-		if !hasA || !hasB || a.Scope != key.Scope || b.Scope != key.Scope || a.ObservedAt.Before(s.ReceivedAt.Add(-p.MaximumAge)) || b.ObservedAt.Before(s.ReceivedAt.Add(-p.MaximumAge)) || a.ObservedAt.After(s.ReceivedAt.Add(p.MaximumFutureSkew)) || b.ObservedAt.After(s.ReceivedAt.Add(p.MaximumFutureSkew)) {
+		if !hasA ||
+			!hasB ||
+			a.Scope != key.Scope ||
+			b.Scope != key.Scope ||
+			a.ObservedAt.Before(s.ReceivedAt.Add(-p.MaximumAge)) ||
+			b.ObservedAt.Before(s.ReceivedAt.Add(-p.MaximumAge)) ||
+			a.ObservedAt.After(s.ReceivedAt.Add(p.MaximumFutureSkew)) ||
+			b.ObservedAt.After(s.ReceivedAt.Add(p.MaximumFutureSkew)) {
 			continue
 		}
 		if previous, exists := s.Previous[key]; exists && (!a.ObservedAt.After(previous.ObservedA) || !b.ObservedAt.After(previous.ObservedB)) {
 			continue
 		}
+
 		observed := maximumTime(a.ObservedAt, b.ObservedAt)
 		changes = append(changes, Event{Line: a.Line, Branch: a.Branch, Scope: key.Scope, VehicleA: key.A, VehicleB: key.B, FirstObservedAt: observed, LastObservedAt: observed, ConfirmedAt: s.ReceivedAt, ObservedA: a.ObservedAt, ObservedB: b.ObservedAt, MinimumDistanceMeters: distance, LastDistanceMeters: distance, PointA: a.Point, PointB: b.Point, Observations: 1, MaximumSpeedAMetersPerSecond: a.SpeedMetersPerSecond, MaximumSpeedBMetersPerSecond: b.SpeedMetersPerSecond})
 	}
+
 	sort.SliceStable(changes, func(i, j int) bool {
 		a, b := changes[i], changes[j]
 		if (a.ID > 0) != (b.ID > 0) {

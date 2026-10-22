@@ -47,6 +47,7 @@ func stopResults(
 		if index >= len(results)-1 {
 			break
 		}
+
 		results[index].SegmentToNext = &SegmentResult{
 			DistanceMeters:      segment.DistanceMeters,
 			OffPeakSeconds:      segment.OffPeakSeconds,
@@ -57,5 +58,6 @@ func stopResults(
 			ReferenceRouteCount: segment.ReferenceRouteCount,
 		}
 	}
+
 	return results
 }

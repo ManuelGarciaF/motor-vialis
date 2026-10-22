@@ -33,12 +33,15 @@ func TestCaptureFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/colectivos/vehiclePositionsSimple" || r.URL.Query().Get("client_id") != "private-id" || r.URL.Query().Get("client_secret") != "private-secret" {
+				if r.URL.Path != "/colectivos/vehiclePositionsSimple" ||
+					r.URL.Query().Get("client_id") != "private-id" ||
+					r.URL.Query().Get("client_secret") != "private-secret" {
 					t.Error("wrong endpoint or authentication")
 				}
 				w.Write(body)
 			}))
 			defer server.Close()
+
 			client, err := NewClient(testOptions(server.URL))
 			if err != nil {
 				t.Fatal(err)
@@ -83,6 +86,7 @@ func TestCaptureResponseFailures(t *testing.T) {
 				io.WriteString(w, test.body)
 			}))
 			defer server.Close()
+
 			client, err := NewClient(testOptions(server.URL))
 			if err != nil {
 				t.Fatal(err)
@@ -109,9 +113,11 @@ func TestCaptureRetriesAndRecovers(t *testing.T) {
 			w.WriteHeader(503)
 			return
 		}
+
 		io.WriteString(w, "[]")
 	}))
 	defer server.Close()
+
 	client, _ := NewClient(testOptions(server.URL))
 	capture, err := client.Capture(context.Background())
 	if err != nil || capture.Stats.TotalRows != 0 || calls.Load() != 3 {
@@ -131,6 +137,7 @@ func TestCaptureBodyLimit(t *testing.T) {
 				io.WriteString(w, strings.Repeat(" ", 100))
 			}))
 			defer server.Close()
+
 			options := testOptions(server.URL)
 			options.MaximumBodyBytes = 20
 			client, _ := NewClient(options)
@@ -146,6 +153,7 @@ func TestCaptureBodyLimit(t *testing.T) {
 func TestCaptureTimeoutAndCancellation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
 	defer server.Close()
+
 	options := testOptions(server.URL)
 	options.RequestTimeout = 10 * time.Millisecond
 	options.MaximumAttempts = 1
@@ -168,9 +176,11 @@ func TestCaptureTimeoutAndCancellation(t *testing.T) {
 func TestCaptureHonorsRetryAfterCancellation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Header().Set("Retry-After", "60"); w.WriteHeader(429) }))
 	defer server.Close()
+
 	client, _ := NewClient(testOptions(server.URL))
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
+
 	_, err := client.Capture(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error: %v", err)
@@ -184,8 +194,10 @@ func TestCaptureRejectsRedirect(t *testing.T) {
 	var followed atomic.Int32
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { followed.Add(1); io.WriteString(w, "[]") }))
 	defer target.Close()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, 302) }))
 	defer server.Close()
+
 	client, _ := NewClient(testOptions(server.URL))
 	_, err := client.Capture(context.Background())
 	if err == nil || followed.Load() != 0 {

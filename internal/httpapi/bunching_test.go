@@ -72,6 +72,7 @@ func TestBunchingHTTP(t *testing.T) {
 						t.Fatal(w.Body.String())
 					}
 				}
+
 				if strings.Contains(w.Body.String(), "severity") || strings.Contains(w.Body.String(), "color") {
 					t.Fatal("invented severity")
 				}

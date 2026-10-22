@@ -113,6 +113,7 @@ func TestStopResultsIgnoreUnknownStopIdentifiers(t *testing.T) {
 	for _, result := range results {
 		total += result.Demand.OriginPotential
 	}
+
 	if math.Abs(total-demandResult.PotentialDemand) > 1e-9 {
 		t.Fatalf("origin potential demand = %v, want %v", total, demandResult.PotentialDemand)
 	}

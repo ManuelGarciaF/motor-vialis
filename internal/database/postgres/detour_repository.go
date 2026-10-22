@@ -44,6 +44,9 @@ var findDetourTopologyPairsSQL string
 //go:embed detour_graph_trace.sql
 var detourGraphTraceSQL string
 
+//go:embed find_unmatched_detour_points.sql
+var findUnmatchedDetourPointsSQL string
+
 // DetourRepository performs the spatial and routing operations for a road cut.
 type DetourRepository struct {
 	database *pgxpool.Pool
@@ -76,6 +79,7 @@ func (repository *DetourRepository) Analyze(
 	if err != nil {
 		return detour.Analysis{}, fmt.Errorf("encode detour cut: %w", err)
 	}
+
 	segments := make([]map[string]any, 0, len(input.Stops)-1)
 	for order := 0; order < len(input.Stops)-1; order++ {
 		segments = append(segments, map[string]any{
@@ -83,6 +87,7 @@ func (repository *DetourRepository) Analyze(
 			"path":  input.Stops[order].PathToNext,
 		})
 	}
+
 	encodedSegments, err := json.Marshal(segments)
 	if err != nil {
 		return detour.Analysis{}, fmt.Errorf("encode route segments: %w", err)
@@ -141,11 +146,13 @@ func (repository *DetourRepository) Analyze(
 		); err != nil {
 			return detour.Analysis{}, fmt.Errorf("scan detour analysis: %w", err)
 		}
+
 		result.SearchArea = append(result.SearchArea[:0], searchArea...)
 		result.ForbiddenArea = append(result.ForbiddenArea[:0], forbiddenArea...)
 		if !segmentOrder.Valid {
 			continue
 		}
+
 		values := []sql.NullFloat64{
 			startFraction,
 			endFraction,
@@ -164,6 +171,7 @@ func (repository *DetourRepository) Analyze(
 				)
 			}
 		}
+
 		pieces = append(pieces, insidePiece{
 			segmentOrder: int(segmentOrder.Int64),
 			start: detour.Anchor{
@@ -186,6 +194,7 @@ func (repository *DetourRepository) Analyze(
 			},
 		})
 	}
+
 	if err := rows.Err(); err != nil {
 		return detour.Analysis{}, fmt.Errorf("iterate detour analysis: %w", err)
 	}
@@ -213,6 +222,7 @@ func (repository *DetourRepository) Analyze(
 			Message: "cut does not affect the input route",
 		}
 	}
+
 	result.Intervals = mergeInsidePieces(pieces)
 	return result, nil
 }
@@ -230,14 +240,17 @@ func (repository *DetourRepository) Route(
 	if err := validateRoutingRequest(request); err != nil {
 		return detour.RoutingResult{}, err
 	}
+
 	trafficJSON, err := encodeTraffic(request.Traffic)
 	if err != nil {
 		return detour.RoutingResult{}, err
 	}
+
 	pointsJSON, err := encodeRoutingPoints(request.Points)
 	if err != nil {
 		return detour.RoutingResult{}, err
 	}
+
 	pairsJSON, err := json.Marshal(request.Pairs)
 	if err != nil {
 		return detour.RoutingResult{}, fmt.Errorf("encode detour point pairs: %w", err)
@@ -284,10 +297,12 @@ func (repository *DetourRepository) Route(
 	if _, err := transaction.Exec(ctx, createDetourCombinationsSQL, pairsJSON); err != nil {
 		return detour.RoutingResult{}, fmt.Errorf("create detour point combinations: %w", err)
 	}
+
 	rows, err := transaction.Query(ctx, findDetourPathsSQL)
 	if err != nil {
 		return detour.RoutingResult{}, fmt.Errorf("find detour paths: %w", err)
 	}
+
 	for rows.Next() {
 		var path detour.GraphPath
 		var encodedGeometry []byte
@@ -305,30 +320,37 @@ func (repository *DetourRepository) Route(
 			rows.Close()
 			return detour.RoutingResult{}, fmt.Errorf("decode detour path geometry: %w", err)
 		}
+
 		result.Paths = append(result.Paths, path)
 	}
+
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return detour.RoutingResult{}, fmt.Errorf("iterate detour paths: %w", err)
 	}
+
 	rows.Close()
 
 	topologyRows, err := transaction.Query(ctx, findDetourTopologyPairsSQL)
 	if err != nil {
 		return detour.RoutingResult{}, fmt.Errorf("diagnose detour topology paths: %w", err)
 	}
+
 	for topologyRows.Next() {
 		var pair detour.PointPair
 		if err := topologyRows.Scan(&pair.From, &pair.To); err != nil {
 			topologyRows.Close()
 			return detour.RoutingResult{}, fmt.Errorf("scan detour topology path: %w", err)
 		}
+
 		result.TopologyAvailablePairs = append(result.TopologyAvailablePairs, pair)
 	}
+
 	if err := topologyRows.Err(); err != nil {
 		topologyRows.Close()
 		return detour.RoutingResult{}, fmt.Errorf("iterate detour topology paths: %w", err)
 	}
+
 	topologyRows.Close()
 
 	// Segunda pasada. Los pares que la pasada principal descartó por un giro en U
@@ -440,26 +462,37 @@ func validateRoutingRequest(request detour.RoutingRequest) error {
 			Message: "traffic snapshot contains no segments",
 		}
 	}
+
 	pointIDs := make(map[int64]struct{}, len(request.Points))
 	for _, point := range request.Points {
-		if point.ID <= 0 || point.MaximumDistanceMeters <= 0 ||
-			math.IsNaN(point.DirectionDegrees) || math.IsInf(point.DirectionDegrees, 0) ||
-			math.IsNaN(point.Position.Latitude) || math.IsInf(point.Position.Latitude, 0) ||
-			math.IsNaN(point.Position.Longitude) || math.IsInf(point.Position.Longitude, 0) ||
-			point.Position.Latitude < -90 || point.Position.Latitude > 90 ||
-			point.Position.Longitude < -180 || point.Position.Longitude > 180 {
+		if point.ID <= 0 ||
+			point.MaximumDistanceMeters <= 0 ||
+			math.IsNaN(point.DirectionDegrees) ||
+			math.IsInf(point.DirectionDegrees, 0) ||
+			math.IsNaN(point.Position.Latitude) ||
+			math.IsInf(point.Position.Latitude, 0) ||
+			math.IsNaN(point.Position.Longitude) ||
+			math.IsInf(point.Position.Longitude, 0) ||
+			point.Position.Latitude < -90 ||
+			point.Position.Latitude > 90 ||
+			point.Position.Longitude < -180 ||
+			point.Position.Longitude > 180 {
 			return fmt.Errorf("route detour: invalid routing point %d", point.ID)
 		}
+
 		switch point.Role {
 		case detour.PointAnchor, detour.PointRequiredStop, detour.PointOptionalStop:
 		default:
 			return fmt.Errorf("route detour: routing point %d has invalid role %q", point.ID, point.Role)
 		}
+
 		if _, exists := pointIDs[point.ID]; exists {
 			return fmt.Errorf("route detour: duplicate routing point %d", point.ID)
 		}
+
 		pointIDs[point.ID] = struct{}{}
 	}
+
 	for _, pair := range request.Pairs {
 		if _, exists := pointIDs[pair.From]; !exists {
 			return fmt.Errorf("route detour: pair references unknown point %d", pair.From)
@@ -468,6 +501,7 @@ func validateRoutingRequest(request detour.RoutingRequest) error {
 			return fmt.Errorf("route detour: pair references unknown point %d", pair.To)
 		}
 	}
+
 	return nil
 }
 
@@ -485,6 +519,7 @@ func encodeTraffic(segments []traffic.Segment) ([]byte, error) {
 		}
 		collection.Append(feature)
 	}
+
 	encoded, err := json.Marshal(collection)
 	if err != nil {
 		return nil, fmt.Errorf("encode detour traffic: %w", err)
@@ -504,9 +539,11 @@ func defaultSpeedKPH(segments []traffic.Segment, fallback float64) float64 {
 			speeds = append(speeds, segment.SpeedKPH)
 		}
 	}
+
 	if len(speeds) == 0 {
 		return fallback
 	}
+
 	sort.Float64s(speeds)
 	middle := len(speeds) / 2
 	if len(speeds)%2 == 1 {
@@ -528,6 +565,7 @@ func encodeRoutingPoints(points []detour.RoutingPoint) ([]byte, error) {
 			"role":                    point.Role,
 		}
 	}
+
 	encoded, err := json.Marshal(values)
 	if err != nil {
 		return nil, fmt.Errorf("encode detour routing points: %w", err)
@@ -540,27 +578,24 @@ func readUnmatchedPoints(
 	transaction pgx.Tx,
 	points []detour.RoutingPoint,
 ) (detour.RoutingResult, error) {
-	rows, err := transaction.Query(ctx, `
-SELECT requested.id
-FROM detour_requested_points requested
-LEFT JOIN detour_points snapped ON snapped.pid = requested.id
-WHERE snapped.pid IS NULL
-ORDER BY requested.route_order
-`)
+	rows, err := transaction.Query(ctx, findUnmatchedDetourPointsSQL)
 	if err != nil {
 		return detour.RoutingResult{}, fmt.Errorf("find unmatched detour points: %w", err)
 	}
 	defer rows.Close()
+
 	byID := make(map[int64]detour.RoutingPoint, len(points))
 	for _, point := range points {
 		byID[point.ID] = point
 	}
+
 	var result detour.RoutingResult
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
 			return detour.RoutingResult{}, fmt.Errorf("scan unmatched detour point: %w", err)
 		}
+
 		point := byID[id]
 		switch point.Role {
 		case detour.PointAnchor:
@@ -579,6 +614,7 @@ ORDER BY requested.route_order
 			result.UnmatchedPointIDs = append(result.UnmatchedPointIDs, id)
 		}
 	}
+
 	if err := rows.Err(); err != nil {
 		return detour.RoutingResult{}, fmt.Errorf("iterate unmatched detour points: %w", err)
 	}
@@ -595,6 +631,7 @@ func mergeInsidePieces(pieces []insidePiece) []detour.AffectedInterval {
 	if len(pieces) == 0 {
 		return nil
 	}
+
 	result := []detour.AffectedInterval{{
 		Order: 0,
 		Entry: pieces[0].start,
@@ -614,6 +651,7 @@ func mergeInsidePieces(pieces []insidePiece) []detour.AffectedInterval {
 		}
 		previous = piece
 	}
+
 	return result
 }
 

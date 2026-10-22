@@ -50,6 +50,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	bottlenecksService, err := app.NewBottlenecksService(database)
+	if err != nil {
+		logger.Error("could not configure bottlenecks")
+		os.Exit(1)
+	}
+
 	handler := httpapi.NewHandler(
 		logger,
 		service,
@@ -59,7 +65,7 @@ func main() {
 		transfersService,
 		config.SimulationTimeout,
 		bunchingService,
-	)
+	).WithBottlenecks(bottlenecksService)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddress,
@@ -94,6 +100,7 @@ func main() {
 		config.DatabaseConnectTimeout,
 	)
 	defer cancel()
+
 	if err := server.Shutdown(shutdownContext); err != nil {
 		logger.Error("could not gracefully stop HTTP server", "error", err)
 		os.Exit(1)

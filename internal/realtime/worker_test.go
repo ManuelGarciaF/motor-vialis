@@ -49,6 +49,7 @@ func captureWithCount(n int) bunching.Capture {
 		c.Positions[i].Fresh = true
 		c.Positions[i].VehicleID = fmt.Sprint(i)
 	}
+
 	return c
 }
 func testWorker(t *testing.T, cap Capturer, repo bunching.Repository, logs *bytes.Buffer) *Worker {
@@ -64,6 +65,7 @@ func TestSequentialImmediateCaptureAndRecovery(t *testing.T) {
 	var log bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	var order []string
 	cap := &fakeCapturer{}
 	cap.call = func(ctx context.Context) (bunching.Capture, error) {
@@ -110,6 +112,7 @@ func TestSequentialImmediateCaptureAndRecovery(t *testing.T) {
 			t.Fatal("missing " + event)
 		}
 	}
+
 	if strings.Contains(log.String(), "private") || strings.Contains(log.String(), "password") {
 		t.Fatal("unsafe errors logged")
 	}
@@ -119,6 +122,7 @@ func TestCoverageWarningDoesNotDiscardOrResetBaseline(t *testing.T) {
 	var log bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	counts := []int{100, 20, 20, 100}
 	cap := &fakeCapturer{}
 	cap.call = func(context.Context) (bunching.Capture, error) { return captureWithCount(counts[cap.calls-1]), nil }
@@ -146,6 +150,7 @@ func TestMaintenanceRetriesAfterUTCRollover(t *testing.T) {
 	var log bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	now := time.Date(2026, 9, 30, 23, 59, 59, 0, time.UTC)
 	cap := &fakeCapturer{}
 	cap.call = func(context.Context) (bunching.Capture, error) { return captureWithCount(1), nil }
@@ -181,6 +186,7 @@ func TestInitialMaintenanceFailureRetries(t *testing.T) {
 	var log bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	cap := &fakeCapturer{call: func(context.Context) (bunching.Capture, error) { return captureWithCount(1), nil }}
 	repo := &fakeRepository{}
 	repo.maintain = func(context.Context, time.Time) (bunching.MaintenanceResult, error) {
@@ -242,6 +248,7 @@ func TestCancellationDuringStorage(t *testing.T) {
 	var log bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	cap := &fakeCapturer{call: func(context.Context) (bunching.Capture, error) { return captureWithCount(1), nil }}
 	repo := &fakeRepository{store: func(ctx context.Context, _ bunching.Capture) (bunching.StoreResult, error) {
 		cancel()

@@ -34,6 +34,7 @@ func TestStepNamesAreInPipelineOrder(t *testing.T) {
 	for index, definition := range definitions {
 		names[index] = definition.name
 	}
+
 	if !reflect.DeepEqual(names, expected) {
 		t.Fatalf("pasos = %q, se esperaba %q", names, expected)
 	}
@@ -215,6 +216,7 @@ func TestEmbeddedScriptsAreExecutable(t *testing.T) {
 			t.Errorf("%s está vacío", name)
 			continue
 		}
+
 		for _, line := range strings.Split(stripPsqlDirectives(text), "\n") {
 			if strings.HasPrefix(strings.TrimSpace(line), `\`) {
 				t.Errorf("%s conserva la directiva %q", name, line)
@@ -245,11 +247,13 @@ func TestDDLModelsGCBAEquivalencesByStableGTFSIdentity(t *testing.T) {
 			t.Errorf("la tabla de equivalencias no contiene %q", required)
 		}
 	}
+
 	for _, removed := range []string{"confianza", "evidencia", "metodo", "creado_en"} {
 		if strings.Contains(table, removed) {
 			t.Errorf("la tabla de equivalencias conserva la columna innecesaria %q", removed)
 		}
 	}
+
 	if strings.Contains(table, "REFERENCES vialis.recorridos") {
 		t.Error("la equivalencia no sobreviviría una recarga GTFS si referencia recorridos")
 	}

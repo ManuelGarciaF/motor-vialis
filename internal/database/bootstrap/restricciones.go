@@ -56,6 +56,7 @@ func (e *executor) importStreetRestrictions(ctx context.Context) error {
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("leer restricciones de giro con osmium: %w", err)
 	}
+
 	restrictions, parseErr := readRestrictionsOPL(output)
 	if parseErr != nil {
 		// Drain what is left so osmium does not block on a full pipe.
@@ -71,10 +72,12 @@ func (e *executor) importStreetRestrictions(ctx context.Context) error {
 	if err := e.runScript(ctx, scripts.CrearRestriccionesRaw); err != nil {
 		return err
 	}
+
 	copied, err := e.copyStreetRestrictions(ctx, restrictions)
 	if err != nil {
 		return err
 	}
+
 	e.logger.Info("restricciones de giro importadas", "relaciones", copied)
 	return e.runScript(ctx, scripts.TransformarRestricciones)
 }
@@ -91,6 +94,7 @@ func (e *executor) copyStreetRestrictions(
 		if err != nil {
 			return 0, fmt.Errorf("codificar etiquetas de r%d: %w", restriction.RelationID, err)
 		}
+
 		members := restriction.Members
 		if members == nil {
 			members = []restrictionMember{}
@@ -99,8 +103,10 @@ func (e *executor) copyStreetRestrictions(
 		if err != nil {
 			return 0, fmt.Errorf("codificar miembros de r%d: %w", restriction.RelationID, err)
 		}
+
 		rows = append(rows, []any{restriction.RelationID, tags, encodedMembers})
 	}
+
 	copied, err := e.connection.CopyFrom(
 		ctx,
 		pgx.Identifier{SchemaName, "calles_restricciones_raw"},
@@ -125,12 +131,15 @@ func readRestrictionsOPL(reader io.Reader) ([]streetRestriction, error) {
 		if !strings.HasPrefix(line, "r") {
 			continue
 		}
+
 		restriction, err := parseRelationOPL(line)
 		if err != nil {
 			return nil, fmt.Errorf("línea OPL %d: %w", number, err)
 		}
+
 		restrictions = append(restrictions, restriction)
 	}
+
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("leer OPL de restricciones: %w", err)
 	}
@@ -143,6 +152,7 @@ func parseRelationOPL(line string) (streetRestriction, error) {
 	if err != nil {
 		return streetRestriction{}, fmt.Errorf("id de relación %q: %w", fields[0], err)
 	}
+
 	restriction := streetRestriction{RelationID: id, Tags: map[string]string{}}
 	for _, field := range fields[1:] {
 		switch field[0] {
@@ -158,6 +168,7 @@ func parseRelationOPL(line string) (streetRestriction, error) {
 			restriction.Members = members
 		}
 	}
+
 	return restriction, nil
 }
 
@@ -165,21 +176,26 @@ func parseTagsOPL(field string, tags map[string]string) error {
 	if field == "" {
 		return nil
 	}
+
 	for _, pair := range strings.Split(field, ",") {
 		key, value, found := strings.Cut(pair, "=")
 		if !found {
 			return fmt.Errorf("etiqueta sin '=': %q", pair)
 		}
+
 		decodedKey, err := unescapeOPL(key)
 		if err != nil {
 			return err
 		}
+
 		decodedValue, err := unescapeOPL(value)
 		if err != nil {
 			return err
 		}
+
 		tags[decodedKey] = decodedValue
 	}
+
 	return nil
 }
 
@@ -189,26 +205,32 @@ func parseMembersOPL(field string) ([]restrictionMember, error) {
 	if field == "" {
 		return nil, nil
 	}
+
 	var members []restrictionMember
 	for _, item := range strings.Split(field, ",") {
 		reference, role, found := strings.Cut(item, "@")
 		if !found || reference == "" {
 			return nil, fmt.Errorf("miembro sin '@': %q", item)
 		}
+
 		memberType, known := memberTypes[reference[0]]
 		if !known {
 			return nil, fmt.Errorf("tipo de miembro desconocido: %q", item)
 		}
+
 		ref, err := strconv.ParseInt(reference[1:], 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("referencia de miembro %q: %w", item, err)
 		}
+
 		decodedRole, err := unescapeOPL(role)
 		if err != nil {
 			return nil, err
 		}
+
 		members = append(members, restrictionMember{Type: memberType, Ref: ref, Role: decodedRole})
 	}
+
 	return members, nil
 }
 
@@ -218,6 +240,7 @@ func unescapeOPL(value string) (string, error) {
 	if !strings.Contains(value, "%") {
 		return value, nil
 	}
+
 	var builder strings.Builder
 	for {
 		start := strings.IndexByte(value, '%')
@@ -225,15 +248,18 @@ func unescapeOPL(value string) (string, error) {
 			builder.WriteString(value)
 			return builder.String(), nil
 		}
+
 		builder.WriteString(value[:start])
 		end := strings.IndexByte(value[start+1:], '%')
 		if end < 0 {
 			return "", errors.New("escape OPL sin cerrar: " + value)
 		}
+
 		code, err := strconv.ParseUint(value[start+1:start+1+end], 16, 32)
 		if err != nil {
 			return "", fmt.Errorf("escape OPL inválido en %q: %w", value, err)
 		}
+
 		builder.WriteRune(rune(code))
 		value = value[start+end+2:]
 	}

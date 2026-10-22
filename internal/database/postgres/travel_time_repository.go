@@ -62,6 +62,7 @@ func (repository *TravelTimeRepository) FindSegmentReferences(
 				err,
 			)
 		}
+
 		paths[index] = string(encodedPath)
 	}
 
@@ -147,6 +148,7 @@ func (repository *TravelTimeRepository) FindSegmentReferences(
 			)
 		}
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate segment references: %w", err)
 	}
@@ -155,6 +157,7 @@ func (repository *TravelTimeRepository) FindSegmentReferences(
 	for _, segment := range byOrder {
 		result = append(result, *segment)
 	}
+
 	return result, nil
 }
 

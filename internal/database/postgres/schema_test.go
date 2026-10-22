@@ -13,6 +13,7 @@ func TestQueryInSchema(t *testing.T) {
 			t.Fatalf("schema=%q: %s", tc.schema, got)
 		}
 	}
+
 	if got := queryInSchema("SELECT $1 FROM realtime_positions_batch", "fixture"); got != "SELECT $1 FROM realtime_positions_batch" {
 		t.Fatal(got)
 	}

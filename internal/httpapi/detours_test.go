@@ -94,7 +94,8 @@ func TestCreateDetourReturnsVariantComparisonUncoveredStopsAndTrace(t *testing.T
 	}
 	if got.Trace.Decision.Criterion != detour.CriterionShortestTime ||
 		got.Trace.Decision.TrafficTravelSeconds != 125.5 ||
-		got.Trace.GraphLoadID != 3 || got.Trace.Traffic.TrafficAgeSeconds != 90 {
+		got.Trace.GraphLoadID != 3 ||
+		got.Trace.Traffic.TrafficAgeSeconds != 90 {
 		t.Fatalf("trace = %#v", got.Trace)
 	}
 	if planner.received.Criterion != detour.CriterionShortestTime ||

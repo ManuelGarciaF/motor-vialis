@@ -48,15 +48,18 @@ func (r *BunchingRepository) FindCurrent(ctx context.Context, id int64, now time
 	if err != nil {
 		return result, err
 	}
+
 	capture, err := readBunchingCaptureState(ctx, tx, r.schema, now, policy)
 	if err != nil {
 		return result, err
 	}
+
 	result.LatestCaptureAt, result.CaptureAgeSeconds = capture.latestCaptureAt, capture.captureAgeSeconds
 	result.Partial, result.Stale = capture.partial, capture.stale
 	if result.Partial || result.Stale || !result.Mapped {
 		return result, tx.Commit(ctx)
 	}
+
 	rows, err := tx.Query(ctx, r.sql(findCurrentBunchingSQL),
 		route, result.Direction, hash, policy.MinimumObservations,
 		now.Add(-policy.MaximumAge), now.Add(policy.MaximumFutureSkew),
@@ -65,14 +68,17 @@ func (r *BunchingRepository) FindCurrent(ctx context.Context, id int64, now time
 	if err != nil {
 		return result, err
 	}
+
 	for rows.Next() {
 		event, err := scanEvent(rows)
 		if err != nil {
 			rows.Close()
 			return result, err
 		}
+
 		result.Pairs = append(result.Pairs, bunching.ActivePair{Event: event, RepresentativePoint: bunching.Midpoint(event.PointA, event.PointB), DurationSeconds: event.LastObservedAt.Sub(event.FirstObservedAt).Seconds(), ConfirmationPending: event.MissingCaptures > 0})
 	}
+
 	err = rows.Err()
 	rows.Close()
 	if err != nil {

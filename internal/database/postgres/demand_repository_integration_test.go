@@ -21,6 +21,7 @@ func TestDemandRepositoryIntegration(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
@@ -49,11 +50,8 @@ func TestDemandRepositoryIntegration(t *testing.T) {
 	cellIDs := make([]string, len(stops))
 	for index, stop := range stops {
 		if err := transaction.QueryRow(ctx, `
-            SELECT h3_lat_lng_to_cell(
-                ST_SetSRID(ST_MakePoint($1, $2), 4326),
-                8
-            )::TEXT
-        `, stop.Position.Longitude, stop.Position.Latitude).Scan(&cellIDs[index]); err != nil {
+			SELECT h3_lat_lng_to_cell(ST_SetSRID(ST_MakePoint($1, $2), 4326), 8)::TEXT
+		`, stop.Position.Longitude, stop.Position.Latitude).Scan(&cellIDs[index]); err != nil {
 			t.Fatalf("calculate fixture cell %s: %v", stop.ID, err)
 		}
 	}
@@ -62,24 +60,24 @@ func TestDemandRepositoryIntegration(t *testing.T) {
 		t.Helper()
 		stop := stops[index]
 		_, err := transaction.Exec(ctx, `
-            INSERT INTO vialis.hexagonos_viajes (
-                indice_h3,
-                punto_maxima_concurrencia,
-                concurrencia
-            )
-            VALUES (
-                $1::h3index,
-                ST_Project(
-                    ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,
-                    $4::DOUBLE PRECISION,
-                    0::DOUBLE PRECISION
-                )::geometry,
-                1
-            )
-            ON CONFLICT (indice_h3) DO UPDATE
-            SET punto_maxima_concurrencia = EXCLUDED.punto_maxima_concurrencia,
-                concurrencia = EXCLUDED.concurrencia
-        `, cellIDs[index], stop.Position.Longitude, stop.Position.Latitude, hotspotDistance)
+			INSERT INTO vialis.hexagonos_viajes (
+			    indice_h3,
+			    punto_maxima_concurrencia,
+			    concurrencia
+			)
+			VALUES (
+			    $1::h3index,
+			    ST_Project(ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, $4::DOUBLE PRECISION, 0::DOUBLE PRECISION)::geometry,
+			    1
+			)
+			ON CONFLICT (
+			    indice_h3
+			)
+			DO UPDATE
+			SET
+			    punto_maxima_concurrencia = EXCLUDED.punto_maxima_concurrencia,
+			    concurrencia = EXCLUDED.concurrencia
+		`, cellIDs[index], stop.Position.Longitude, stop.Position.Latitude, hotspotDistance)
 		if err != nil {
 			t.Fatalf("insert fixture hexagon %s: %v", stop.ID, err)
 		}
@@ -107,15 +105,23 @@ func TestDemandRepositoryIntegration(t *testing.T) {
 	insertMatrixDemand := func(origin, destination int, trips float64) {
 		t.Helper()
 		_, err := transaction.Exec(ctx, `
-            INSERT INTO vialis.matriz_origen_destino (
-                h3_origen,
-                h3_destino,
-                cantidad_viajes
-            )
-            VALUES ($1::h3index, $2::h3index, $3)
-            ON CONFLICT (h3_origen, h3_destino) DO UPDATE
-            SET cantidad_viajes = EXCLUDED.cantidad_viajes
-        `, cellIDs[origin], cellIDs[destination], trips)
+			INSERT INTO vialis.matriz_origen_destino (
+			    h3_origen,
+			    h3_destino,
+			    cantidad_viajes
+			)
+			VALUES (
+			    $1::h3index,
+			    $2::h3index,
+			    $3
+			)
+			ON CONFLICT (
+			    h3_origen,
+			    h3_destino
+			)
+			DO UPDATE
+			SET cantidad_viajes = EXCLUDED.cantidad_viajes
+		`, cellIDs[origin], cellIDs[destination], trips)
 		if err != nil {
 			t.Fatalf("insert fixture matrix demand: %v", err)
 		}
@@ -156,6 +162,7 @@ func assertCandidate(
 			return
 		}
 	}
+
 	t.Fatalf("candidate %s/%s not found", stopID, cellID)
 }
 
@@ -177,5 +184,6 @@ func assertPairDemand(
 			return
 		}
 	}
+
 	t.Fatalf("pair demand %s->%s not found", origin, destination)
 }

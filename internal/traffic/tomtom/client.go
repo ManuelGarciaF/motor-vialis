@@ -64,10 +64,14 @@ func NewClient(options Options) (*Client, error) {
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
 		return nil, fmt.Errorf("tomtom base URL is invalid")
 	}
-	if options.RequestTimeout <= 0 || options.CacheTTL <= 0 ||
-		options.CacheEntries <= 0 || options.CacheBytes <= 0 ||
-		options.RequestsPerSecond <= 0 || options.MaximumTiles <= 0 ||
-		options.Limits.MaximumTileBytes <= 0 || options.Limits.MaximumFeatures <= 0 {
+	if options.RequestTimeout <= 0 ||
+		options.CacheTTL <= 0 ||
+		options.CacheEntries <= 0 ||
+		options.CacheBytes <= 0 ||
+		options.RequestsPerSecond <= 0 ||
+		options.MaximumTiles <= 0 ||
+		options.Limits.MaximumTileBytes <= 0 ||
+		options.Limits.MaximumFeatures <= 0 {
 		return nil, fmt.Errorf("tomtom limits and durations must be positive")
 	}
 	if options.Margin < 0 || options.Margin > 0.1 {
@@ -109,6 +113,7 @@ func (client *Client) Snapshot(ctx context.Context, tiles []Tile) (Snapshot, err
 			Message: "TOMTOM_API_KEY is empty",
 		}
 	}
+
 	ordered, err := normalizeTiles(tiles)
 	if err != nil {
 		return Snapshot{}, err
@@ -147,6 +152,7 @@ func (client *Client) Snapshot(ctx context.Context, tiles []Tile) (Snapshot, err
 					if waitErr := client.gate.wait(groupContext); waitErr != nil {
 						return cacheEntry{}, waitErr
 					}
+
 					apiRequests.Add(1)
 					return client.fetch(groupContext, key)
 				},
@@ -154,11 +160,13 @@ func (client *Client) Snapshot(ctx context.Context, tiles []Tile) (Snapshot, err
 			if loadErr != nil {
 				return loadErr
 			}
+
 			segments, decodeErr := Decode(entry.data, tile, client.limits)
 			if decodeErr != nil {
 				client.cache.invalidate(key)
 				return decodeErr
 			}
+
 			results[index] = tileResult{
 				segments:  segments,
 				fetchedAt: entry.fetchedAt,
@@ -167,6 +175,7 @@ func (client *Client) Snapshot(ctx context.Context, tiles []Tile) (Snapshot, err
 			return nil
 		})
 	}
+
 	if err := group.Wait(); err != nil {
 		var providerError *Error
 		if errors.As(err, &providerError) {
@@ -194,6 +203,7 @@ func (client *Client) Snapshot(ctx context.Context, tiles []Tile) (Snapshot, err
 		}
 		snapshot.Segments = append(snapshot.Segments, result.segments...)
 	}
+
 	snapshot.TrafficAge = now.Sub(snapshot.FetchedAt)
 	if snapshot.TrafficAge < 0 {
 		snapshot.TrafficAge = 0
@@ -204,6 +214,7 @@ func (client *Client) Snapshot(ctx context.Context, tiles []Tile) (Snapshot, err
 			Message: "traffic snapshot exceeds its maximum age",
 		}
 	}
+
 	client.logger.InfoContext(ctx, "TomTom traffic snapshot",
 		"tiles", snapshot.TileCount,
 		"apiRequests", apiRequests.Load(),
@@ -225,6 +236,7 @@ func (client *Client) fetch(ctx context.Context, key cacheKey) (cacheEntry, erro
 	if err != nil {
 		return cacheEntry{}, &Error{Code: ErrorUnavailable, Message: "cannot build TomTom URL", Cause: err}
 	}
+
 	query := endpoint.Query()
 	query.Set("key", client.apiKey)
 	query.Set("margin", strconv.FormatFloat(client.margin, 'f', -1, 64))
@@ -235,6 +247,7 @@ func (client *Client) fetch(ctx context.Context, key cacheKey) (cacheEntry, erro
 	if err != nil {
 		return cacheEntry{}, &Error{Code: ErrorUnavailable, Message: "cannot create TomTom request", Cause: err}
 	}
+
 	response, err := client.httpClient.Do(request)
 	if err != nil {
 		cause := redactError(err, client.apiKey)
@@ -248,6 +261,7 @@ func (client *Client) fetch(ctx context.Context, key cacheKey) (cacheEntry, erro
 		}
 	}
 	defer response.Body.Close()
+
 	if response.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 		return cacheEntry{}, &Error{
@@ -259,6 +273,7 @@ func (client *Client) fetch(ctx context.Context, key cacheKey) (cacheEntry, erro
 			),
 		}
 	}
+
 	data, err := io.ReadAll(io.LimitReader(
 		response.Body,
 		int64(client.limits.MaximumTileBytes)+1,
@@ -276,6 +291,7 @@ func (client *Client) fetch(ctx context.Context, key cacheKey) (cacheEntry, erro
 			client.limits.MaximumTileBytes,
 		), nil)
 	}
+
 	fetchedAt := client.now()
 	return cacheEntry{
 		key:       key,
@@ -295,14 +311,17 @@ func normalizeTiles(tiles []Tile) ([]Tile, error) {
 		if zoom != nil && tile.Zoom != *zoom {
 			return nil, fmt.Errorf("traffic snapshot tiles must share one zoom")
 		}
+
 		value := tile.Zoom
 		zoom = &value
 		seen[tile] = struct{}{}
 	}
+
 	result := make([]Tile, 0, len(seen))
 	for tile := range seen {
 		result = append(result, tile)
 	}
+
 	sort.Slice(result, func(left, right int) bool {
 		if result[left].Y != result[right].Y {
 			return result[left].Y < result[right].Y
@@ -316,6 +335,7 @@ func validateTile(tile Tile) error {
 	if tile.Zoom < 0 || tile.Zoom > 22 {
 		return fmt.Errorf("tile %s has invalid zoom", tile)
 	}
+
 	size := 1 << tile.Zoom
 	if tile.X < 0 || tile.X >= size || tile.Y < 0 || tile.Y >= size {
 		return fmt.Errorf("tile %s has invalid coordinates", tile)
@@ -335,6 +355,7 @@ func redactError(err error, secret string) error {
 	if secret == "" {
 		return err
 	}
+
 	message := strings.ReplaceAll(err.Error(), secret, "[REDACTED]")
 	message = strings.ReplaceAll(message, url.QueryEscape(secret), "[REDACTED]")
 	return errors.New(message)
@@ -364,8 +385,10 @@ func (gate *rateGate) wait(ctx context.Context) error {
 	if delay <= 0 {
 		return nil
 	}
+
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()

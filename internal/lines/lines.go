@@ -270,10 +270,12 @@ func validateStoredSegments(exported route.Route, hasGaps bool) error {
 		probe.Jurisdiction = route.JurisdictionCABA
 		return route.Validate(probe)
 	}
+
 	for index := 0; index < len(exported.Stops)-1; index++ {
 		if exported.Stops[index].PathToNext == nil {
 			continue
 		}
+
 		next := exported.Stops[index+1]
 		next.PathToNext = nil
 		probe := route.Route{
@@ -284,6 +286,7 @@ func validateStoredSegments(exported route.Route, hasGaps bool) error {
 			return rebaseSegmentError(err, index)
 		}
 	}
+
 	return nil
 }
 
@@ -294,6 +297,7 @@ func rebaseSegmentError(err error, index int) error {
 	if !errors.As(err, &validationError) {
 		return err
 	}
+
 	field := validationError.Field
 	for offset := range 2 {
 		probeField := fmt.Sprintf("route.stops[%d]", offset)
@@ -302,6 +306,7 @@ func rebaseSegmentError(err error, index int) error {
 			break
 		}
 	}
+
 	return &route.ValidationError{Field: field, Message: validationError.Message}
 }
 
@@ -317,5 +322,6 @@ func uniqueStopIDs(stops []StoredStop) []string {
 		seen[id] = struct{}{}
 		ids[index] = id
 	}
+
 	return ids
 }

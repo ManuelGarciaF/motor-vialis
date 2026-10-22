@@ -76,5 +76,6 @@ func AlignStoredPathEndpoints(input *route.Route, toleranceMeters float64) error
 		path.Positions[0] = origin
 		path.Positions[len(path.Positions)-1] = destination
 	}
+
 	return nil
 }

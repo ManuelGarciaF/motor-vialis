@@ -65,6 +65,7 @@ func Validate(input Route) error {
 				Message: "must be unique within the route",
 			}
 		}
+
 		stopIDs[stopID] = struct{}{}
 		if err := validatePosition(field+".position", stop.Position); err != nil {
 			return err
@@ -81,6 +82,7 @@ func Validate(input Route) error {
 					Message: "must be omitted for the last stop",
 				}
 			}
+
 			continue
 		}
 		if stop.PathToNext == nil {
@@ -98,6 +100,7 @@ func Validate(input Route) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -113,6 +116,7 @@ func validatePath(
 			Message: "must contain at least two positions",
 		}
 	}
+
 	for index, position := range path.Positions {
 		if err := validatePosition(
 			fmt.Sprintf("%s.coordinates[%d]", field, index),
@@ -161,6 +165,7 @@ func validatePath(
 			path.Positions[index+1],
 		)
 	}
+
 	if lengthMeters <= 0 {
 		return &ValidationError{
 			Field:   field,

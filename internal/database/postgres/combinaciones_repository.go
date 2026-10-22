@@ -114,6 +114,7 @@ func (repository *CombinacionesRepository) FindRanking(
 		maximum = rowMaximum
 		combinations = append(combinations, combination)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, 0, fmt.Errorf("read combination ranking: %w", err)
 	}

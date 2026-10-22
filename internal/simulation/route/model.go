@@ -41,6 +41,7 @@ func (line LineString) MarshalJSON() ([]byte, error) {
 			position.Latitude,
 		}
 	}
+
 	return json.Marshal(struct {
 		Type        string       `json:"type"`
 		Coordinates [][2]float64 `json:"coordinates"`
@@ -77,11 +78,13 @@ func (line *LineString) UnmarshalJSON(data []byte) error {
 				index,
 			)
 		}
+
 		positions[index] = Position{
 			Longitude: coordinate[0],
 			Latitude:  coordinate[1],
 		}
 	}
+
 	line.Positions = positions
 	return nil
 }

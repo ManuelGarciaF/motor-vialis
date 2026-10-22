@@ -69,6 +69,7 @@ func TestServicePlanAppliesCriterionAndComparesCompleteVariant(t *testing.T) {
 			for index, stop := range got.Variant.Stops {
 				gotStopIDs[index] = stop.ID
 			}
+
 			if !reflect.DeepEqual(gotStopIDs, testCase.wantStops) {
 				t.Fatalf("variant stops = %v, want %v", gotStopIDs, testCase.wantStops)
 			}
@@ -79,6 +80,7 @@ func TestServicePlanAppliesCriterionAndComparesCompleteVariant(t *testing.T) {
 					t.Fatalf("uncovered baseline = %#v", stop.Baseline)
 				}
 			}
+
 			if !slices.Equal(gotOmitted, testCase.wantOmitted) {
 				t.Fatalf("omitted = %v, want %v", gotOmitted, testCase.wantOmitted)
 			}
@@ -121,6 +123,7 @@ func TestServicePlanCanOmitOptionalTerminalStops(t *testing.T) {
 					result.Paths[index].TravelSeconds = 1
 				}
 			}
+
 			return result
 		},
 	}
@@ -359,6 +362,7 @@ func (comparator *recordingComparator) CompareDetour(
 	for order, stop := range input.Baseline.Stops {
 		baseline[order] = simulation.StopResult{StopOrder: order, StopID: stop.ID}
 	}
+
 	return simulation.Comparison{
 		Baseline: simulation.Result{ByStop: baseline},
 	}, nil
@@ -369,6 +373,7 @@ func fullyConnectedRouting(request RoutingRequest) RoutingResult {
 	for _, point := range request.Points {
 		byID[point.ID] = point
 	}
+
 	result := RoutingResult{
 		TopologyAvailablePairs: append([]PointPair(nil), request.Pairs...),
 		Trace:                  GraphTrace{CandidateEdges: 10},
@@ -399,6 +404,7 @@ func fullyConnectedRouting(request RoutingRequest) RoutingResult {
 			}},
 		})
 	}
+
 	return result
 }
 
@@ -412,6 +418,7 @@ func serviceTestInput() Input {
 	for index := 0; index < len(stops)-1; index++ {
 		stops[index].PathToNext = straightLine(stops[index].Position, stops[index+1].Position)
 	}
+
 	return Input{
 		Route: route.Route{Jurisdiction: route.JurisdictionCABA, Stops: stops},
 		Cut: Cut{Lines: []route.LineString{{Positions: []route.Position{

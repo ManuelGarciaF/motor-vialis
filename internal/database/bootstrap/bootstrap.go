@@ -110,6 +110,7 @@ func steps() []step {
 						return err
 					}
 				}
+
 				return nil
 			},
 		},
@@ -131,6 +132,7 @@ func steps() []step {
 				if err := e.runScript(ctx, scripts.CrearViajesRaw); err != nil {
 					return err
 				}
+
 				path := filepath.Join(e.dataDirectory, viajesFile.FileName)
 				_, err := e.copyFile(ctx, viajesFile, path)
 				return err
@@ -213,6 +215,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, options Options) error {
 		if err := definition.run(ctx, e); err != nil {
 			return fmt.Errorf("paso %d (%s): %w", number, definition.name, err)
 		}
+
 		logger.Info(
 			"paso terminado",
 			"paso", number,
@@ -220,6 +223,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, options Options) error {
 			"duracion", time.Since(stepStart).Round(time.Millisecond).String(),
 		)
 	}
+
 	logger.Info(
 		"base de datos inicializada",
 		"duracion", time.Since(start).Round(time.Second).String(),
@@ -246,6 +250,7 @@ func (e *executor) checkFiles() error {
 			return fmt.Errorf("falta %s en PATH: %w", command, err)
 		}
 	}
+
 	if _, err := pgx.ParseConfig(e.databaseURL); err != nil {
 		return fmt.Errorf("interpretar DATABASE_URL para osm2pgrouting: %w", err)
 	}
@@ -254,6 +259,7 @@ func (e *executor) checkFiles() error {
 	for _, file := range gtfsFiles {
 		paths = append(paths, filepath.Join(e.dataDirectory, GTFSDirectory, file.FileName))
 	}
+
 	for _, path := range paths {
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf(
@@ -264,6 +270,7 @@ func (e *executor) checkFiles() error {
 			)
 		}
 	}
+
 	return nil
 }
 
@@ -284,8 +291,10 @@ func (e *executor) importStreets(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("crear configuración de osm2pgrouting: %w", err)
 	}
+
 	mapConfigPath := mapConfig.Name()
 	defer os.Remove(mapConfigPath)
+
 	if _, err := mapConfig.WriteString(scripts.CallesMapConfig); err != nil {
 		mapConfig.Close()
 		return fmt.Errorf("escribir configuración de osm2pgrouting: %w", err)
@@ -300,6 +309,7 @@ func (e *executor) importStreets(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("consultar versión de osm2pgrouting: %w", err)
 	}
+
 	dataTimeOutput, err := exec.CommandContext(
 		ctx,
 		"osmium", "fileinfo", "-e", "-g", "data.timestamp.last", e.streetsFile,
@@ -307,6 +317,7 @@ func (e *executor) importStreets(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("consultar fecha de datos OSM con osmium: %w", err)
 	}
+
 	transform, err := streetTransformScript(
 		e.streetsFile,
 		strings.TrimSpace(string(dataTimeOutput)),
@@ -347,6 +358,7 @@ func streetTransformScript(streetsFile, dataTime, toolVersion string) (string, e
 	if err != nil {
 		return "", fmt.Errorf("abrir %s: %w", streetsFile, err)
 	}
+
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
 		file.Close()
@@ -355,6 +367,7 @@ func streetTransformScript(streetsFile, dataTime, toolVersion string) (string, e
 	if err := file.Close(); err != nil {
 		return "", fmt.Errorf("cerrar %s: %w", streetsFile, err)
 	}
+
 	info, err := os.Stat(streetsFile)
 	if err != nil {
 		return "", fmt.Errorf("consultar %s: %w", streetsFile, err)
@@ -375,6 +388,7 @@ func streetTransformScript(streetsFile, dataTime, toolVersion string) (string, e
 	if dataTime == "" || toolVersion == "" {
 		return "", errors.New("faltan la fecha del extracto OSM o la versión de osm2pgrouting")
 	}
+
 	values := map[string]string{
 		"fuente_url":          "archivo local: " + filepath.Base(streetsFile),
 		"fecha_descarga":      info.ModTime().UTC().Format(time.RFC3339),
@@ -387,6 +401,7 @@ func streetTransformScript(streetsFile, dataTime, toolVersion string) (string, e
 	for name, value := range values {
 		transform = strings.ReplaceAll(transform, ":'"+name+"'", postgresLiteral(value))
 	}
+
 	return transform, nil
 }
 
@@ -395,6 +410,7 @@ func postgresLiteral(value string) string {
 	for strings.Contains(value, tag) {
 		tag = "$" + tag
 	}
+
 	return tag + value + tag
 }
 
@@ -404,6 +420,7 @@ func (e *executor) prepareSchema(ctx context.Context, reset bool) error {
 	if err != nil {
 		return err
 	}
+
 	drop, err := resolveExistingSchema(exists, reset)
 	if err != nil {
 		return err
@@ -411,8 +428,11 @@ func (e *executor) prepareSchema(ctx context.Context, reset bool) error {
 	if !drop {
 		return nil
 	}
+
 	e.logger.Warn("borrando el esquema existente", "esquema", SchemaName)
-	_, err = e.connection.Exec(ctx, "DROP SCHEMA "+SchemaName+" CASCADE")
+	_, err = e.connection.Exec(ctx, `
+		DROP SCHEMA
+	`+SchemaName+" CASCADE")
 	if err != nil {
 		return fmt.Errorf("borrar el esquema %s: %w", SchemaName, err)
 	}
@@ -435,7 +455,9 @@ func (e *executor) schemaExists(ctx context.Context) (bool, error) {
 	var exists bool
 	err := e.connection.QueryRow(
 		ctx,
-		"SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
+		`
+			SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)
+		`,
 		SchemaName,
 	).Scan(&exists)
 	if err != nil {
@@ -454,6 +476,7 @@ func (e *executor) runScript(ctx context.Context, script string) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -478,6 +501,7 @@ func splitStandaloneStatements(script string) []string {
 		if len(current) == 0 {
 			return
 		}
+
 		chunk := strings.Join(current, "\n")
 		current = nil
 		if strings.TrimSpace(chunk) != "" {
@@ -490,8 +514,10 @@ func splitStandaloneStatements(script string) []string {
 			chunks = append(chunks, strings.TrimSpace(line))
 			continue
 		}
+
 		current = append(current, line)
 	}
+
 	flush()
 	return chunks
 }
@@ -519,6 +545,7 @@ func (e *executor) copyFile(ctx context.Context, file csvFile, path string) (int
 		if time.Since(lastReport) < progressInterval {
 			return
 		}
+
 		lastReport = time.Now()
 		e.logger.Info(
 			"importación en curso",
@@ -536,6 +563,7 @@ func (e *executor) copyFile(ctx context.Context, file csvFile, path string) (int
 	if err != nil {
 		return 0, fmt.Errorf("copiar %s en %s: %w", file.FileName, file.Table, err)
 	}
+
 	e.logger.Info(
 		"importación terminada",
 		"archivo", file.FileName,
@@ -565,6 +593,7 @@ func stripPsqlDirectives(script string) string {
 			lines[index] = ""
 		}
 	}
+
 	return strings.Join(lines, "\n")
 }
 
@@ -591,6 +620,7 @@ func WaitForDatabase(
 		if err == nil {
 			return pool, nil
 		}
+
 		lastErr = err
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -601,6 +631,7 @@ func WaitForDatabase(
 				budget.Round(time.Second), lastErr,
 			)
 		}
+
 		logger.Info(
 			"esperando a que la base acepte conexiones",
 			"intento", attempt,

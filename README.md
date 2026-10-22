@@ -2,6 +2,13 @@
 
 Servicio REST en Go para el motor de simulación de Vialis.
 
+## Orientación del código
+
+El [mapa del código](docs/mapa_codigo.md) describe procesos, responsabilidades,
+consultas SQL y rutas de lectura, incluida la separación entre H0011 operativo
+y H0012 experimental. La [especificación funcional](docs/arquitectura_motor.md)
+y el [contrato HTTP](docs/openapi.yaml) documentan el comportamiento público.
+
 ## Levantar la base de datos
 
 ```bash
@@ -177,9 +184,10 @@ El contrato completo está en `docs/openapi.yaml`.
   opcionalmente por hora.
 - `POST /simulations`: simula una ruta propuesta.
 - `POST /comparisons`: simula dos rutas y devuelve la diferencia entre ambas.
-- `POST /detours`: recibe `route`, un único `cut` GeoJSON `LineString` y
-  `criterion` (`MENOR_TIEMPO` o `MENOR_PARADAS_PERDIDAS`); devuelve la variante,
+- `POST /detours`: recibe `route`, un `cut` GeoJSON `LineString` o `MultiLineString`
+  y `criterion` (`MENOR_TIEMPO` o `MENOR_PARADAS_PERDIDAS`); devuelve la variante,
   sus paradas no cubiertas, la comparación y la trazabilidad de tráfico/grafo.
+  Funcionamiento y operación: [RF05 — Desvíos](docs/rf05_desvios.md).
 
 Las líneas propias de un usuario las persiste otro servicio: acá sólo se leen
 las que cargó la ETL de GTFS.
@@ -198,7 +206,6 @@ go run ./cmd/realtime-worker -interval=1m
 
 Ejecutar una sola instancia. Con la migración de fase 4 aplicada, también
 mantiene eventos de proximidad. Pasos/headways/CV fueron descartados. Ver
-[alcance y decisiones](docs/plan_h0011_aglutinacion.md) y
 [operación y API](docs/h0011_aglutinaciones.md).
 
 - `GET /lines/{id}/bunching`: pares actuales confirmados y resumen de recurrencia semanal del recorrido/sentido.
@@ -214,6 +221,58 @@ mantiene eventos de proximidad. Pasos/headways/CV fueron descartados. Ver
 - `GET /bunching`: eventos confirmados de todas las líneas mapeadas, abiertos e
   históricos; filtros `from`, `to`, `state`, `limit`, `offset`. Abierto no implica
   activo: la respuesta distingue frescura y falta de confirmación.
+
+## Productor experimental H0012
+
+H0012 dispone de recepción incremental, replay del matching al cerrar secuencias,
+persistencia transaccional y ciclo independiente que corre siempre en
+`realtime-worker`, junto con captura y aglutinaciones. No hay flags de habilitación,
+backfill ni archivo GPS adicional. No aplica migraciones automáticamente.
+
+Las cinco tablas operacionales `bottlenecks_*` se definen en `sql/ddl.sql` y ya están aplicadas
+en la base local. `go run ./cmd/realtime-worker` inicializa automáticamente su
+configuración operacional en el primer arranque, sin histórico, y recupera el
+checkpoint en los siguientes. Parámetros de medición, cadencia y recursos están
+en `internal/config/parameters.go`; la política persistida debe coincidir con
+config y nunca se sobrescribe al reiniciar.
+
+Decisiones, funcionamiento y operación: [H0012 — Cuellos de botella](docs/h0012_cuellos_botella.md).
+La validación operacional sostenida y la calibración siguen pendientes.
+
+### API de detección experimental
+
+`GET /bottlenecks?from=2026-10-21T18:00:00-03:00&to=2026-10-21T20:00:00-03:00`
+lee sectores con **≥2 pasajes completos a <6 km/h** dentro de `[from,to)`, por
+entrada estimada. `from`/`to` son obligatorios; admite `line` (etiqueta exacta) y
+`bbox`. Devuelve geometría, conteos, porcentaje lento y velocidad mediana;
+sin límite de sectores, IDs de unidades ni GPS individuales.
+Mantiene detenciones y extremos señalados. Cuenta pasajes, no unidades/fechas
+independientes. No consolida entre líneas ni ofrece Top 10; una lista vacía no
+acredita ausencia de problemas o cobertura completa. Ver
+[funcionamiento y límites](docs/h0012_cuellos_botella.md#api) y [OpenAPI](docs/openapi.yaml).
+
+### Mapa de diagnóstico del worker
+
+Con `DATABASE_URL` exportada, Node >=20 y `psql` en PATH:
+
+```bash
+node scripts/worker-map.mjs --serve
+```
+
+Abrir **http://127.0.0.1:8088** (no el archivo con `file://`, porque OSM exige
+Referer). Permite filtrar por línea y ver aglutinaciones, sectores medidos y el
+avance del procesamiento. Es un snapshot de sólo lectura, no un detector de
+cuellos de botella. Requiere Internet para Leaflet y el mapa base.
+
+Para actualizar, regenerar el snapshot en otra terminal y recargar el navegador:
+
+```bash
+node scripts/worker-map.mjs
+```
+
+Opciones de ventana/puerto, límites y tests: [herramientas administrativas](scripts/README.md#mapa-de-diagnóstico-del-worker).
+El HTML queda en `.local/worker-map.html`; contiene ubicaciones operacionales y
+no debe publicarse ni incorporarse a Git.
 
 ## Probar una simulación
 

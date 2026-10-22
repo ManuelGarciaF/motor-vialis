@@ -86,6 +86,7 @@ func TestCSVSourceReadsEveryRecord(t *testing.T) {
 		}
 		rows = append(rows, append([]any{}, values...))
 	}
+
 	if err := source.Err(); err != nil {
 		t.Fatalf("error de lectura: %v", err)
 	}
@@ -115,6 +116,7 @@ func TestCSVSourceStopsAtAnUnparseableValue(t *testing.T) {
 	for source.Next() {
 		count++
 	}
+
 	if count != 1 {
 		t.Errorf("filas leídas = %d, se esperaba 1", count)
 	}

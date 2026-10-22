@@ -54,9 +54,11 @@ func TestTileCacheDeduplicatesConcurrentLoads(t *testing.T) {
 	for index := range hits {
 		go func() {
 			defer wait.Done()
+
 			_, hits[index], _ = cache.load(context.Background(), key, now, loader)
 		}()
 	}
+
 	<-started
 	close(release)
 	wait.Wait()
@@ -71,5 +73,6 @@ func TestTileCacheDeduplicatesConcurrentLoads(t *testing.T) {
 func (cache *tileCache) getLockedForTest(key cacheKey, now time.Time) (cacheEntry, bool) {
 	cache.mutex.Lock()
 	defer cache.mutex.Unlock()
+
 	return cache.getLocked(key, now)
 }

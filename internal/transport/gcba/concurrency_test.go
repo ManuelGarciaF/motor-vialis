@@ -18,10 +18,12 @@ func TestCaptureSerializesConcurrentCalls(t *testing.T) {
 			t.Error("overlapping provider requests")
 		}
 		defer active.Add(-1)
+
 		time.Sleep(5 * time.Millisecond)
 		io.WriteString(w, "[]")
 	}))
 	defer server.Close()
+
 	client, err := NewClient(testOptions(server.URL))
 	if err != nil {
 		t.Fatal(err)
@@ -34,5 +36,6 @@ func TestCaptureSerializesConcurrentCalls(t *testing.T) {
 			}
 		})
 	}
+
 	group.Wait()
 }

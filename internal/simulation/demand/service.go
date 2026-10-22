@@ -71,6 +71,7 @@ func (service *Service) Estimate(
 		result.GrossDemand += pair.GrossDemand
 		result.PotentialDemand += pair.PotentialDemand
 	}
+
 	return result, nil
 }
 
@@ -99,6 +100,7 @@ func assignCells(
 			),
 		})
 	}
+
 	sort.Slice(result, func(left, right int) bool {
 		if result[left].StopOrder != result[right].StopOrder {
 			return result[left].StopOrder < result[right].StopOrder

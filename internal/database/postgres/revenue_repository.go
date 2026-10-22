@@ -32,14 +32,17 @@ func (repository *RevenueRepository) FindTariffBands(ctx context.Context, jurisd
 		return nil, fmt.Errorf("query tariff bands: %w", err)
 	}
 	defer rows.Close()
+
 	bands := make([]revenue.TariffBand, 0)
 	for rows.Next() {
 		var band revenue.TariffBand
 		if err := rows.Scan(&band.MinimumDistanceMeters, &band.MaximumDistanceMeters, &band.RegisteredFareCents, &band.UnregisteredFareCents); err != nil {
 			return nil, fmt.Errorf("scan tariff band: %w", err)
 		}
+
 		bands = append(bands, band)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate tariff bands: %w", err)
 	}

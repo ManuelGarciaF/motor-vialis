@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -21,6 +20,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
 	if err := run(ctx, os.Args[1:], logger, os.Stderr); err != nil {
 		logStartupError(logger, err)
 		os.Exit(1)
@@ -28,18 +28,14 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, logger *slog.Logger, output io.Writer) error {
-	flags := flag.NewFlagSet("realtime-worker", flag.ContinueOnError)
-	flags.SetOutput(output)
-	interval := flags.Duration("interval", config.RealtimePollInterval, "wait after each completed cycle (e.g. 1m)")
-	if err := flags.Parse(args); err != nil {
+	options, err := parseWorkerOptions(args, output)
+	if err != nil {
 		if err == flag.ErrHelp {
 			return nil
 		}
 		return err
 	}
-	if flags.NArg() != 0 || *interval <= 0 {
-		return fmt.Errorf("invalid realtime-worker arguments")
-	}
+
 	cfg := config.FromEnv()
 	if cfg.GCBATransportClientID == "" || cfg.GCBATransportClientSecret == "" {
 		return &startupError{code: "credentials_missing", hint: "Export GCBA_TRANSPORT_CLIENT_ID and GCBA_TRANSPORT_CLIENT_SECRET; the worker does not load .env automatically"}
@@ -67,6 +63,7 @@ func run(ctx context.Context, args []string, logger *slog.Logger, output io.Writ
 		return &startupError{code: "database_connection_failed", hint: "Check DATABASE_URL, PostgreSQL availability, credentials and network reachability"}
 	}
 	defer pool.Close()
+
 	checkContext, cancelCheck := context.WithTimeout(ctx, config.DatabaseConnectTimeout)
 	ready, err := postgres.RealtimeSchemaReady(checkContext, pool)
 	cancelCheck()
@@ -74,9 +71,11 @@ func run(ctx context.Context, args []string, logger *slog.Logger, output io.Writ
 		if ctx.Err() != nil {
 			return nil
 		}
+
 		logger.Error("realtime_schema_not_ready")
 		return &startupError{code: "schema_check_failed", hint: "Check database permissions and apply sql/recorridos/migrar_realtime.sql and migrar_aglutinaciones.sql"}
 	}
+
 	repository, err := postgres.NewRealtimeRepository(pool, config.RealtimeRawRetentionDays)
 	if err != nil {
 		return &startupError{code: "repository_configuration_failed", hint: "Check realtime repository configuration"}
@@ -84,12 +83,23 @@ func run(ctx context.Context, args []string, logger *slog.Logger, output io.Writ
 	if err = repository.EnableBunching(config.BunchingPolicy()); err != nil {
 		return &startupError{code: "bunching_configuration_failed", hint: "Check bunching policy"}
 	}
-	worker, err := realtime.NewWorker(client, repository, logger, realtime.Options{Interval: *interval, DatabaseTimeout: config.RealtimeDatabaseTimeout, CoverageWarningRatio: config.RealtimeCoverageWarningRatio})
+
+	worker, err := realtime.NewWorker(client, repository, logger, realtime.Options{Interval: options.interval, DatabaseTimeout: config.RealtimeDatabaseTimeout, CoverageWarningRatio: config.RealtimeCoverageWarningRatio})
 	if err != nil {
 		return &startupError{code: "worker_configuration_failed", hint: "Check worker interval and timeouts"}
 	}
-	logger.Info("realtime_worker_started", "interval_ms", interval.Milliseconds(), "raw_retention_days", config.RealtimeRawRetentionDays, "endpoint", "vehiclePositionsSimple")
-	err = worker.Run(ctx)
+
+	producer, closeProducer, err := prepareBottlenecks(ctx, cfg.DatabaseURL, logger)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	}
+	defer closeProducer()
+
+	logger.Info("realtime_worker_started", "interval_ms", options.interval.Milliseconds(), "raw_retention_days", config.RealtimeRawRetentionDays, "endpoint", "vehiclePositionsSimple")
+	err = runWorkerLoops(ctx, worker.Run, producer)
 	if err == nil {
 		logger.Info("realtime_worker_stopped")
 	}
@@ -110,5 +120,6 @@ func logStartupError(logger *slog.Logger, err error) {
 		logger.Error("realtime_worker_start_failed", "error_class", startup.code, "hint", startup.hint)
 		return
 	}
+
 	logger.Error("realtime_worker_start_failed", "error_class", realtime.ErrorClass(err))
 }

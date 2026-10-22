@@ -29,6 +29,7 @@ func Decode(data []byte, tile Tile, limits Limits) ([]Segment, error) {
 	if err != nil {
 		return nil, invalidTile(tile, "cannot decode vector tile", err)
 	}
+
 	featureCount := 0
 	for _, layer := range layers {
 		featureCount += len(layer.Features)
@@ -46,6 +47,7 @@ func Decode(data []byte, tile Tile, limits Limits) ([]Segment, error) {
 		if layer.Name != trafficFlowLayer {
 			continue
 		}
+
 		layer.ProjectToWGS84(mapTile)
 		for featureIndex, feature := range layer.Features {
 			properties := feature.Properties
@@ -64,6 +66,7 @@ func Decode(data []byte, tile Tile, limits Limits) ([]Segment, error) {
 				if len(line) < 2 {
 					return
 				}
+
 				segment := base
 				segment.SourceID = fmt.Sprintf(
 					"%s/%d/%d",
@@ -84,6 +87,7 @@ func Decode(data []byte, tile Tile, limits Limits) ([]Segment, error) {
 			}
 		}
 	}
+
 	return result, nil
 }
 

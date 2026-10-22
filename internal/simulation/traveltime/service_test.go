@@ -332,6 +332,7 @@ func (repository *fakeRepository) FindSegmentReferences(
 		orders = append(orders, segment.Order)
 		requested[segment.Order] = true
 	}
+
 	repository.requestedOrders = append(repository.requestedOrders, orders)
 	if repository.referencesError != nil {
 		return nil, repository.referencesError
@@ -346,6 +347,7 @@ func (repository *fakeRepository) FindSegmentReferences(
 			answer = append(answer, measured)
 		}
 	}
+
 	return answer, nil
 }
 
@@ -396,5 +398,6 @@ func routeWithSegmentCount(count int) route.Route {
 			stops[index].PathToNext = &route.LineString{}
 		}
 	}
+
 	return route.Route{Stops: stops}
 }

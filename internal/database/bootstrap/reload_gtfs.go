@@ -45,6 +45,7 @@ func ReloadGTFS(ctx context.Context, pool *pgxpool.Pool, options ReloadGTFSOptio
 	if err := runner.checkGTFSReloadSchema(ctx); err != nil {
 		return err
 	}
+
 	steps := []step{
 		{
 			name: "tablas de staging GTFS",
@@ -60,6 +61,7 @@ func ReloadGTFS(ctx context.Context, pool *pgxpool.Pool, options ReloadGTFSOptio
 						return err
 					}
 				}
+
 				return nil
 			},
 		},
@@ -89,8 +91,10 @@ func ReloadGTFS(ctx context.Context, pool *pgxpool.Pool, options ReloadGTFSOptio
 		if err := definition.run(ctx, runner); err != nil {
 			return fmt.Errorf("paso %d (%s): %w", index+1, definition.name, err)
 		}
+
 		logger.Info("paso terminado", "paso", index+1, "nombre", definition.name, "duracion", time.Since(started).Round(time.Millisecond))
 	}
+
 	return nil
 }
 
@@ -99,17 +103,10 @@ func (e *executor) checkGTFSReloadSchema(ctx context.Context) error {
 		SELECT COUNT(*) = 5
 		FROM information_schema.columns
 		WHERE table_schema = 'vialis'
-		  AND (
-		    (table_name = 'recorridos_paradas' AND column_name IN (
-		      'tiempo_valle_hasta_siguiente_segundos',
-		      'tiempo_tipico_hasta_siguiente_segundos',
-		      'tiempo_pico_hasta_siguiente_segundos'
-		    ))
-		    OR
-		    (table_name = 'combinaciones_lineas_flujos' AND column_name IN (
-		      'nombre_origen', 'nombre_destino'
-		    ))
-		  )`
+		AND((table_name = 'recorridos_paradas' AND column_name IN ('tiempo_valle_hasta_siguiente_segundos', 'tiempo_tipico_hasta_siguiente_segundos',
+		            'tiempo_pico_hasta_siguiente_segundos')) OR(table_name = 'combinaciones_lineas_flujos' AND column_name IN ('nombre_origen',
+		            'nombre_destino')))
+	`
 	var ready bool
 	if err := e.connection.QueryRow(ctx, query).Scan(&ready); err != nil {
 		return fmt.Errorf("verificar esquema para recarga GTFS: %w", err)
@@ -127,6 +124,7 @@ func checkGTFSFiles(directory string) error {
 		if err != nil {
 			return fmt.Errorf("abrir %s: %w", path, err)
 		}
+
 		_, parseErr := newCSVSource(file, definition, nil)
 		closeErr := file.Close()
 		if parseErr != nil {
@@ -136,5 +134,6 @@ func checkGTFSFiles(directory string) error {
 			return fmt.Errorf("cerrar %s: %w", path, closeErr)
 		}
 	}
+
 	return nil
 }

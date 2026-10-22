@@ -43,6 +43,7 @@ func (f csvFile) columnNames() []string {
 	for index, definition := range f.Columns {
 		names[index] = definition.Name
 	}
+
 	return names
 }
 
@@ -63,6 +64,7 @@ func columns(kind columnKind, names ...string) []column {
 	for index, name := range names {
 		result[index] = column{Name: name, Kind: kind}
 	}
+
 	return result
 }
 
@@ -71,6 +73,7 @@ func joinColumns(groups ...[]column) []column {
 	for _, group := range groups {
 		result = append(result, group...)
 	}
+
 	return result
 }
 
@@ -82,6 +85,7 @@ func convert(kind columnKind, raw string) (any, error) {
 	if raw == "" {
 		return nil, nil
 	}
+
 	switch kind {
 	case columnText:
 		return raw, nil
@@ -114,6 +118,7 @@ func checkHeader(file csvFile, header []string) error {
 			file.FileName, len(header), file.Table, len(expected),
 		)
 	}
+
 	for index, name := range header {
 		clean := strings.TrimSpace(strings.TrimPrefix(name, "\ufeff"))
 		if !strings.EqualFold(clean, expected[index]) {
@@ -123,6 +128,7 @@ func checkHeader(file csvFile, header []string) error {
 			)
 		}
 	}
+
 	return nil
 }
 
@@ -150,6 +156,7 @@ func newCSVSource(reader io.Reader, file csvFile, progress func(rows int64)) (*c
 	if err := checkHeader(file, header); err != nil {
 		return nil, err
 	}
+
 	csvReader.FieldsPerRecord = len(file.Columns)
 
 	return &csvSource{
@@ -172,6 +179,7 @@ func (s *csvSource) Next() bool {
 		s.err = fmt.Errorf("leer %s en la fila %d: %w", s.file.FileName, s.rows+1, err)
 		return false
 	}
+
 	for index, definition := range s.file.Columns {
 		value, err := convert(definition.Kind, record[index])
 		if err != nil {
@@ -181,8 +189,10 @@ func (s *csvSource) Next() bool {
 			)
 			return false
 		}
+
 		s.values[index] = value
 	}
+
 	s.rows++
 	if s.progress != nil {
 		s.progress(s.rows)

@@ -1,0 +1,3 @@
+CREATE TABLE %s
+PARTITION OF %s
+FOR VALUES FROM ('%s') TO ('%s')

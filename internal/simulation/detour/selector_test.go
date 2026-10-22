@@ -131,6 +131,7 @@ func classified(values ...StopAvailability) []ClassifiedStop {
 	for index, value := range values {
 		result[index] = ClassifiedStop{Order: index, ID: string(rune('A' + index)), Availability: value}
 	}
+
 	return result
 }
 

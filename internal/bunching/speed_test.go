@@ -85,6 +85,7 @@ func TestRejectedSamplesDoNotChangeMaximumSpeeds(t *testing.T) {
 			case "expired":
 				s.ReceivedAt = now.Add(6 * time.Minute)
 			}
+
 			events, err := Advance([]Event{e}, s, testPolicy())
 			if err != nil {
 				t.Fatal(err)

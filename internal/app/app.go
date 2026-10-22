@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ManuelGarciaF/vialis-motor/internal/bottlenecks"
 	"github.com/ManuelGarciaF/vialis-motor/internal/bunching"
 	"github.com/ManuelGarciaF/vialis-motor/internal/combinaciones"
 	"github.com/ManuelGarciaF/vialis-motor/internal/config"
@@ -76,6 +77,11 @@ func NewDetourService(
 		comparator,
 		config.DetourPolicy(),
 	)
+}
+
+// NewBottlenecksService reads finalized passages without touching producer state.
+func NewBottlenecksService(database *pgxpool.Pool) (*bottlenecks.DetectionService, error) {
+	return bottlenecks.NewDetectionService(postgres.NewBottlenecksDetectionRepository(database), config.BottlenecksModel().Name, config.BottlenecksDetectionPolicy())
 }
 
 // NewBunchingService reads current events independently of simulations.

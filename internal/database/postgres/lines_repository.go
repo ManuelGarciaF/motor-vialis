@@ -99,9 +99,11 @@ func (repository *LinesRepository) ListSummaries(
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan stored line: %w", err)
 		}
+
 		summaries = append(summaries, summary)
 		total = rowTotal
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("iterate stored lines: %w", err)
 	}
@@ -184,10 +186,12 @@ func (repository *LinesRepository) FindLine(
 					err,
 				)
 			}
+
 			stop.PathToNext = &lineString
 		}
 		stored.Stops = append(stored.Stops, stop)
 	}
+
 	if err := rows.Err(); err != nil {
 		return lines.StoredLine{}, fmt.Errorf("iterate stored line stops: %w", err)
 	}
@@ -281,6 +285,7 @@ func (repository *LinesRepository) FindSimilar(
 		}
 		similarities = append(similarities, similarity)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate similar stored lines: %w", err)
 	}

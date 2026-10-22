@@ -23,6 +23,7 @@ func TestTravelTimeRepositoryIntegration(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
@@ -148,85 +149,74 @@ func insertTravelTimeReference(
 
 	var routeID int64
 	if err := transaction.QueryRow(ctx, `
-        WITH path AS (
-            SELECT ST_GeomFromText($4, 4326)
-                ::GEOMETRY(LineString, 4326) AS geom
-        )
-        INSERT INTO vialis.recorridos (
-            gtfs_route_id,
-            gtfs_shape_id,
-            nombre_publico,
-            linea,
-            ramal,
-            direction_id,
-            geom,
-            distancia_metros,
-            tiempo_total_minutos
-        )
-        SELECT
-            $1,
-            $2,
-            $3,
-            $3,
-            'TRONCAL',
-            0,
-            path.geom,
-            ROUND(ST_Length(path.geom::geography))::INTEGER,
-            10
-        FROM path
-        RETURNING id_recorrido
-    `, id, id+"-shape", id, pathWKT).Scan(&routeID); err != nil {
+		WITH path AS (SELECT ST_GeomFromText($4, 4326)::GEOMETRY(LineString, 4326) AS geom) INSERT INTO vialis.recorridos(
+		    gtfs_route_id,
+		    gtfs_shape_id,
+		    nombre_publico,
+		    linea,
+		    ramal,
+		    direction_id,
+		    geom,
+		    distancia_metros,
+		    tiempo_total_minutos
+		)
+		SELECT
+		    $1,
+		    $2,
+		    $3,
+		    $3,
+		    'TRONCAL',
+		    0,
+		    path.geom,
+		    ROUND(ST_Length(path.geom::geography))::INTEGER,
+		    10
+		FROM path
+		RETURNING id_recorrido
+	`, id, id+"-shape", id, pathWKT).Scan(&routeID); err != nil {
 		t.Fatalf("insert fixture route: %v", err)
 	}
 
 	var stopID int64
 	if err := transaction.QueryRow(ctx, `
-        INSERT INTO vialis.paradas (
-            gtfs_stop_id,
-            nombre,
-            posicion
-        )
-        VALUES (
-            $1,
-            $1,
-            ST_StartPoint(
-                ST_GeomFromText($2, 4326)
-                    ::GEOMETRY(LineString, 4326)
-            )
-        )
-        RETURNING id_parada
-    `, id+"-stop", pathWKT).Scan(&stopID); err != nil {
+		INSERT INTO vialis.paradas (
+		    gtfs_stop_id,
+		    nombre,
+		    posicion
+		)
+		VALUES (
+		    $1,
+		    $1,
+		    ST_StartPoint(ST_GeomFromText($2, 4326)::GEOMETRY(LineString, 4326))
+		)
+		RETURNING id_parada
+	`, id+"-stop", pathWKT).Scan(&stopID); err != nil {
 		t.Fatalf("insert fixture stop: %v", err)
 	}
 
 	if _, err := transaction.Exec(ctx, `
-        WITH path AS (
-            SELECT ST_GeomFromText($3, 4326)
-                ::GEOMETRY(LineString, 4326) AS geom
-        )
-        INSERT INTO vialis.recorridos_paradas (
-            id_recorrido,
-            id_parada,
-            nro_parada,
-            tramo_hasta_siguiente,
-            distancia_hasta_siguiente_metros,
-            tiempo_valle_hasta_siguiente_segundos,
-            tiempo_tipico_hasta_siguiente_segundos,
-            tiempo_pico_hasta_siguiente_segundos,
-            cantidad_muestras_tiempo
-        )
-        SELECT
-            $1,
-            $2,
-            0,
-            path.geom,
-            ROUND(ST_Length(path.geom::geography))::INTEGER,
-            $4,
-            $5,
-            $6,
-            20
-        FROM path
-    `, routeID, stopID, pathWKT, offPeakSeconds, typicalSeconds, peakSeconds); err != nil {
+		WITH path AS (SELECT ST_GeomFromText($3, 4326)::GEOMETRY(LineString, 4326) AS geom) INSERT INTO vialis.recorridos_paradas(
+		    id_recorrido,
+		    id_parada,
+		    nro_parada,
+		    tramo_hasta_siguiente,
+		    distancia_hasta_siguiente_metros,
+		    tiempo_valle_hasta_siguiente_segundos,
+		    tiempo_tipico_hasta_siguiente_segundos,
+		    tiempo_pico_hasta_siguiente_segundos,
+		    cantidad_muestras_tiempo
+		)
+		SELECT
+		    $1,
+		    $2,
+		    0,
+		    path.geom,
+		    ROUND(ST_Length(path.geom::geography))::INTEGER,
+		    $4,
+		    $5,
+		    $6,
+		    20
+		FROM path
+	`, routeID, stopID, pathWKT, offPeakSeconds, typicalSeconds, peakSeconds); err != nil {
 		t.Fatalf("insert fixture route stop: %v", err)
 	}
 	return routeID

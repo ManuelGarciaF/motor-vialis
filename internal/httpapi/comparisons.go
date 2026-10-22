@@ -25,6 +25,7 @@ func (handler *Handler) createComparison(writer http.ResponseWriter, request *ht
 		)
 		return
 	}
+
 	required := []struct {
 		field string
 		value *simulation.Route

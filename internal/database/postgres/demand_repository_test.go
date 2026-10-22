@@ -153,6 +153,7 @@ func (rows *fakeRows) Next() bool {
 	if rows.current >= len(rows.values) {
 		return false
 	}
+
 	rows.current++
 	return true
 }
@@ -161,15 +162,18 @@ func (rows *fakeRows) Scan(destinations ...any) error {
 	if rows.current == 0 || rows.current > len(rows.values) {
 		return errors.New("Scan called without a current row")
 	}
+
 	values := rows.values[rows.current-1]
 	if len(values) != len(destinations) {
 		return fmt.Errorf("scan destinations = %d, values = %d", len(destinations), len(values))
 	}
+
 	for index, destination := range destinations {
 		if err := assign(destination, values[index]); err != nil {
 			return fmt.Errorf("column %d: %w", index, err)
 		}
 	}
+
 	return nil
 }
 

@@ -229,6 +229,7 @@ func TestCompareCancelsTheSurvivingSimulation(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Compare() did not return: the surviving simulation was not cancelled")
 	}
+
 	close(blocked)
 }
 
@@ -271,6 +272,7 @@ func (estimator *scriptedDemandEstimator) Estimate(
 	if estimator.failProposed != nil && call > 1 {
 		return demand.Result{}, estimator.failProposed
 	}
+
 	potential := 100.0
 	if len(input.Stops) > 2 && estimator.proposedPotential != 0 {
 		potential = estimator.proposedPotential
@@ -281,6 +283,7 @@ func (estimator *scriptedDemandEstimator) Estimate(
 func (estimator *scriptedDemandEstimator) callCount() int {
 	estimator.mutex.Lock()
 	defer estimator.mutex.Unlock()
+
 	return estimator.calls
 }
 
@@ -339,6 +342,7 @@ func (detourTravelTimeEstimator) Estimate(_ context.Context, input route.Route) 
 			DistanceMeters: segmentDistance,
 		})
 	}
+
 	return result, nil
 }
 

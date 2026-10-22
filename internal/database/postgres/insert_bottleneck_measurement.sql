@@ -1,0 +1,36 @@
+INSERT INTO vialis.bottlenecks_mediciones (
+    modelo,
+    identidad,
+    trazado,
+    sector,
+    vehiculo,
+    gcba_route_id,
+    gcba_direction,
+    captura,
+    entrada_en,
+    fecha_local,
+    hora_local,
+    completa,
+    motivo,
+    duracion_ns,
+    velocidad_kph,
+    soporte
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10::date,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15,
+    $16
+)

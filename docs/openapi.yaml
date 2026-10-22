@@ -11,6 +11,70 @@ servers:
     description: Local
 
 paths:
+  /bottlenecks:
+    get:
+      operationId: listBottlenecks
+      summary: Sectores recurrentemente lentos (experimental)
+      description: >
+        Devuelve sectores de recorrido con al menos dos pasajes completos a menos
+        de 6 km/h en [from,to), atribuidos por entrada estimada. Incluye detenciones
+        por pasajeros y extremos del recorrido. No exige unidades ni fechas distintas,
+        no consolida líneas sobre un mismo corredor y no implementa ranking.
+        Sólo usa mediciones finales: las secuencias OPEN pueden aportar resultados
+        posteriores incluso a períodos pasados. Una lista vacía no demuestra ausencia
+        de lentitud ni cobertura completa. Sin paginación ni truncado de sectores.
+        No exporta identificadores de vehículos ni GPS individuales.
+      tags: [bottlenecks]
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Inicio inclusivo, RFC3339 con zona horaria.
+          schema: {type: string, format: date-time}
+          example: '2026-10-21T18:00:00-03:00'
+        - name: to
+          in: query
+          required: true
+          description: Fin exclusivo, posterior a from, RFC3339 con zona horaria.
+          schema: {type: string, format: date-time}
+          example: '2026-10-21T20:00:00-03:00'
+        - name: line
+          in: query
+          description: Etiqueta exacta de línea (por ejemplo 132), no ID de catálogo.
+          schema: {type: string}
+        - name: bbox
+          in: query
+          description: 'Viewport WGS84 minLon,minLat,maxLon,maxLat; intersección con el sector.'
+          schema: {type: string}
+          example: '-58.6,-34.8,-58.2,-34.4'
+      responses:
+        '200':
+          description: Período consultado y sectores elegibles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BottlenecksPage'
+        '400':
+          description: Fechas/bbox inválidos, parámetros desconocidos o repetidos.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '503':
+          description: Lector no configurado. Fuente sin activar devuelve 200 con lista vacía.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '504':
+          description: Consulta excedió el timeout del servidor.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500':
+          description: Error interno sin detalles de la base de datos.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+
   /lines:
     get:
       operationId: listLines
@@ -703,6 +767,47 @@ paths:
 
 components:
   schemas:
+    BottlenecksPage:
+      type: object
+      required: [from, to, sectors]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        sectors:
+          type: array
+          description: Orden estable por recorrido, sentido, hash, layout y sector; no es un ranking.
+          items: {$ref: '#/components/schemas/BottleneckSector'}
+    BottleneckSector:
+      type: object
+      required: [layoutId, sector, gtfsRouteId, shapeHash, line, branch, direction, geometry,
+                 lengthMeters, routeEnd, completePassages, incompletePassages, slowPassages,
+                 slowPercentage, medianSpeedKph, lastEntryAt]
+      properties:
+        layoutId: {type: integer, format: int64}
+        sector: {type: integer, minimum: 0}
+        gtfsRouteId: {type: string}
+        shapeHash: {type: string}
+        line: {type: string}
+        branch: {type: string}
+        direction: {type: integer, enum: [0, 1]}
+        geometry: {$ref: '#/components/schemas/LineString'}
+        lengthMeters: {type: number}
+        routeEnd:
+          type: boolean
+          description: Primer o último sector; incluido pero puede contener regulación de cabecera.
+        completePassages: {type: integer, format: int64}
+        incompletePassages: {type: integer, format: int64}
+        slowPassages: {type: integer, format: int64, minimum: 2}
+        slowPercentage:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: 100 por slowPassages dividido por completePassages; excluye incompletos.
+        medianSpeedKph:
+          type: number
+          description: Mediana de todos los completos, no sólo los lentos.
+        lastEntryAt: {type: string, format: date-time}
+
     BunchingPoint:
       type: object
       required: [longitude, latitude]

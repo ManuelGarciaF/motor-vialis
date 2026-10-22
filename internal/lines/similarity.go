@@ -188,6 +188,7 @@ func sortByCorridorAffinity(similarities []Similarity) {
 		if leftWeakest != rightWeakest {
 			return leftWeakest > rightWeakest
 		}
+
 		leftStrongest := max(first.CoverageOfProposed, first.CoverageOfStored)
 		rightStrongest := max(second.CoverageOfProposed, second.CoverageOfStored)
 		if leftStrongest != rightStrongest {
@@ -220,6 +221,7 @@ func validateDrawnRoute(input route.Route) error {
 			Message: "must contain at least two stops",
 		}
 	}
+
 	for index, stop := range input.Stops {
 		field := fmt.Sprintf("route.stops[%d]", index)
 		if err := validateDrawnPosition(field+".position", stop.Position); err != nil {
@@ -228,6 +230,7 @@ func validateDrawnRoute(input route.Route) error {
 		if stop.PathToNext == nil {
 			continue
 		}
+
 		field += ".pathToNext"
 		if index == len(input.Stops)-1 {
 			return &route.ValidationError{
@@ -241,6 +244,7 @@ func validateDrawnRoute(input route.Route) error {
 				Message: "must contain at least two positions",
 			}
 		}
+
 		for position, coordinate := range stop.PathToNext.Positions {
 			if err := validateDrawnPosition(
 				fmt.Sprintf("%s.coordinates[%d]", field, position),
@@ -250,6 +254,7 @@ func validateDrawnRoute(input route.Route) error {
 			}
 		}
 	}
+
 	return nil
 }
 

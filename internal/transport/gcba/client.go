@@ -43,7 +43,13 @@ func NewClient(options Options) (*Client, error) {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return nil, fmt.Errorf("invalid GCBA base URL")
 	}
-	if options.RequestTimeout <= 0 || options.MaximumAge <= 0 || options.MaximumFutureSkew < 0 || options.MaximumBodyBytes <= 0 || options.MaximumAttempts < 1 || options.InitialBackoff <= 0 || options.MaximumBackoff < options.InitialBackoff {
+	if options.RequestTimeout <= 0 ||
+		options.MaximumAge <= 0 ||
+		options.MaximumFutureSkew < 0 ||
+		options.MaximumBodyBytes <= 0 ||
+		options.MaximumAttempts < 1 ||
+		options.InitialBackoff <= 0 ||
+		options.MaximumBackoff < options.InitialBackoff {
 		return nil, fmt.Errorf("invalid GCBA limits")
 	}
 	if options.Now == nil {
@@ -68,6 +74,7 @@ func (client *Client) Capture(ctx context.Context) (bunching.Capture, error) {
 	case <-ctx.Done():
 		return bunching.Capture{}, ctx.Err()
 	}
+
 	delay := client.options.InitialBackoff
 	for attempt := 1; ; attempt++ {
 		capture, retryAfter, err := client.fetch(ctx)
@@ -77,11 +84,13 @@ func (client *Client) Capture(ctx context.Context) (bunching.Capture, error) {
 		if ctx.Err() != nil {
 			return bunching.Capture{}, ctx.Err()
 		}
+
 		var providerError *Error
 		retryable := errors.As(err, &providerError) && (providerError.Code == ErrorRateLimited || providerError.Code == ErrorUnavailable && (providerError.StatusCode == 0 || providerError.StatusCode >= 500))
 		if !retryable || attempt >= client.options.MaximumAttempts {
 			return bunching.Capture{}, err
 		}
+
 		wait := delay
 		if retryAfter > wait {
 			wait = retryAfter
@@ -93,6 +102,7 @@ func (client *Client) Capture(ctx context.Context) (bunching.Capture, error) {
 			return bunching.Capture{}, ctx.Err()
 		case <-timer.C:
 		}
+
 		if delay >= client.options.MaximumBackoff/2 {
 			delay = client.options.MaximumBackoff
 		} else {
@@ -111,6 +121,7 @@ func (client *Client) fetch(ctx context.Context) (bunching.Capture, time.Duratio
 	if err != nil {
 		return bunching.Capture{}, 0, &Error{Code: ErrorUnavailable, Message: "cannot create GCBA request"}
 	}
+
 	response, err := client.httpClient.Do(request)
 	if err != nil {
 		// Do not return url.Error or transport text: either may contain credentials.
@@ -123,6 +134,7 @@ func (client *Client) fetch(ctx context.Context) (bunching.Capture, time.Duratio
 		return bunching.Capture{}, 0, &Error{Code: ErrorUnavailable, Message: "GCBA request failed", Cause: cause}
 	}
 	defer response.Body.Close()
+
 	if response.StatusCode != http.StatusOK {
 		code := ErrorUnavailable
 		if response.StatusCode == 401 || response.StatusCode == 403 {
@@ -136,6 +148,7 @@ func (client *Client) fetch(ctx context.Context) (bunching.Capture, time.Duratio
 	if response.ContentLength > client.options.MaximumBodyBytes {
 		return bunching.Capture{}, 0, &Error{Code: ErrorResponseTooLarge, Message: "GCBA response exceeds body limit"}
 	}
+
 	body, err := io.ReadAll(io.LimitReader(response.Body, client.options.MaximumBodyBytes+1))
 	if err != nil {
 		return bunching.Capture{}, 0, &Error{Code: ErrorUnavailable, Message: "cannot read GCBA response"}
@@ -143,6 +156,7 @@ func (client *Client) fetch(ctx context.Context) (bunching.Capture, time.Duratio
 	if int64(len(body)) > client.options.MaximumBodyBytes {
 		return bunching.Capture{}, 0, &Error{Code: ErrorResponseTooLarge, Message: "GCBA response exceeds body limit"}
 	}
+
 	capture, err := decode(body, client.options.Now().UTC(), client.options.MaximumAge, client.options.MaximumFutureSkew)
 	return capture, 0, err
 }

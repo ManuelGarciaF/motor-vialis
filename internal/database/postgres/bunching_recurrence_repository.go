@@ -14,6 +14,7 @@ func (r *BunchingRepository) FindRecurrence(ctx context.Context, id *int64, now 
 	if err := recurrence.Validate(); err != nil {
 		return page, err
 	}
+
 	tx, err := r.database.Begin(ctx)
 	if err != nil {
 		return page, err
@@ -31,18 +32,22 @@ func (r *BunchingRepository) FindRecurrence(ctx context.Context, id *int64, now 
 	if err != nil {
 		return page, err
 	}
+
 	for rows.Next() {
 		line := bunching.LineRecurrence{RecurrenceSummary: bunching.RecurrenceSummary{From: page.From, To: page.To, TimeZone: page.TimeZone, MinimumDays: page.MinimumDays}}
 		if err := rows.Scan(&line.LineID, &line.GTFSRouteID, &line.Direction, &line.Line, &line.Branch, &line.Mapped, &line.EventCount, &line.Dates, &line.Hours); err != nil {
 			rows.Close()
 			return page, err
 		}
+
 		line.DaysWithEvents = len(line.Dates)
 		for _, hour := range line.Hours {
 			line.Recurrent = line.Recurrent || hour.Recurrent
 		}
+
 		page.Lines = append(page.Lines, line)
 	}
+
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
