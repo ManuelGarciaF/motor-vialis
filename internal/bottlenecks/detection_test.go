@@ -22,7 +22,7 @@ func TestDetectionService(t *testing.T) {
 		if m != "operational" || policy != p || q.Line != "132" || q.From.Location() != time.UTC || q.To.Location() != time.UTC {
 			t.Fatalf("unexpected repository request: %s %+v %+v", m, q, policy)
 		}
-		return DetectionData{Source: DetectionSource{Initialized: true, Checkpoint: 123}}, nil
+		return DetectionData{}, nil
 	})
 	s, err := NewDetectionService(repository, "operational", p)
 	if err != nil {
@@ -32,7 +32,7 @@ func TestDetectionService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !page.Experimental || page.Policy != p || page.Sectors == nil || page.Source.Checkpoint != 123 || !page.From.Equal(from) {
+	if page.Sectors == nil || !page.From.Equal(from) {
 		t.Fatalf("unexpected page: %+v", page)
 	}
 	for _, q := range []DetectionQuery{

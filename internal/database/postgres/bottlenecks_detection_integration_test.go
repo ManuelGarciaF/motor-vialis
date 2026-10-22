@@ -67,7 +67,7 @@ func TestBottlenecksDetectionRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !data.Source.Initialized || data.Source.Checkpoint != 123 || data.Source.LastCaptureReceivedAt == nil || len(data.Sectors) != 2 {
+	if len(data.Sectors) != 2 {
 		t.Fatalf("unexpected result %+v", data)
 	}
 	sector := data.Sectors[0]
@@ -105,7 +105,7 @@ func TestBottlenecksDetectionRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if absent.Source.Initialized || absent.Source.Checkpoint != 0 || absent.Source.LastCaptureReceivedAt != nil || absent.Sectors == nil || len(absent.Sectors) != 0 {
+	if absent.Sectors == nil || len(absent.Sectors) != 0 {
 		t.Fatalf("absent %+v", absent)
 	}
 	p.MinimumSlowPassages = 3

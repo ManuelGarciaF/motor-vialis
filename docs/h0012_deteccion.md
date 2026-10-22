@@ -21,8 +21,8 @@ No demuestra causas viales ni reemplaza las validaciones operacionales pendiente
 - Sin límite de sectores, paginación, score ni Top 10. El timeout HTTP limita
   trabajo; un timeout falla la consulta completa, no entrega resultados truncados.
 
-Devuelve `experimental: true`, período normalizado a UTC, política aplicada,
-progreso de fuente y sectores elegibles. Cada sector incluye geometría, longitud
+Devuelve únicamente el período normalizado a UTC (`from`, `to`) y los
+sectores elegibles (`sectors`), sin política ni estado del productor. Cada sector incluye geometría, longitud
 real, identidad de trazado/versionado, línea/ramal/sentido, indicador de extremo,
 conteos completos/incompletos/lentos, porcentaje lento sobre completos y mediana
 de velocidad de todos los completos. Sin IDs de unidades ni GPS individuales.
@@ -43,12 +43,9 @@ El contrato detallado está en [OpenAPI](openapi.yaml).
   política de medición, modelos persistidos, checkpoint, matching ni retención.
 - Sólo mediciones finales. OPEN no aporta resultados todavía; un período pasado
   puede recibir pasajes cuando cierre una secuencia posterior.
-- `source.initialized: false` y lista vacía significa que aún no hay configuración
-  del productor. Configuración existente sin sectores elegibles también devuelve
-  lista vacía: **ninguna lista vacía acredita ausencia de lentitud o cobertura**.
-- `source.checkpoint` y `lastCaptureReceivedAt` informan progreso, no certifican
-  cobertura ni salud actual del worker. Se consultan en el mismo snapshot que
-  los sectores. No exponen una garantía de completitud del período.
+- Una fuente aún sin activar o sin sectores elegibles devuelve lista vacía:
+  **ninguna lista vacía acredita ausencia de lentitud o cobertura**. La respuesta
+  no informa progreso ni salud del worker; esos diagnósticos son operacionales.
 
 ## Implementación y validación
 

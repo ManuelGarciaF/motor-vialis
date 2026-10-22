@@ -45,7 +45,7 @@ func TestBottlenecksEndpoint(t *testing.T) {
 				if tc.code == 200 && (q.Line != "132" || q.Bounds == nil) {
 					t.Errorf("missing filters: %+v", q)
 				}
-				return bottlenecks.DetectionPage{Experimental: true, Policy: bottlenecks.DetectionPolicy{SpeedBelowKPH: 6, MinimumSlowPassages: 2}, DetectionData: bottlenecks.DetectionData{Sectors: []bottlenecks.DetectedSector{}}}, tc.err
+				return bottlenecks.DetectionPage{DetectionData: bottlenecks.DetectionData{Sectors: []bottlenecks.DetectedSector{}}}, tc.err
 			})
 			h := NewHandler(slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, time.Second)
 			if !tc.unavailable {
@@ -60,11 +60,20 @@ func TestBottlenecksEndpoint(t *testing.T) {
 				t.Fatal("leaked error")
 			}
 			if tc.code == 200 {
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(recorder.Body.Bytes(), &fields); err != nil {
+					t.Fatal(err)
+				}
+				for _, field := range []string{"experimental", "source", "policy"} {
+					if _, present := fields[field]; present {
+						t.Fatalf("response must not expose %s field", field)
+					}
+				}
 				var page bottlenecks.DetectionPage
 				if err := json.Unmarshal(recorder.Body.Bytes(), &page); err != nil {
 					t.Fatal(err)
 				}
-				if !page.Experimental || page.Policy.MinimumSlowPassages != 2 || page.Sectors == nil {
+				if page.Sectors == nil {
 					t.Fatalf("bad page: %+v", page)
 				}
 			}

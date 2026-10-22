@@ -246,8 +246,8 @@ sostenida y la calibración con capturas reales siguen pendientes.
 `GET /bottlenecks?from=2026-10-21T18:00:00-03:00&to=2026-10-21T20:00:00-03:00`
 lee sectores con **≥2 pasajes completos a <6 km/h** dentro de `[from,to)`, por
 entrada estimada. `from`/`to` son obligatorios; admite `line` (etiqueta exacta) y
-`bbox`. Devuelve geometría, conteos, porcentaje lento, velocidad mediana y progreso
-de fuente; sin límite de sectores, IDs de unidades ni GPS individuales.
+`bbox`. Devuelve geometría, conteos, porcentaje lento y velocidad mediana;
+sin límite de sectores, IDs de unidades ni GPS individuales.
 Mantiene detenciones y extremos señalados. Cuenta pasajes, no unidades/fechas
 independientes. No consolida entre líneas ni ofrece Top 10; una lista vacía no
 acredita ausencia de problemas o cobertura completa. Ver

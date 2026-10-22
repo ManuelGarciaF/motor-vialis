@@ -49,7 +49,7 @@ paths:
           example: '-58.6,-34.8,-58.2,-34.4'
       responses:
         '200':
-          description: Sectores elegibles y progreso de su fuente en el mismo snapshot.
+          description: Período consultado y sectores elegibles.
           content:
             application/json:
               schema:
@@ -60,7 +60,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '503':
-          description: Lector no configurado. Fuente sin activar devuelve 200 con initialized false.
+          description: Lector no configurado. Fuente sin activar devuelve 200 con lista vacía.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -769,28 +769,10 @@ components:
   schemas:
     BottlenecksPage:
       type: object
-      required: [experimental, from, to, policy, source, sectors]
+      required: [from, to, sectors]
       properties:
-        experimental: {type: boolean, enum: [true]}
         from: {type: string, format: date-time}
         to: {type: string, format: date-time}
-        policy:
-          type: object
-          required: [speedBelowKph, minimumSlowPassages]
-          properties:
-            speedBelowKph: {type: number, enum: [6]}
-            minimumSlowPassages: {type: integer, enum: [2]}
-        source:
-          type: object
-          required: [initialized, checkpoint, lastCaptureReceivedAt]
-          properties:
-            initialized: {type: boolean}
-            checkpoint: {type: integer, format: int64}
-            lastCaptureReceivedAt:
-              type: string
-              format: date-time
-              nullable: true
-              description: Recepción de la última captura procesada; no garantiza cobertura del período.
         sectors:
           type: array
           description: Orden estable por recorrido, sentido, hash, layout y sector; no es un ranking.

@@ -1,4 +1,4 @@
--- One statement gives sectors and source checkpoint the same MVCC snapshot.
+-- Read eligible sectors in one consistent statement.
 -- The period is half-open and assigned by estimated entry, not closure time.
 WITH candidates AS (
     SELECT s.*, t.gtfs_route_id, t.gtfs_shape_hash, t.linea, t.ramal, t.direction_id
@@ -22,11 +22,6 @@ WITH candidates AS (
     HAVING count(*) FILTER (WHERE m.completa AND m.velocidad_kph < $4) >= $5
 )
 SELECT jsonb_build_object(
-    'source', jsonb_build_object(
-        'initialized', EXISTS (SELECT 1 FROM vialis.bottlenecks_modelos WHERE nombre = $1),
-        'checkpoint', coalesce((SELECT checkpoint FROM vialis.bottlenecks_modelos WHERE nombre = $1), 0),
-        'lastCaptureReceivedAt', (SELECT ultima_captura_recibida_en FROM vialis.bottlenecks_modelos WHERE nombre = $1)
-    ),
     'sectors', coalesce((SELECT jsonb_agg(jsonb_build_object(
         'layoutId', c.trazado, 'sector', c.indice,
         'gtfsRouteId', c.gtfs_route_id, 'shapeHash', c.gtfs_shape_hash,

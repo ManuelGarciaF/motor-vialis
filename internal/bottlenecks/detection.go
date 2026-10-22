@@ -51,13 +51,6 @@ func (q DetectionQuery) Validate() error {
 	return nil
 }
 
-// DetectionSource reports progress, not a guarantee of period coverage. OPEN
-// sequences do not yet contribute measurements, including in earlier periods.
-type DetectionSource struct {
-	Initialized           bool       `json:"initialized"`
-	Checkpoint            int64      `json:"checkpoint"`
-	LastCaptureReceivedAt *time.Time `json:"lastCaptureReceivedAt"`
-}
 type DetectedSector struct {
 	LayoutID           int64            `json:"layoutId"`
 	Sector             int              `json:"sector"`
@@ -77,14 +70,11 @@ type DetectedSector struct {
 	LastEntryAt        time.Time        `json:"lastEntryAt"`
 }
 type DetectionData struct {
-	Source  DetectionSource  `json:"source"`
 	Sectors []DetectedSector `json:"sectors"`
 }
 type DetectionPage struct {
-	Experimental bool            `json:"experimental"`
-	From         time.Time       `json:"from"`
-	To           time.Time       `json:"to"`
-	Policy       DetectionPolicy `json:"policy"`
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
 	DetectionData
 }
 type DetectionRepository interface {
@@ -115,5 +105,5 @@ func (s *DetectionService) List(ctx context.Context, q DetectionQuery) (Detectio
 	if data.Sectors == nil {
 		data.Sectors = []DetectedSector{}
 	}
-	return DetectionPage{Experimental: true, From: q.From, To: q.To, Policy: s.policy, DetectionData: data}, nil
+	return DetectionPage{From: q.From, To: q.To, DetectionData: data}, nil
 }
