@@ -52,8 +52,8 @@ aristas, carga del grafo, cobertura y antigüedad del tráfico.
 - La implementación vigente también usa **`default_fallback`** cuando no hay
   velocidad utilizable: mediana de velocidades válidas del snapshot o, si no hay,
   `config.DetourDefaultSpeedKPH` (20 km/h). `forwardDefaultEdges` y
-  `reverseDefaultEdges` exponen esa cobertura. No presentar todo el tiempo como
-  observado ni restaurar la exclusión de aristas del antiguo plan sin decidirlo.
+  `reverseDefaultEdges` exponen los conteos de respaldo del grafo local, no sólo
+  del camino elegido. No presentar todo el tiempo de decisión como observado.
 - Caché en memoria por tile: TTL 30 min, LRU de 256 entradas/16 MiB, deduplicación
   concurrente, hasta 10 QPS y timeout TomTom de 10 s. No guarda tiles en PostgreSQL.
   Una falla del proveedor sigue siendo un error, no una variante calculada sin aviso.
@@ -63,15 +63,12 @@ aristas, carga del grafo, cobertura y antigüedad del tráfico.
   `details => false`: en pgRouting 4.0, activarlo podía perder restricciones si
   otro punto partía la arista. No eliminar ese ajuste como una simplificación.
 - Hay recuperación de pares con vueltas en U artificiales mediante ruteo por par.
-  El servicio también puede reintentar con 250 m adicionales de margen de grafo
-  para fallos compatibles; no mueve las anclas. No confundir el radio nominal
-  de 1 km del diseño inicial con una prohibición de ese reintento vigente.
-
-**Desalineación documental pendiente:** la sección 13 de la arquitectura y partes
-narrativas de OpenAPI todavía describen el MVP inicial (corte simple y sin fallback
-por falta de cobertura). El código actual ya admite multitramos, fallback y
-recuperaciones. Esta limpieza conserva esas diferencias explícitas; no cambia
-políticas ni pretende resolverlas eliminando comportamiento implementado.
+  El servicio reintenta una sola vez con 250 m adicionales de margen de grafo
+  ante `no_detour_within_search_area`, `anchor_not_matched` o
+  `required_stop_not_matched`. No mueve las anclas/intervalos originales ni cambia
+  paradas obligatorias. El camino puede usar el margen adicional; si el reintento
+  falla, conserva el error inicial. Los conectores tienen tolerancia de borde
+  de 2 m y no pueden cruzar el corredor prohibido.
 
 ## Operación y validación
 
@@ -97,6 +94,5 @@ TEST_DATABASE_URL="$DATABASE_URL" go test ./internal/database/postgres -run 'Tes
 
 Se probaron variantes reales de la línea 132 con cortes en Av. Córdoba; no es
 una validación exhaustiva. Pendientes: revisión visual de más recorridos/cortes,
-latencia fría/caliente, cuota y consumo sostenidos, y sincronizar la descripción
-funcional con las ampliaciones actuales. No se conservan contadores históricos
+latencia fría/caliente, cuota y consumo sostenidos. No se conservan contadores históricos
 de requests del spike ni sus PBF temporales como documentación operativa.

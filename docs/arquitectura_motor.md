@@ -1385,10 +1385,9 @@ Además:
 ## 13. Desvíos por cortes
 
 > **Estado:** dominio, proveedor de tráfico, repositorio pgRouting, servicio Go y
-> `POST /detours` implementados. Funcionamiento operativo, ampliaciones actuales
-> y validaciones pendientes: [RF05 — Desvíos](rf05_desvios.md).
-> Esta sección describe el MVP inicial; las diferencias actuales (multitramos,
-> fallback de cobertura y reintentos) están señaladas en esa guía.
+> `POST /detours` implementados, con cortes multitramos, velocidades de respaldo
+> para calles sin cobertura y un reintento local con margen de grafo.
+> Operación y validaciones pendientes: [RF05 — Desvíos](rf05_desvios.md).
 
 Una calle cortada no cambia el diseño de una línea, pero le impide recorrerla.
 Cuando eso ocurre la pregunta deja de ser "¿conviene esta ruta?" y pasa a ser
@@ -1402,7 +1401,7 @@ flowchart TD
     IN["Ruta + corte"] --> HIT["1. Determinar qué tramos<br/>y paradas quedan afectados"]
     HIT --> NONE{"¿Hay bloqueo?"}
     NONE -- no --> SAME["Se informa que el corte<br/>no afecta la ruta"]
-    NONE -- sí --> REROUTE["2. Buscar caminos dentro de 1 km<br/>sobre la red vial, evitando el corte"]
+    NONE -- sí --> REROUTE["2. Buscar caminos en el área local<br/>nominal de 1 km, evitando el corte"]
     REROUTE --> DROP["3. Elegir las paradas opcionales<br/>según el criterio"]
     DROP --> VARIANT["4. Armar la variante<br/>y validarla"]
     VARIANT --> COMPARE["5. Comparar variante<br/>contra ruta original"]
@@ -1410,11 +1409,12 @@ flowchart TD
 
 ### 13.1. Qué es un corte
 
-El MVP recibe exactamente un corte como `LineString` GeoJSON: una cuadra o una
-sucesión de cuadras que la línea no puede atravesar. Normalmente proviene de un
-path OSRM y por eso sigue calles OSM, aunque el motor tolera diferencias entre
-las versiones de ambos grafos. Los puntos y polígonos, igual que múltiples
-cortes en un pedido, quedan fuera del MVP.
+El pedido recibe un campo `cut` GeoJSON como `LineString` o `MultiLineString`:
+una barrera simple o varios ramales, por ejemplo un corte en T o H. Los ramales
+no necesitan unirse mediante segmentos ficticios; todos se consideran bloqueados
+en la misma consulta. Normalmente provienen de paths OSRM y siguen calles OSM,
+aunque el motor tolera diferencias entre las versiones de ambos grafos.
+Los puntos y polígonos no son cortes válidos.
 
 El corte lo aporta quien consulta, marcado sobre el mapa. El motor no lo
 descubre ni lo guarda: viaja en el pedido, igual que la ruta. Un corte que dejó
@@ -1440,8 +1440,8 @@ eso el contacto se evalúa contra un corredor configurable, inicialmente de 5
 metros, del mismo modo que la validación admite una tolerancia entre una parada
 y el extremo de su tramo (sección 5.2).
 
-El `LineString` es una barrera que no se puede atravesar, no la identificación
-de una calle cerrada. Toda arista que ingresa en ese corredor se excluye sin
+Cada ramal del corte es una barrera que no se puede atravesar, no la
+identificación de una calle cerrada. Toda arista que ingresa en ese corredor se excluye sin
 importar su orientación: si una calle perpendicular cruza el corte, tampoco se
 puede circular por ella. Una calle paralela que permanece completamente fuera
 del corredor sigue disponible.
@@ -1470,19 +1470,24 @@ La variante se construye con el cambio mínimo:
 - Los tramos que el corte no alcanza se conservan exactamente como llegaron.
 - Sólo se reemplaza el recorrido de los tramos bloqueados.
 
-Alrededor del corte se construye un área de búsqueda de 1 km. La geometría
-original que queda fuera de esa área se conserva exactamente; dentro de ella se
-buscan caminos sobre la red vial, descartando las calles que el corte alcanza.
-El camino no puede salir del área de búsqueda: un rodeo mayor ya no se considera
-un desvío local aceptable para el MVP.
+Alrededor del corte se construye un área nominal de búsqueda de 1 km. La geometría
+original exterior se conserva exactamente; se reemplazan los intervalos interiores
+con caminos sobre la red vial, descartando las calles que el corte alcanza.
+
+Si el intento inicial falla por falta de camino, ancla sin enganche o parada
+obligatoria sin enganche, se reintenta una sola vez ampliando **250 m el área del
+grafo**. No se mueven las anclas ni los intervalos originales y no cambia qué
+paradas son obligatorias u opcionales. El camino del reintento puede usar ese
+margen adicional; 1 km no es un límite absoluto para su geometría. Si también
+falla, se conserva el error del intento inicial.
 
 Cuando el límite corta un `PathToNext` por la mitad, se conservan su prefijo y
 su sufijo originales y sólo se reemplaza la porción interior. Los puntos donde
 la ruta cruza el límite actúan como anclas del camino nuevo. Al proyectar una
 parada o ancla sobre la red puede aparecer una separación por las distintas
 versiones de OSM. La geometría incluye explícitamente ese conector y sólo lo
-acepta si permanece dentro del área de búsqueda y no cruza el corredor
-prohibido; no deja un salto implícito al coser ambos trazados.
+acepta si respeta el área del grafo (con tolerancia de borde) y no cruza el
+corredor prohibido; no deja un salto implícito al coser ambos trazados.
 
 Esa distinción es la que mantiene interpretable el resultado: como todo lo demás
 queda igual, la diferencia entre la variante y la ruta original es atribuible al
@@ -1494,13 +1499,13 @@ Si una parada queda a 20 metros o menos del corte, se considera alcanzada: el
 vehículo no puede detenerse donde no puede entrar. Esa parada se quita de todas
 las variantes posibles.
 
-Además, una parada cuya distancia geográfica mínima al `LineString` del corte
-sea de hasta 500 metros es **opcional**. El criterio de decisión puede
+Además, una parada cuya distancia geográfica mínima a cualquiera de los ramales
+del corte sea de hasta 500 metros es **opcional**. El criterio de decisión puede
 saltearla para evitar que el vehículo vuelva hacia la zona afectada. Las paradas
 a más de 500 metros no pueden eliminarse: si no existe un camino que las
 conserve dentro del área de búsqueda, el corte no tiene variante resoluble.
 Ambos radios son parámetros versionados del modelo: 500 metros para omisión de
-paradas y 1 km para búsqueda vial.
+paradas y 1 km nominal para búsqueda vial, con el reintento de la sección 13.3.
 
 El orden de las paradas conservadas nunca cambia. Cuando se omite una, el motor
 rutea directamente entre las paradas o anclas conservadas que quedan a ambos
@@ -1519,14 +1524,25 @@ atención: acortar una punta cambia qué es la línea, no sólo por dónde pasa.
 La selección del camino y la simulación responden preguntas distintas.
 
 Para elegir el desvío más rápido, el motor consulta tiles vectoriales de tráfico
-TomTom que cubran el área de búsqueda de 1 km, asocia sus segmentos con las
-aristas de `vialis.calles` y calcula costos en segundos a partir de la velocidad
-actual. Cuando una arista no tiene observación directa, puede usar la mediana de
-entre 3 y 5 segmentos de la misma categoría vial situados a hasta 300 metros.
-La respuesta distingue `tomtom_direct` de `tomtom_nearby_estimate`; si no hay
-muestras suficientes, la arista no recibe una velocidad inventada. Esos costos
-sólo ordenan las alternativas del corte y no reemplazan el modelo de tiempo de
-la simulación.
+TomTom que cubran el área nominal de búsqueda, asocia sus segmentos por sentido
+con las aristas de `vialis.calles` y calcula costos en segundos. Las fuentes son:
+
+- **`tomtom_direct`:** velocidad utilizable asociada directamente a la arista.
+- **`tomtom_nearby_estimate`:** mediana de entre 3 y 5 segmentos de la misma
+  categoría vial a hasta 300 metros cuando no hay velocidad directa utilizable.
+- **`default_fallback`:** sin cobertura utilizable suficiente, usa la mediana de
+  velocidades positivas y sin cierre del snapshot; si no hay ninguna, usa
+  `config.DetourDefaultSpeedKPH`, actualmente **20 km/h**.
+
+Por lo tanto, una calle sin cobertura no se excluye sólo por ese motivo ni
+necesariamente produce un error: puede participar con costo estimado de respaldo.
+El bloqueo del corte y los sentidos/restricciones viales siguen aplicándose.
+`trace.graph` informa conteos por sentido de aristas directas, estimadas y de
+respaldo (`forwardDefaultEdges`/`reverseDefaultEdges`); esos conteos describen el
+grafo local, no sólo el camino elegido. El tiempo de decisión puede mezclar
+observaciones y estimaciones: no debe presentarse como tráfico íntegramente
+observado. Esos costos sólo ordenan alternativas y no reemplazan el modelo de
+tiempo de la simulación. Un fallo del proveedor sigue siendo un error.
 
 Una vez armada, la variante se evalúa con el mismo cálculo que cualquier otra
 ruta para demanda (sección 6), distancia (sección 7) y tiempo GTFS (sección 8).
@@ -1554,8 +1570,8 @@ de la sección 13.4:
 
 | Criterio | Prioridad | Desempate |
 |---|---|---|
-| Menor tiempo | Menor tiempo según tráfico actual; puede omitir paradas a hasta 500 m del corte. | Menor cantidad de paradas perdidas. |
-| Menor cantidad de paradas perdidas | Mayor cantidad de paradas conservadas. | Menor tiempo según tráfico actual. |
+| Menor tiempo | Menor tiempo de decisión (tráfico y estimaciones); puede omitir paradas a hasta 500 m del corte. | Menor cantidad de paradas perdidas. |
+| Menor cantidad de paradas perdidas | Mayor cantidad de paradas conservadas. | Menor tiempo de decisión (tráfico y estimaciones). |
 
 Las prioridades son lexicográficas: el desempate nunca puede empeorar el
 objetivo principal. Para comparar alternativas no hace falta calcular todas las
@@ -1603,17 +1619,17 @@ lugar de aproximar:
 
 - **Ningún tramo ni parada bloqueado.** El corte no toca la ruta. No se inventa
   un cambio: se informa que la ruta sigue siendo transitable.
-- **El corte aísla el tramo.** Si dentro del área de búsqueda de 1 km no existe
-  ningún camino entre las anclas o paradas obligatorias que evite todos los
-  cortes, no se amplía el radio ni se devuelve una recta. El tramo se informa
-  como no resoluble: una geometría fuera del límite aceptado evaluaría una
-  variante distinta de la solicitada.
+- **El corte aísla el tramo.** Si no existe camino entre las anclas o paradas
+  obligatorias que evite la barrera, se admite el único reintento con margen de
+  grafo descrito en la sección 13.3. Si tampoco resuelve el caso, se devuelve un
+  error; no se amplía indefinidamente el área ni se reemplaza el camino por una recta.
 - **Quedan menos de dos paradas cubiertas.** La ruta deja de existir como
   recorrido y no hay nada que evaluar.
-- **La topología conecta pero el tráfico no.** Se puede consultar el mismo
-  subgrafo con sus costos OSM sólo para distinguir este caso de un aislamiento
-  real. Se informa cobertura de tráfico insuficiente; ese camino diagnóstico
-  nunca se devuelve ni participa de la selección.
+- **La topología conecta pero el grafo con costos no resuelve el camino.** Se
+  conserva el diagnóstico `traffic_coverage_insufficient`: un camino con costos
+  OSM usado para diagnosticar no se devuelve como variante. La mera ausencia de
+  observación directa no basta para provocar este error, porque las aristas
+  pueden recibir estimación vecina o velocidad de respaldo (sección 13.5).
 
 ### 13.9. Limitaciones
 
@@ -2189,7 +2205,7 @@ También conviene separar:
 | Demanda bruta | Viajes de la matriz entre zonas cubiertas, antes de ponderar accesibilidad. |
 | Demanda captada | Demanda potencial de un par de paradas multiplicada por el factor de captación. |
 | Demanda potencial | Demanda bruta ponderada por accesibilidad en origen y destino. |
-| Corte | Barrera `LineString` que la línea no puede atravesar, declarada por quien consulta. |
+| Corte | Barrera `LineString` o `MultiLineString` que la línea no puede atravesar, declarada por quien consulta. |
 | Delta | Diferencia entre la ruta propuesta y la ruta base, con su valor absoluto y su fracción relativa. |
 | Desvío | Variante de una ruta que esquiva los cortes redibujando sólo los tramos que quedaron intransitables. |
 | Factor de captación | Proporción configurable de la demanda potencial que se asume paga un viaje en la línea. |

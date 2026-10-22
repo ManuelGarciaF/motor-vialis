@@ -686,14 +686,21 @@ paths:
       operationId: createDetour
       summary: Genera y evalúa un desvío temporal
       description: >
-        Recibe una ruta completa, un único corte GeoJSON LineString y un
-        criterio lexicográfico. Busca caminos dentro de un kilómetro del corte
-        con tráfico TomTom actual, reconstruye una variante válida y la compara
-        con la ruta original mediante el modelo estable de simulación.
+        Recibe una ruta completa, un campo cut GeoJSON LineString o MultiLineString
+        y un criterio lexicográfico. Todos los ramales del corte actúan como barrera.
+        Busca caminos en un área nominal de un kilómetro; ante falta de camino,
+        ancla o parada obligatoria sin enganche puede reintentar una sola vez con
+        250 m adicionales de grafo, sin mover las anclas ni reclasificar paradas.
+        Reconstruye una variante válida y la compara con la ruta original.
 
 
-        El tiempo de tráfico sólo decide la variante. Los tiempos contenidos en
-        `comparison` siguen siendo estimaciones comerciales GTFS.
+        Los costos de decisión usan tráfico TomTom directo, estimación vecina o,
+        sin cobertura utilizable suficiente, una velocidad de respaldo: mediana
+        de velocidades positivas sin cierre del snapshot, o config.DetourDefaultSpeedKPH
+        (20 km/h) si no hay ninguna. trace.graph informa las aristas de respaldo
+        por sentido; no son velocidades observadas. Un fallo del proveedor sigue
+        siendo un error. El tiempo de decisión sólo elige la variante; los tiempos
+        de comparison siguen siendo estimaciones comerciales GTFS.
       tags: [detours]
       requestBody:
         required: true
@@ -746,8 +753,10 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: >
-            TomTom no está disponible, el snapshot está vencido o su cobertura
-            no alcanza para construir un camino con costos actuales.
+            TomTom no está disponible, el snapshot está vencido o el diagnóstico
+            del grafo indica traffic_coverage_insufficient. La falta de cobertura
+            directa por sí sola no implica error: puede usarse estimación vecina
+            o velocidad de respaldo.
           content:
             application/json:
               schema:
@@ -1198,10 +1207,10 @@ components:
     LineString:
       type: object
       description: >
-        GeoJSON LineString. Las coordenadas van [longitud, latitud]. El
-        primer punto debe coincidir con la parada actual y el último con la
-        siguiente (tolerancia 20 m); el sentido debe ir de la actual a la
-        siguiente.
+        GeoJSON LineString. Las coordenadas van [longitud, latitud]. Cuando se
+        usa como pathToNext, el primer punto debe coincidir con la parada actual
+        y el último con la siguiente (tolerancia 20 m), en ese sentido.
+        Esas restricciones de extremos no aplican al corte de un desvío.
       required: [type, coordinates]
       properties:
         type:
@@ -1217,6 +1226,32 @@ components:
             items:
               type: number
               format: double
+
+    MultiLineString:
+      type: object
+      description: >
+        GeoJSON MultiLineString WGS84: varios ramales sin conectores ficticios.
+        En un corte de desvío todos los ramales actúan como barrera; coordenadas
+        [longitud, latitud]. Cada ramal necesita al menos dos posiciones.
+      additionalProperties: false
+      required: [type, coordinates]
+      properties:
+        type:
+          type: string
+          enum: [MultiLineString]
+        coordinates:
+          type: array
+          minItems: 1
+          items:
+            type: array
+            minItems: 2
+            items:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+                type: number
+                format: double
 
     Stop:
       type: object
@@ -1789,11 +1824,14 @@ components:
         route:
           $ref: "#/components/schemas/Route"
         cut:
-          allOf:
+          oneOf:
             - $ref: "#/components/schemas/LineString"
+            - $ref: "#/components/schemas/MultiLineString"
           description: >
-            Único corte vigente para esta consulta. No expresa sentido,
-            horarios ni fechas y se interpreta como una barrera.
+            Barrera para esta consulta: un ramal LineString o varios ramales
+            MultiLineString, por ejemplo en T/H. No expresa sentido, horarios
+            ni fechas. Los límites de posiciones y longitud del corte se evalúan
+            sobre el conjunto de ramales; no necesita coincidir con paradas.
         criterion:
           $ref: "#/components/schemas/DetourCriterion"
 
@@ -1838,8 +1876,9 @@ components:
           type: number
           format: double
           description: >
-            Tiempo TomTom usado para elegir los caminos locales. No es el tiempo
-            comercial GTFS informado por comparison.
+            Tiempo usado para elegir los caminos locales, con costos TomTom
+            directos, estimados por vecinos o de respaldo. No es íntegramente
+            observado ni el tiempo comercial GTFS informado por comparison.
 
     DetourTrafficTrace:
       type: object
@@ -1863,9 +1902,13 @@ components:
 
     DetourGraphTrace:
       type: object
+      description: >
+        Conteos de aristas por procedencia del costo y sentido del grafo local,
+        no sólo de las aristas del camino seleccionado. Direct corresponde a
+        tomtom_direct; Estimated a tomtom_nearby_estimate; Default a default_fallback.
       required:
         [candidateEdges, blockedEdges, forwardDirectEdges, reverseDirectEdges,
-         forwardEstimatedEdges, reverseEstimatedEdges]
+         forwardEstimatedEdges, reverseEstimatedEdges, forwardDefaultEdges, reverseDefaultEdges]
       properties:
         candidateEdges:
           type: integer
@@ -1879,6 +1922,14 @@ components:
           type: integer
         reverseEstimatedEdges:
           type: integer
+        forwardDefaultEdges:
+          type: integer
+          minimum: 0
+          description: Aristas en sentido directo con velocidad de respaldo, no observada.
+        reverseDefaultEdges:
+          type: integer
+          minimum: 0
+          description: Aristas en sentido inverso con velocidad de respaldo, no observada.
 
     DetourStopTrace:
       type: object
