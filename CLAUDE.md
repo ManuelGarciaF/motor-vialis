@@ -60,10 +60,9 @@ their estimators through `app.NewSimulationService`, so they cannot drift apart;
 
 Read `docs/mapa_codigo.md` for the process/package map, SQL ownership and the
 H0011/H0012 boundary. Functional simulation rules remain authoritative in
-`docs/arquitectura_motor.md`; H0012 contracts live in `docs/h0012_incremental.md`
-and `docs/h0012_persistencia.md`; always-on worker producer operation is documented in
-`docs/h0012_productor.md`. Experimental detection/API contracts live in
-`docs/h0012_deteccion.md`. Keep those details in their owning document
+`docs/arquitectura_motor.md`; H0012 decisions, measurement, persistence, worker
+operation and detection are documented in `docs/h0012_cuellos_botella.md`;
+HTTP fields live in `docs/openapi.yaml`. Keep those details in their owning document
 rather than duplicating policy thresholds in navigation guides.
 
 ### Layering

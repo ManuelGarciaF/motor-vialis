@@ -184,9 +184,10 @@ El contrato completo está en `docs/openapi.yaml`.
   opcionalmente por hora.
 - `POST /simulations`: simula una ruta propuesta.
 - `POST /comparisons`: simula dos rutas y devuelve la diferencia entre ambas.
-- `POST /detours`: recibe `route`, un único `cut` GeoJSON `LineString` y
-  `criterion` (`MENOR_TIEMPO` o `MENOR_PARADAS_PERDIDAS`); devuelve la variante,
+- `POST /detours`: recibe `route`, un `cut` GeoJSON `LineString` o `MultiLineString`
+  y `criterion` (`MENOR_TIEMPO` o `MENOR_PARADAS_PERDIDAS`); devuelve la variante,
   sus paradas no cubiertas, la comparación y la trazabilidad de tráfico/grafo.
+  Funcionamiento y operación: [RF05 — Desvíos](docs/rf05_desvios.md).
 
 Las líneas propias de un usuario las persiste otro servicio: acá sólo se leen
 las que cargó la ETL de GTFS.
@@ -205,7 +206,6 @@ go run ./cmd/realtime-worker -interval=1m
 
 Ejecutar una sola instancia. Con la migración de fase 4 aplicada, también
 mantiene eventos de proximidad. Pasos/headways/CV fueron descartados. Ver
-[alcance y decisiones](docs/plan_h0011_aglutinacion.md) y
 [operación y API](docs/h0011_aglutinaciones.md).
 
 - `GET /lines/{id}/bunching`: pares actuales confirmados y resumen de recurrencia semanal del recorrido/sentido.
@@ -236,10 +236,8 @@ checkpoint en los siguientes. Parámetros de medición, cadencia y recursos est�
 en `internal/config/parameters.go`; la política persistida debe coincidir con
 config y nunca se sobrescribe al reiniciar.
 
-Ver [esquema, activación y operación del productor](docs/h0012_productor.md),
-[contrato de persistencia](docs/h0012_persistencia.md) y
-[medición incremental](docs/h0012_incremental.md). La validación operacional
-sostenida y la calibración con capturas reales siguen pendientes.
+Decisiones, funcionamiento y operación: [H0012 — Cuellos de botella](docs/h0012_cuellos_botella.md).
+La validación operacional sostenida y la calibración siguen pendientes.
 
 ### API de detección experimental
 
@@ -251,7 +249,7 @@ sin límite de sectores, IDs de unidades ni GPS individuales.
 Mantiene detenciones y extremos señalados. Cuenta pasajes, no unidades/fechas
 independientes. No consolida entre líneas ni ofrece Top 10; una lista vacía no
 acredita ausencia de problemas o cobertura completa. Ver
-[contrato y límites](docs/h0012_deteccion.md) y [OpenAPI](docs/openapi.yaml).
+[funcionamiento y límites](docs/h0012_cuellos_botella.md#api) y [OpenAPI](docs/openapi.yaml).
 
 ### Mapa de diagnóstico del worker
 

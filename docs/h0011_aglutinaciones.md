@@ -1,7 +1,39 @@
-# H0011 — operación y API de aglutinaciones
+# H0011 — Aglutinaciones: decisiones, operación y API
 
-Alcance y decisiones: [`plan_h0011_aglutinacion.md`](plan_h0011_aglutinacion.md).
-Contrato HTTP completo: [`openapi.yaml`](openapi.yaml).
+Detecta pares cercanos del mismo scope operacional y conserva la evolución del
+encuentro. No mide regularidad, frecuencia, pasajeros ni severidad: proximidad
+puede deberse a terminales, detenciones o ruido GPS, no necesariamente a anomalías.
+Es independiente del simulador de demanda, tiempo y recaudación.
+**Pasos por parada, headways, CV y `/lines/{id}/regularity` fueron descartados**;
+no son fases pendientes. Contrato HTTP: [`openapi.yaml`](openapi.yaml).
+
+## Correspondencia GCBA–GTFS
+
+El feed GCBA `vehiclePositionsSimple` y el catálogo GTFS usan namespaces distintos;
+no vincular por nombre, `direction` o coincidencia de `trip_id` durante una request.
+La tabla administrada `vialis.equivalencias_recorridos_gcba` resuelve
+`gcba_route_id + gcba_direction → gtfs_route_id + gtfs_direction_id`.
+Varias identidades GCBA pueden apuntar al mismo GTFS, pero no se mezclan al detectar
+pares. Los IDs internos regenerables del catálogo no son claves históricas.
+
+La selección versionada contiene 814 equivalencias: 248 candidatos fuertes y
+566 ambiguos aceptados tomando el mayor score. No son 814 correspondencias de
+confianza alta. Los casos sin vínculo se ignoran y cuentan como no vinculados;
+la cobertura del catálogo limita qué líneas informa la API.
+
+La selección compara muestras deterministas de hasta 500 y 800 observaciones por
+identidad, con proximidad al shape, extensión cubierta y avance coherente.
+La clasificación fuerte exige ≥100 posiciones, cobertura ≥90 % a 200 m y ≥70 %
+a 100 m, 16/20 tramos observados, ≥30 pares temporales útiles, ≥80 % de avance,
+margen de score ≥0,10 y mismo ganador en ambas muestras. Son criterios de selección
+administrada, no filtros runtime. Se descartó vincular por `trip_id`: la auditoría
+mostró baja compatibilidad espacial; compartir un ID no prueba el mismo viaje.
+
+La fuente de `sql/recorridos/cargar_equivalencias_gcba.sql` es
+[`h0011_spatial_match_candidates.csv`](h0011_spatial_match_candidates.csv).
+Comandos de reproducción: [`scripts/README.md`](../scripts/README.md).
+No cambiar equivalencias ni recargar GTFS desde HTTP. Un GTFS contemporáneo y
+decoder protobuf son mejoras, no requisitos para mantener el detector actual.
 
 ## Componentes y estado
 
@@ -328,4 +360,5 @@ La auditoría inicial del 08/10 encontró cero inconsistencias de distancia,
 timestamps y orden de pares. En las capturas 178/179 se verificó el mismo
 fingerprint, cero nuevas filas y ningún aumento de muestras. Estos controles
 comprueban coherencia del detector, **no que cada encuentro sea una anomalía**.
-El contraste operacional y la retención física siguen pendientes.
+El contraste operacional, la retención física de eventos, el dimensionamiento
+sostenido de disco/WAL y la cuota de polling siguen pendientes.

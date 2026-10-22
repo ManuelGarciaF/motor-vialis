@@ -1385,9 +1385,10 @@ Además:
 ## 13. Desvíos por cortes
 
 > **Estado:** dominio, proveedor de tráfico, repositorio pgRouting, servicio Go y
-> `POST /detours` implementados. Los casos reales, la demo y las mediciones
-> operativas corresponden a la fase 6 de
-> [`plan_rf05_desvios.md`](plan_rf05_desvios.md).
+> `POST /detours` implementados. Funcionamiento operativo, ampliaciones actuales
+> y validaciones pendientes: [RF05 — Desvíos](rf05_desvios.md).
+> Esta sección describe el MVP inicial; las diferencias actuales (multitramos,
+> fallback de cobertura y reintentos) están señaladas en esa guía.
 
 Una calle cortada no cambia el diseño de una línea, pero le impide recorrerla.
 Cuando eso ocurre la pregunta deja de ser "¿conviene esta ruta?" y pasa a ser

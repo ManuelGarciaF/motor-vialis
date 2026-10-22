@@ -87,9 +87,8 @@ distinto del puerto publicado en el host. Si no hay raw, usar una ventana
 explícita: la selección automática del último GPS no tiene un corte disponible.
 
 El matcher usa proyección al punto más cercano y no resuelve ambigüedades en
-lazos. No publicar detecciones a partir de este experimento. Plan y resultados:
-[`plan_h0012_cuellos_botella.md`](../docs/plan_h0012_cuellos_botella.md),
-[`spike_h0012_resultados.md`](../docs/spike_h0012_resultados.md).
+lazos. No publicar detecciones a partir de este experimento. Funcionamiento
+actual y decisiones: [H0012](../docs/h0012_cuellos_botella.md).
 
 ## Análisis H0012 en Go sobre PostGIS
 
@@ -120,7 +119,6 @@ psql "$DATABASE_URL" -X -qAt -v line_id=1015 \
   -f scripts/audit-bottlenecks-equivalences.sql > .local/h0012/equivalences-1015.json
 ```
 
-Hallazgos: [`h0012_auditoria_matching.md`](../docs/h0012_auditoria_matching.md).
 Los candidatos son sólo espaciales: no prueban identidad ni sentido. Ninguna
 herramienta corrige equivalencias ni relaja filtros.
 
@@ -138,11 +136,10 @@ en snapshot read-only/repeatable-read y no modifica tablas persistentes. Los
 fragmentos conservan vértices y aristas originales. Con `compare_catalog=false`
 (default) sólo mide contra el asignado; los conteos de otros shapes son null.
 Históricos incompatibles con mapping/hash vigentes se separan, no se reproyectan.
-Resultados y límites: [`h0012_auditoria_global.md`](../docs/h0012_auditoria_global.md).
+Límites de interpretación: [H0012](../docs/h0012_cuellos_botella.md#límites-y-trabajo-pendiente).
 
 Reporte sin GPS/IDs de unidades, con métricas null donde no hay pasajes.
-Filtros iniciales experimentales 180 s / 100 m / 100 km/h. Detalles y resultados:
-[`h0012_analisis.md`](../docs/h0012_analisis.md).
+Política de medición y diferencias con la API: [H0012](../docs/h0012_cuellos_botella.md).
 
 ## Antigüedad GPS y ausencias H0012
 
@@ -160,7 +157,7 @@ La primera mide antigüedad al recibir el GPS por primera vez, no latencia de re
 pura. La segunda evalúa hipotéticamente cerrar tras varias capturas sin nuevos
 timestamps: el raw canónico no permite reconstruir cada presencia repetida en
 el feed. Los tests crean sólo fixtures TEMP de sesión y no escriben en `vialis`.
-Decisiones y resultados: [`h0012_retraso_gps.md`](../docs/h0012_retraso_gps.md).
+Regla de cierre vigente: [H0012](../docs/h0012_cuellos_botella.md#recepción-cierre-y-reinicios).
 
 ## Cobertura de pasajes H0012 por sector/fecha/hora
 
@@ -182,7 +179,7 @@ marcador la salida es parcial y el consolidador la rechaza. Franjas de una hora
 local Buenos Aires; cada pasaje se atribuye por entrada estimada. No emite IDs de
 unidades ni GPS individuales. Las entradas incompletas/censuradas no equivalen a
 viajes reales perdidos; los cortes de volumen del resumen no son umbrales de
-publicación. Resultados: [`h0012_cobertura_pasajes.md`](../docs/h0012_cobertura_pasajes.md).
+publicación. Criterio actual de la API: [H0012](../docs/h0012_cuellos_botella.md#criterio-actual).
 
 ## Auditoría de aglutinaciones
 
@@ -268,5 +265,4 @@ La política administrada actual acepta `high_confidence` y el mejor candidato d
 clasificaciones y no contiene IDs de vehículos. El SQL generado reemplaza la
 tabla de equivalencias: no ejecutarlo automáticamente durante una request.
 
-Criterios y decisiones: [`../docs/plan_h0011_aglutinacion.md`](../docs/plan_h0011_aglutinacion.md).
-Operación del worker/API: [`../docs/h0011_aglutinaciones.md`](../docs/h0011_aglutinaciones.md).
+Decisiones, operación y API: [H0011 — Aglutinaciones](../docs/h0011_aglutinaciones.md).

@@ -34,7 +34,7 @@ Bottlenecks corre siempre con el worker en un ciclo independiente. El primer
 arranque inicializa su configuración sin backfill; los siguientes recuperan el
 checkpoint. No hay habilitación ni nombres por CLI. La prueba operacional/cadencia
 sostenida y la calibración definitiva siguen pendientes. `GET /bottlenecks`
-lee pasajes finales con la [regla experimental aprobada](h0012_deteccion.md),
+lee pasajes finales con la [regla aprobada](h0012_cuellos_botella.md#criterio-actual),
 sin ejecutar el productor desde HTTP.
 
 ## Dónde buscar cada responsabilidad
@@ -94,11 +94,9 @@ que H0011 purga. El soporte y estado JSON conservan nanosegundos; `timestamptz`
 auxiliar tiene precisión de microsegundos. La identidad no se construye usando
 únicamente ese timestamp truncado.
 
-Operación del ciclo: [productor H0012](h0012_productor.md).
-Detalles de almacenamiento: [persistencia H0012](h0012_persistencia.md).
-Medición sin confundir fin de lote con cierre: [estado incremental](h0012_incremental.md).
-Políticas, calibración y alcance pendiente: [plan H0012](plan_h0012_cuellos_botella.md).
-Estos documentos son las referencias del tema; este mapa no replica sus umbrales.
+Decisiones, medición, almacenamiento, operación y alcance:
+[H0012 — Cuellos de botella](h0012_cuellos_botella.md).
+Este mapa sólo orienta sobre el código; no replica sus políticas.
 
 ## Datos y pruebas
 
@@ -107,7 +105,8 @@ Estos documentos son las referencias del tema; este mapa no replica sus umbrales
 - Movilidad/H3/OD: [pipeline de viajes](../sql/viajes/README.md).
 - GTFS, tiempos y conexiones: [pipeline de recorridos](../sql/recorridos/README.md).
 - Grafo vial y giros: [pipeline de calles](../sql/calles/README.md).
-- H0011: [operación y API](h0011_aglutinaciones.md).
+- RF05: [funcionamiento y operación](rf05_desvios.md).
+- H0011: [decisiones, operación y API](h0011_aglutinaciones.md).
 - Unitarios: `*_test.go` junto al dominio; `go test ./...` no requiere DB.
 - Integración: `TEST_DATABASE_URL` habilita pruebas PostgreSQL. Los tests nuevos
   de persistencia H0012 y binding de consultas crean/eliminan esquemas aislados;
