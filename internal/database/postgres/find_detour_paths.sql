@@ -94,6 +94,60 @@ WITH routed AS (
     WHERE start_fraction IS NOT NULL
       AND end_fraction IS NOT NULL
       AND start_fraction <> end_fraction
+), rumbos AS (
+    -- Sentido de marcha al entrar y al salir de cada pieza, medido sobre sus
+    -- primeros/últimos 15 m. Una pieza de menos de 5 m (el pedacito que deja un
+    -- punto de paso al partir una arista) no tiene un rumbo confiable y queda sin
+    -- medir: sólo cuenta como largo entre las piezas que sí se comparan.
+    SELECT
+        piece.start_vid,
+        piece.end_vid,
+        row_number() OVER (
+            PARTITION BY piece.start_vid, piece.end_vid
+            ORDER BY piece.path_seq
+        ) AS orden,
+        measured.largo,
+        coalesce(street.junction_osm IN ('roundabout', 'circular'), false)
+            OR street.tipo LIKE '%\_link' AS admite_vuelta,
+        CASE WHEN measured.largo >= 5 THEN ST_Azimuth(
+            ST_StartPoint(piece.geom)::geography,
+            ST_LineInterpolatePoint(piece.geom, least(1, 15 / measured.largo))::geography
+        ) END AS rumbo_salida,
+        CASE WHEN measured.largo >= 5 THEN ST_Azimuth(
+            ST_LineInterpolatePoint(piece.geom, greatest(0, 1 - 15 / measured.largo))::geography,
+            ST_EndPoint(piece.geom)::geography
+        ) END AS rumbo_llegada
+    FROM pieces piece
+    CROSS JOIN LATERAL (SELECT ST_Length(piece.geom::geography) AS largo) measured
+    JOIN vialis.calles street ON street.id_calle = piece.edge
+), giros_cruzando_calzada AS (
+    -- Un giro en U que cruza el cantero de una avenida dividida: el camino llega
+    -- por una calzada, toma un conector corto (≤ 30 m) y sale por la otra en
+    -- sentido contrario. Son aristas distintas, así que giros_en_u no lo ve, y
+    -- puede pasar lejos de cualquier parada, donde el selector no mira.
+    -- Rotondas y links (`*_link`, donde OSM carga los retornos diseñados) quedan
+    -- exentos: ahí volver es la maniobra prevista.
+    SELECT DISTINCT antes.start_vid, antes.end_vid
+    FROM rumbos antes
+    JOIN rumbos despues
+      ON despues.start_vid = antes.start_vid
+     AND despues.end_vid = antes.end_vid
+     AND despues.orden BETWEEN antes.orden + 1 AND antes.orden + 6
+    CROSS JOIN LATERAL (
+        SELECT
+            coalesce(sum(medio.largo), 0) AS largo,
+            coalesce(bool_or(medio.admite_vuelta), false) AS admite_vuelta
+        FROM rumbos medio
+        WHERE medio.start_vid = antes.start_vid
+          AND medio.end_vid = antes.end_vid
+          AND medio.orden > antes.orden
+          AND medio.orden < despues.orden
+    ) medio
+    WHERE antes.rumbo_llegada IS NOT NULL
+      AND despues.rumbo_salida IS NOT NULL
+      AND medio.largo <= 30
+      AND NOT (antes.admite_vuelta OR despues.admite_vuelta OR medio.admite_vuelta)
+      AND degrees(pi() - abs(pi() - abs(antes.rumbo_llegada - despues.rumbo_salida))) >= 150
 ), paths AS (
     SELECT
         -start_vid AS from_point,
@@ -104,6 +158,11 @@ WITH routed AS (
     FROM pieces
     WHERE NOT EXISTS (
         SELECT 1 FROM giros_en_u g
+        WHERE g.start_vid = pieces.start_vid
+          AND g.end_vid = pieces.end_vid
+    )
+      AND NOT EXISTS (
+        SELECT 1 FROM giros_cruzando_calzada g
         WHERE g.start_vid = pieces.start_vid
           AND g.end_vid = pieces.end_vid
     )
