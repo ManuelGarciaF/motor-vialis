@@ -238,7 +238,7 @@ func (handler *Handler) writeDetourError(
 			"code", domainError.Code,
 			"kind", domainError.Kind,
 		)
-		writeError(writer, status, string(domainError.Code), "", domainError.Message)
+		writeError(writer, status, string(domainError.Code), domainError.Field, domainError.Message)
 		return
 	}
 

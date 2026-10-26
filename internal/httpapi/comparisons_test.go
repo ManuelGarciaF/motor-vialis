@@ -157,7 +157,17 @@ func doComparisonRequest(
 	body []byte,
 ) *httptest.ResponseRecorder {
 	t.Helper()
-	request := httptest.NewRequest(http.MethodPost, "/comparisons", bytes.NewReader(body))
+	return doRequest(t, router, "/comparisons", body)
+}
+
+func doRequest(
+	t *testing.T,
+	router http.Handler,
+	path string,
+	body []byte,
+) *httptest.ResponseRecorder {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	return response
@@ -169,4 +179,84 @@ func comparisonJSON() []byte {
 		validRouteJSON(),
 		validRouteJSON(),
 	))
+}
+
+func TestCreateDetourComparisonUsesTheDetourComparator(t *testing.T) {
+	comparator := &fakeComparator{}
+	comparator.result.Delta.Revenue.PotentialRevenueCents.Absolute = -300
+	router := newTestRouterWith(&fakeSimulator{}, comparator)
+
+	response := doRequest(t, router, "/comparisons/detour", comparisonJSON())
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var got simulation.Comparison
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Delta.Revenue.PotentialRevenueCents.Absolute != -300 {
+		t.Fatalf("delta = %#v", got.Delta.Revenue)
+	}
+	if comparator.detourCalls != 1 || comparator.calls != 0 {
+		t.Fatalf("detour calls = %d, generic calls = %d", comparator.detourCalls, comparator.calls)
+	}
+	if comparator.received.Baseline.Jurisdiction != route.JurisdictionCABA ||
+		len(comparator.received.Proposed.Stops) != 2 {
+		t.Fatalf("comparator received = %#v", comparator.received)
+	}
+}
+
+func TestCreateDetourComparisonReportsErrors(t *testing.T) {
+	cases := []struct {
+		name       string
+		body       []byte
+		err        error
+		wantStatus int
+		wantCode   string
+		wantField  string
+	}{
+		{
+			name:       "missing proposed",
+			body:       []byte(fmt.Sprintf(`{"baseline": %s}`, validRouteJSON())),
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "validation_error",
+			wantField:  "proposed",
+		},
+		{
+			name: "reordered retained stop",
+			body: comparisonJSON(),
+			err: &route.ValidationError{
+				Field:   "proposed.stops[1].id",
+				Message: "must keep the baseline stop order",
+			},
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "validation_error",
+			wantField:  "proposed.stops[1].id",
+		},
+		{
+			name:       "timeout",
+			body:       comparisonJSON(),
+			err:        fmt.Errorf("simulate proposed: %w", context.DeadlineExceeded),
+			wantStatus: http.StatusGatewayTimeout,
+			wantCode:   "timeout",
+		},
+		{
+			name:       "internal",
+			body:       comparisonJSON(),
+			err:        errors.New("connection refused"),
+			wantStatus: http.StatusInternalServerError,
+			wantCode:   "internal_error",
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			router := newTestRouterWith(&fakeSimulator{}, &fakeComparator{err: testCase.err})
+
+			response := doRequest(t, router, "/comparisons/detour", testCase.body)
+
+			assertErrorResponse(t, response, testCase.wantStatus, testCase.wantCode, testCase.wantField)
+		})
+	}
 }

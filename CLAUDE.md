@@ -74,7 +74,9 @@ cmd/bottlenecks-analysis             experimental read-only H0012 analysis
 internal/app                        composition root for services
 internal/httpapi                    HTTP handlers (/lines, /lines/similar,
                                      /transfers, /simulations, /comparisons,
-                                     /detours, /bottlenecks); see docs/openapi.yaml
+                                     /comparisons/detour, /detours,
+                                     /routes/segment, /bottlenecks);
+                                     see docs/openapi.yaml
 internal/lines                      stored GTFS routes and corridor similarity
 internal/combinaciones              precomputed transfer ranking
 internal/simulation                 orchestrator: Service.Simulate()

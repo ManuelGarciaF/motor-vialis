@@ -35,7 +35,10 @@ type Error struct {
 	Code    ErrorCode
 	Kind    ErrorKind
 	Message string
-	Cause   error
+	// Field names the offending request field when the failure is tied to one
+	// (e.g. "waypoints[2]"); empty otherwise.
+	Field string
+	Cause error
 }
 
 func (err *Error) Error() string {

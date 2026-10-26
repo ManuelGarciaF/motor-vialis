@@ -28,10 +28,11 @@ func (simulator *fakeSimulator) Simulate(
 }
 
 type fakeComparator struct {
-	result   simulation.Comparison
-	err      error
-	received simulation.ComparisonInput
-	calls    int
+	result      simulation.Comparison
+	err         error
+	received    simulation.ComparisonInput
+	calls       int
+	detourCalls int
 }
 
 func (comparator *fakeComparator) Compare(
@@ -39,6 +40,15 @@ func (comparator *fakeComparator) Compare(
 	input simulation.ComparisonInput,
 ) (simulation.Comparison, error) {
 	comparator.calls++
+	comparator.received = input
+	return comparator.result, comparator.err
+}
+
+func (comparator *fakeComparator) CompareDetour(
+	_ context.Context,
+	input simulation.ComparisonInput,
+) (simulation.Comparison, error) {
+	comparator.detourCalls++
 	comparator.received = input
 	return comparator.result, comparator.err
 }

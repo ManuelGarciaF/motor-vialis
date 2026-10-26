@@ -42,6 +42,11 @@ func main() {
 		logger.Error("could not configure detour service", "error", err)
 		os.Exit(1)
 	}
+	segmentService, err := app.NewSegmentService(database)
+	if err != nil {
+		logger.Error("could not configure segment routing", "error", err)
+		os.Exit(1)
+	}
 	linesService := app.NewLinesService(database)
 	transfersService := app.NewCombinacionesService(database)
 	bunchingService, err := app.NewBunchingService(database)
@@ -65,7 +70,7 @@ func main() {
 		transfersService,
 		config.SimulationTimeout,
 		bunchingService,
-	).WithBottlenecks(bottlenecksService)
+	).WithBottlenecks(bottlenecksService).WithSegmentRouter(segmentService)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddress,

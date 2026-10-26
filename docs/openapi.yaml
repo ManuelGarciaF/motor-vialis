@@ -681,6 +681,68 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+
+  /comparisons/detour:
+    post:
+      operationId: createDetourComparison
+      summary: Compara una variante de desvío editada contra su recorrido original
+      description: >
+        Mismo cuerpo y misma respuesta que `POST /comparisons`, pero evalúa la
+        propuesta como desvío: el tiempo y la distancia operativos se miden
+        sobre la propuesta, y la tarifa de cada par de paradas se cobra por la
+        distancia entre ambas a lo largo del recorrido original (el pasajero
+        paga como si el colectivo hubiera hecho el recorrido de siempre). No
+        escribe nada; está pensado para recalcular métricas en cada edición.
+
+
+        Las paradas de `proposed` cuyo `id` existe en `baseline` se consideran
+        conservadas y deben respetar el orden del original (se pueden omitir,
+        no reordenar). Una parada cuyo `id` no existe en `baseline` es nueva y
+        puede ir en cualquier posición, incluso primera o última. Su posición
+        tarifaria se obtiene proyectándola sobre el `pathToNext` del original,
+        sólo dentro del tramo entre las paradas conservadas que la rodean en la
+        propuesta (inicio o fin del recorrido si no hay), para que no se
+        enganche, por ejemplo, con la vuelta. La demanda de las paradas nuevas
+        se asigna espacialmente como en cualquier simulación.
+      tags: [simulations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComparisonRequest"
+      responses:
+        "200":
+          description: Ambos resultados y su delta.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comparison"
+        "400":
+          description: >
+            Alguna de las rutas es inválida, falta, las jurisdicciones difieren
+            o una parada conservada rompe el orden del original.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error:
+                  code: validation_error
+                  field: proposed.stops[2].id
+                  message: "must keep the baseline stop order: a detour may skip baseline stops or add new ones, but not reorder retained ones"
+        "504":
+          description: La comparación superó `config.SimulationTimeout`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Error de infraestructura.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /detours:
     post:
       operationId: createDetour
@@ -769,6 +831,87 @@ paths:
                 $ref: "#/components/schemas/Error"
         "500":
           description: Error interno de infraestructura o variante generada inválida.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /routes/segment:
+    post:
+      operationId: createSegmentRoute
+      summary: Rutea un tramo entre paradas evitando un corte opcional
+      description: >
+        Devuelve el camino por calles entre el primer y el último waypoint,
+        pasando por los intermedios en orden (puntos de paso de un trazado
+        manual). Usa el mismo grafo, bloqueo del corte, enganche a aristas,
+        sentidos de circulación, restricciones de giro y filtros de giro en U
+        que `POST /detours`. No escribe nada; está pensado para el editor de
+        variantes, que lo llama en cada edición.
+
+
+        El grafo local es el rectángulo que envuelve a los waypoints más
+        `config.SegmentMarginMeters` (300 m); si no hay camino se reintenta una
+        sola vez con `config.SegmentRetryMarginMeters` (1 km). El costo es la
+        longitud: no consulta tráfico, así que no devuelve un tiempo. La
+        geometría empieza exactamente en el primer waypoint y termina
+        exactamente en el último, apta como `pathToNext`.
+
+
+        Cada waypoint se engancha a la arista transitable más cercana dentro de
+        50 m. Con `originBearing`/`destinationBearing` el primer/último sólo se
+        engancha a calles recorridas en ese rumbo (±60°), lo que evita, por
+        ejemplo, tomar la mano contraria de una avenida. Un waypoint sobre una
+        cuadra cortada no se engancha.
+      tags: [detours]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SegmentRouteRequest"
+            example:
+              waypoints:
+                - {latitude: -34.6000, longitude: -58.3800}
+                - {latitude: -34.6010, longitude: -58.3810}
+              avoid:
+                type: LineString
+                coordinates:
+                  - [-58.3804, -34.6004]
+                  - [-58.3806, -34.6006]
+              originBearing: 225
+      responses:
+        "200":
+          description: Camino del primer al último waypoint.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SegmentRoute"
+        "400":
+          description: >
+            JSON, waypoints o rumbos inválidos (`validation_error` con `field`),
+            o corte inválido (`invalid_cut`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: >
+            `waypoint_not_matched`: un waypoint no tiene una calle transitable a
+            50 m o está sobre una cuadra cortada; `field` lo indica como
+            `waypoints[i]` (base 0). `no_segment_route`: no hay
+            camino sin cruzar el corte ni siquiera con el grafo ampliado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "504":
+          description: El cálculo superó `config.SimulationTimeout`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Error interno de infraestructura.
           content:
             application/json:
               schema:
@@ -1815,6 +1958,47 @@ components:
       description: >
         Objetivo lexicográfico. MENOR_TIEMPO desempata por menos paradas
         perdidas; MENOR_PARADAS_PERDIDAS desempata por menor tiempo de tráfico.
+
+    SegmentRouteRequest:
+      type: object
+      required: [waypoints]
+      additionalProperties: false
+      properties:
+        waypoints:
+          type: array
+          minItems: 2
+          maxItems: 25
+          description: >
+            Parada de origen, puntos de paso opcionales y parada de destino, en
+            orden. La suma de distancias rectas entre ellos no puede superar
+            `config.SegmentMaximumSpanMeters` (10 km).
+          items:
+            $ref: "#/components/schemas/Position"
+        avoid:
+          oneOf:
+            - $ref: "#/components/schemas/LineString"
+            - $ref: "#/components/schemas/MultiLineString"
+          description: Corte a evitar, con las mismas reglas que `cut` en `POST /detours`.
+        originBearing:
+          type: number
+          minimum: 0
+          exclusiveMaximum: 360
+          description: Rumbo de marcha en el primer waypoint, en grados desde el norte.
+        destinationBearing:
+          type: number
+          minimum: 0
+          exclusiveMaximum: 360
+          description: Rumbo de marcha en el último waypoint, en grados desde el norte.
+
+    SegmentRoute:
+      type: object
+      required: [geometry, distanceMeters]
+      properties:
+        geometry:
+          $ref: "#/components/schemas/LineString"
+        distanceMeters:
+          type: number
+          description: Longitud geodésica de `geometry`.
 
     DetourRequest:
       type: object

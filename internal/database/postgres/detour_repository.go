@@ -262,6 +262,9 @@ func (repository *DetourRepository) Route(
 	}
 	defer func() { _ = transaction.Rollback(ctx) }()
 
+	if err := disableJIT(ctx, transaction); err != nil {
+		return detour.RoutingResult{}, err
+	}
 	if _, err := transaction.Exec(
 		ctx,
 		createDetourGraphSQL,
@@ -417,6 +420,18 @@ func (repository *DetourRepository) Route(
 	return result, nil
 }
 
+// disableJIT turns off JIT compilation for the rest of a routing transaction.
+// The routing queries read temporary tables that have no statistics when they
+// are planned, so their cost estimates are huge (~88M) and cross
+// jit_above_cost: compiling the snapping query alone took ~200 ms per request.
+// Every query here works on a small local graph, so compiling never pays off.
+func disableJIT(ctx context.Context, transaction pgx.Tx) error {
+	if _, err := transaction.Exec(ctx, "SET LOCAL jit = off"); err != nil {
+		return fmt.Errorf("disable JIT for routing transaction: %w", err)
+	}
+	return nil
+}
+
 // retryPair es un par a reintentar en la segunda pasada del ruteo. Las claves
 // JSON `from`/`to` son las que espera find_detour_paths_retry.sql.
 type retryPair struct {
@@ -555,7 +570,7 @@ func defaultSpeedKPH(segments []traffic.Segment, fallback float64) float64 {
 func encodeRoutingPoints(points []detour.RoutingPoint) ([]byte, error) {
 	values := make([]map[string]any, len(points))
 	for index, point := range points {
-		values[index] = map[string]any{
+		value := map[string]any{
 			"id":                      point.ID,
 			"order":                   index,
 			"longitude":               point.Position.Longitude,
@@ -564,6 +579,10 @@ func encodeRoutingPoints(points []detour.RoutingPoint) ([]byte, error) {
 			"maximum_distance_meters": point.MaximumDistanceMeters,
 			"role":                    point.Role,
 		}
+		if point.DirectionToleranceDegrees > 0 {
+			value["direction_tolerance_degrees"] = point.DirectionToleranceDegrees
+		}
+		values[index] = value
 	}
 
 	encoded, err := json.Marshal(values)

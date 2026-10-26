@@ -69,7 +69,9 @@ func (service *Service) Compare(ctx context.Context, input ComparisonInput) (Com
 }
 
 // CompareDetour evaluates operational metrics on the detour while charging
-// retained stop pairs by their distance along the original route.
+// each proposed stop pair by its distance along the original route. Retained
+// stops must keep the baseline order; stops absent from the baseline are new
+// and are placed on the original route by projection (see detour_fare.go).
 func (service *Service) CompareDetour(ctx context.Context, input ComparisonInput) (Comparison, error) {
 	return service.compare(ctx, input, true)
 }
@@ -129,63 +131,6 @@ func (service *Service) compare(
 		return Comparison{}, fmt.Errorf("simulate proposed: %w", err)
 	}
 	return newComparison(input, baselineResult, proposedResult), nil
-}
-
-func validateDetourStops(input ComparisonInput) error {
-	baselineOrder := make(map[string]int, len(input.Baseline.Stops))
-	for order, stop := range input.Baseline.Stops {
-		baselineOrder[stop.ID] = order
-	}
-
-	previous := -1
-	for _, stop := range input.Proposed.Stops {
-		order, found := baselineOrder[stop.ID]
-		if !found || order <= previous {
-			return fmt.Errorf("detour stops must be an ordered subset of baseline stops")
-		}
-
-		previous = order
-	}
-
-	return nil
-}
-
-func detourFareTravelTime(
-	input ComparisonInput,
-	baselineSegments []traveltime.SegmentResult,
-) (traveltime.Result, error) {
-	if len(baselineSegments) != len(input.Baseline.Stops)-1 {
-		return traveltime.Result{}, fmt.Errorf("baseline travel time has %d segments, want %d", len(baselineSegments), len(input.Baseline.Stops)-1)
-	}
-
-	baselineOrder := make(map[string]int, len(input.Baseline.Stops))
-	for order, stop := range input.Baseline.Stops {
-		baselineOrder[stop.ID] = order
-	}
-
-	result := traveltime.Result{BySegment: make([]traveltime.SegmentResult, 0, len(input.Proposed.Stops)-1)}
-	for order := 0; order < len(input.Proposed.Stops)-1; order++ {
-		origin := input.Proposed.Stops[order]
-		destination := input.Proposed.Stops[order+1]
-		from := baselineOrder[origin.ID]
-		to := baselineOrder[destination.ID]
-		var distance float64
-		for index := from; index < to; index++ {
-			segment := baselineSegments[index]
-			if segment.OriginStopID != input.Baseline.Stops[index].ID ||
-				segment.DestinationStopID != input.Baseline.Stops[index+1].ID {
-				return traveltime.Result{}, fmt.Errorf("baseline travel-time segments do not match baseline route")
-			}
-
-			distance += segment.DistanceMeters
-		}
-
-		result.BySegment = append(result.BySegment, traveltime.SegmentResult{
-			OriginStopID: origin.ID, DestinationStopID: destination.ID, DistanceMeters: distance,
-		})
-	}
-
-	return result, nil
 }
 
 func newComparison(input ComparisonInput, baseline, proposed Result) Comparison {

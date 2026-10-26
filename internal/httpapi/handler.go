@@ -31,11 +31,21 @@ type Comparator interface {
 		ctx context.Context,
 		input simulation.ComparisonInput,
 	) (simulation.Comparison, error)
+	CompareDetour(
+		ctx context.Context,
+		input simulation.ComparisonInput,
+	) (simulation.Comparison, error)
 }
 
 // DetourPlanner builds and evaluates a temporary route around one road cut.
 type DetourPlanner interface {
 	Plan(ctx context.Context, input detour.Input) (detour.Result, error)
+}
+
+// SegmentRouter routes one route segment through waypoints around an
+// optional cut.
+type SegmentRouter interface {
+	Route(ctx context.Context, input detour.SegmentInput) (detour.SegmentRoute, error)
 }
 
 // Lines reads stored GTFS lines that can serve as proposal baselines.
@@ -73,6 +83,7 @@ type Handler struct {
 	simulator   Simulator
 	comparator  Comparator
 	detours     DetourPlanner
+	segments    SegmentRouter
 	lines       Lines
 	transfers   Transfers
 	bunching    Bunching
@@ -106,6 +117,13 @@ func NewHandler(
 	}
 }
 
+// WithSegmentRouter configures the optional segment router before Routes is
+// served.
+func (handler *Handler) WithSegmentRouter(service SegmentRouter) *Handler {
+	handler.segments = service
+	return handler
+}
+
 // WithBottlenecks configures the optional reader before Routes is served.
 func (handler *Handler) WithBottlenecks(service Bottlenecks) *Handler {
 	handler.bottlenecks = service
@@ -132,7 +150,9 @@ func (handler *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /transfers", handler.listCombinationRanking)
 	mux.HandleFunc("POST /simulations", handler.createSimulation)
 	mux.HandleFunc("POST /comparisons", handler.createComparison)
+	mux.HandleFunc("POST /comparisons/detour", handler.createDetourComparison)
 	mux.HandleFunc("POST /detours", handler.createDetour)
+	mux.HandleFunc("POST /routes/segment", handler.createSegmentRoute)
 	return handler.recoverPanic(handler.logRequest(mux))
 }
 

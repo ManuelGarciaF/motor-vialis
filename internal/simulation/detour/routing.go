@@ -22,6 +22,10 @@ type RoutingPoint struct {
 	DirectionDegrees      float64
 	MaximumDistanceMeters float64
 	Role                  PointRole
+	// DirectionToleranceDegrees overrides the policy's snapping direction
+	// tolerance for this point. Zero keeps the policy value; 180 or more lets
+	// the point snap to the nearest edge whatever its direction.
+	DirectionToleranceDegrees float64
 }
 
 // PointPair requests the fastest path between two routing points.

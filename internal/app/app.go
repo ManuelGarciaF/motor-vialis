@@ -79,6 +79,15 @@ func NewDetourService(
 	)
 }
 
+// NewSegmentService wires single-segment routing to the RF05 road graph.
+func NewSegmentService(database *pgxpool.Pool) (*detour.SegmentService, error) {
+	return detour.NewSegmentService(
+		postgres.NewDetourRepository(database),
+		config.DetourPolicy(),
+		config.SegmentPolicy(),
+	)
+}
+
 // NewBottlenecksService reads finalized passages without touching producer state.
 func NewBottlenecksService(database *pgxpool.Pool) (*bottlenecks.DetectionService, error) {
 	return bottlenecks.NewDetectionService(postgres.NewBottlenecksDetectionRepository(database), config.BottlenecksModel().Name, config.BottlenecksDetectionPolicy())

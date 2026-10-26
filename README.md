@@ -184,10 +184,15 @@ El contrato completo está en `docs/openapi.yaml`.
   opcionalmente por hora.
 - `POST /simulations`: simula una ruta propuesta.
 - `POST /comparisons`: simula dos rutas y devuelve la diferencia entre ambas.
+- `POST /comparisons/detour`: igual que `/comparisons`, pero evalúa la propuesta
+  como desvío editado: admite paradas nuevas y cobra la tarifa por distancia a
+  lo largo del recorrido original.
 - `POST /detours`: recibe `route`, un `cut` GeoJSON `LineString` o `MultiLineString`
   y `criterion` (`MENOR_TIEMPO` o `MENOR_PARADAS_PERDIDAS`); devuelve la variante,
   sus paradas no cubiertas, la comparación y la trazabilidad de tráfico/grafo.
   Funcionamiento y operación: [RF05 — Desvíos](docs/rf05_desvios.md).
+- `POST /routes/segment`: rutea un tramo entre waypoints con el grafo de RF05,
+  evitando un corte opcional (`avoid`); devuelve `geometry` y `distanceMeters`.
 
 Las líneas propias de un usuario las persiste otro servicio: acá sólo se leen
 las que cargó la ETL de GTFS.

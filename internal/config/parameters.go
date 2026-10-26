@@ -75,6 +75,32 @@ const (
 	TomTomTileMargin          = 0.1
 )
 
+// Segment routing limits keep POST /routes/segment cheap enough to run on
+// every stop edit: the local graph is the waypoints' bounding box plus a
+// margin, widened once to the RF05 search radius when no path exists.
+const (
+	SegmentMaximumWaypoints            = 25
+	SegmentMaximumSpanMeters           = 10_000.0
+	SegmentMarginMeters                = 300.0
+	SegmentRetryMarginMeters           = DetourSearchRadiusMeters
+	SegmentSnapDistanceMeters          = 50.0
+	SegmentUnboundedSnapDegrees        = 180.0
+	SegmentBearingSnapToleranceDegrees = DetourPointDirectionToleranceDegrees
+)
+
+// SegmentPolicy returns the limits of single-segment routing.
+func SegmentPolicy() detour.SegmentPolicy {
+	return detour.SegmentPolicy{
+		MaximumWaypoints:            SegmentMaximumWaypoints,
+		MaximumSpanMeters:           SegmentMaximumSpanMeters,
+		MarginMeters:                SegmentMarginMeters,
+		RetryMarginMeters:           SegmentRetryMarginMeters,
+		SnapDistanceMeters:          SegmentSnapDistanceMeters,
+		UnboundedSnapDegrees:        SegmentUnboundedSnapDegrees,
+		BearingSnapToleranceDegrees: SegmentBearingSnapToleranceDegrees,
+	}
+}
+
 // DetourPolicy returns the geographic thresholds and defensive limits used by
 // RF05.
 func DetourPolicy() detour.Policy {

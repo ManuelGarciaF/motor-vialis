@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -14,6 +15,22 @@ type comparisonRequest struct {
 }
 
 func (handler *Handler) createComparison(writer http.ResponseWriter, request *http.Request) {
+	handler.compareRoutes(writer, request, "compare routes", handler.comparator.Compare)
+}
+
+// createDetourComparison compares an edited detour variant against its
+// baseline. Retained stops keep the baseline order and new stops may be added;
+// fares are charged by distance along the baseline route.
+func (handler *Handler) createDetourComparison(writer http.ResponseWriter, request *http.Request) {
+	handler.compareRoutes(writer, request, "compare detour", handler.comparator.CompareDetour)
+}
+
+func (handler *Handler) compareRoutes(
+	writer http.ResponseWriter,
+	request *http.Request,
+	operation string,
+	compare func(context.Context, simulation.ComparisonInput) (simulation.Comparison, error),
+) {
 	var body comparisonRequest
 	if err := decodeBody(request, &body); err != nil {
 		writeError(
@@ -49,12 +66,12 @@ func (handler *Handler) createComparison(writer http.ResponseWriter, request *ht
 	ctx, cancel := handler.withTimeout(request)
 	defer cancel()
 
-	comparison, err := handler.comparator.Compare(ctx, simulation.ComparisonInput{
+	comparison, err := compare(ctx, simulation.ComparisonInput{
 		Baseline: *body.Baseline,
 		Proposed: *body.Proposed,
 	})
 	if err != nil {
-		handler.writeEstimationError(writer, request, "compare routes", err)
+		handler.writeEstimationError(writer, request, operation, err)
 		return
 	}
 

@@ -7,6 +7,9 @@ SELECT
     (point ->> 'direction_degrees')::double precision AS direction_degrees,
     (point ->> 'maximum_distance_meters')::double precision AS maximum_distance_meters,
     point ->> 'role' AS role,
+    -- Absent for RF05 points, which use the policy tolerance ($2). A segment
+    -- waypoint without a bearing sends 180 so it snaps to the nearest edge.
+    (point ->> 'direction_tolerance_degrees')::double precision AS direction_tolerance_degrees,
     ST_SetSRID(ST_MakePoint(
         (point ->> 'longitude')::double precision,
         (point ->> 'latitude')::double precision
@@ -87,7 +90,10 @@ JOIN LATERAL (
                   requested.maximum_distance_meters
               )
         ) candidate
-        WHERE candidate.direction_degrees <= $2::double precision
+        WHERE candidate.direction_degrees <= COALESCE(
+            requested.direction_tolerance_degrees,
+            $2::double precision
+        )
     ) located
     -- La linea punto->enganche puede asomarse un poco fuera del area: los anclas
     -- de un intervalo caen JUSTO sobre el borde del area (es, por definicion,
