@@ -36,11 +36,17 @@ Permite filtrar por línea y alternar dos capas:
 - Aglutinaciones operacionales: abiertas/cerradas, línea, ramal, sentido,
   observaciones y duración. El punto es el centro de las últimas posiciones del
   par, no su recorrido. No aplica los filtros de publicación de la API.
-- Sectores con pasajes: completos/incompletos, longitud real, duración y velocidad
-  comercial medianas. **Violeta**: cuello de botella recurrente experimental,
-  con **2 o más pasajes completos a menos de 6 km/h** dentro de la ventana.
-  Rojo: un solo pasaje lento; verde: completos sin pasajes lentos;
-  naranja: sólo incompletos. El popup muestra cantidad y porcentaje de
+- Sólo sectores con al menos un pasaje completo <6 km/h: conteos completos/incompletos, longitud real, duración y velocidad
+  comercial medianas. El color representa el porcentaje de pasajes completos
+  a menos de 6 km/h con un gradiente continuo: **amarillo muy claro** (0%) →
+  **naranja** (10%) → **rosa** (20%) → **violeta oscuro** (≥30%), interpolado
+  en RGB entre esos puntos. Desde el 30% se mantiene el color más grave. Es una escala
+  visual, no un umbral de detección. La leyenda muestra la misma escala,
+  sin cortes por rangos.
+  El popup mantiene la indicación de cuello de botella recurrente experimental
+  con **2 o más pasajes completos a menos de 6 km/h** dentro de la ventana,
+  independientemente del color. Los sectores sin pasajes lentos y los que sólo
+  tienen incompletos no se exportan ni se muestran. El popup muestra cantidad y porcentaje de
   pasajes <6 km/h, sin usar incompletos como velocidades ni como denominador.
   Para 500 m, 5 min equivalen a 6 km/h; se usa velocidad real y el corte es
   estrictamente <6 km/h, incluso en sectores de longitud diferente.

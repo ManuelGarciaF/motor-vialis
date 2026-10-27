@@ -43,10 +43,24 @@ export function databaseEnvironment(value) {
   return env;
 }
 
-// Experimental recurrence counts passages, not distinct vehicles or dates.
-export function sectorColor(properties, minimumPassages = 2) {
-  return properties.pasajes_lentos >= minimumPassages ? '#8e44ad' :
-    properties.pasajes_lentos > 0 ? '#d62728' : properties.pasajes > 0 ? '#11865a' : '#c77800';
+// Only complete passages form the denominator; incomplete passages have no speed.
+export function sectorColor(properties) {
+  if (!(properties.pasajes > 0)) return '#808080';
+  const share = Math.max(0, Math.min(1, properties.pasajes_lentos / properties.pasajes));
+  // Concentrate the continuous scale in 0–30%; higher shares stay saturated.
+  const stops = [
+    { share: 0, rgb: [255, 255, 204] },
+    { share: 0.1, rgb: [253, 174, 97] },
+    { share: 0.2, rgb: [215, 48, 111] },
+    { share: 0.3, rgb: [75, 0, 110] },
+  ];
+  const position = Math.min(share, 0.3);
+  const index = stops.findIndex((stop, i) => i < stops.length - 1 && position <= stops[i + 1].share);
+  const start = stops[index], end = stops[index + 1];
+  const fraction = (position - start.share) / (end.share - start.share);
+  return '#' + start.rgb.map((channel, i) =>
+    Math.round(channel + (end.rgb[i] - channel) * fraction)
+      .toString(16).padStart(2, '0')).join('');
 }
 
 export function renderHTML(data) {
@@ -67,12 +81,15 @@ label{display:inline-block;margin:8px 18px 0 0}select{padding:4px}#warning{color
 <p>Snapshot estático. Para actualizar, volver a generar el archivo y recargarlo.</p>
 <p>Los puntos son la posición media de la última observación de cada aglutinación, no su trayectoria.
 Son eventos operacionales sin los filtros de publicación de la API. Los sectores muestran mediciones, no cuellos de botella detectados.</p>
-<p>Rojo: un pasaje completo a menos de 6 km/h. Violeta: cuello de botella recurrente experimental, con 2 o más pasajes a menos de 6 km/h en esta ventana.
+<p>Color según el porcentaje de pasajes completos a menos de 6 km/h en esta ventana (los incompletos no cuentan).
+Escala continua: 0% <span aria-label="Amarillo muy claro al 0%, naranja al 10%, rosa al 20% y violeta oscuro desde el 30%" style="display:inline-block;width:180px;height:12px;background:linear-gradient(to right,#ffffcc,#fdae61,#d7306f,#4b006e)"></span> ≥30%.
+Amarillo muy claro: 0% · Naranja: 10% · Rosa: 20% · Violeta oscuro: ≥30%. Escala visual, no umbral de detección.
+El popup mantiene la indicación de recurrencia experimental con 2 o más pasajes lentos.
 Incluye detenciones; no exige unidades ni días distintos. 500 m en 5 min = 6 km/h; el corte es estrictamente menor a 6 km/h.
 Los extremos del recorrido siguen incluidos; revisar posibles esperas de cabecera.</p>
 <label>Línea <select id="line"><option value="">Todas</option></select></label>
 <label><input id="events" type="checkbox" checked> Aglutinaciones (azul: abiertas; gris: cerradas)</label>
-<label><input id="sectors" type="checkbox" checked> Sectores (violeta: ≥2 pasajes &lt;6 km/h; rojo: 1; verde: 0; naranja: sólo incompletos)</label>
+<label><input id="sectors" type="checkbox" checked> Sectores lentos (color según % de pasajes &lt;6 km/h)</label>
 <p id="counts"></p></header><div id="map"></div>
 <script id="data" type="application/json">${payload}</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -90,7 +107,7 @@ if(data.events.features.length>data.limit){
   warnings.push('Se muestran sólo los '+data.limit+' eventos más recientes.');
   data.events.features.length=data.limit;
 }
-if(!data.sectors.features.length)warnings.push('Sin mediciones finales en esta ventana. Revisar checkpoint y secuencias abiertas; no significa ausencia de lentitud.');
+if(!data.sectors.features.length)warnings.push('Sin sectores con pasajes completos <6 km/h en esta ventana. Revisar checkpoint y secuencias abiertas; no significa ausencia de lentitud.');
 document.getElementById('warning').textContent=warnings.join(' ');
 if(typeof L==='undefined'){document.getElementById('map').textContent='No se pudo cargar Leaflet. Se requiere Internet para la biblioteca y el mapa base.';}
 else{
@@ -124,7 +141,7 @@ function redraw(fit){
     if(!enabled)continue;
     const layer=L.geoJSON(features,{
       pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:6,color:f.properties.cierre?'#666':'#1674ce',fillOpacity:0.65}),
-      style:f=>key==='events'?{color:f.properties.cierre?'#666':'#1674ce'}:{color:sectorColor(f.properties,data.recurrent_min_passages),weight:f.properties.pasajes_lentos>0?7:5,opacity:0.8},
+      style:f=>key==='events'?{color:f.properties.cierre?'#666':'#1674ce'}:{color:sectorColor(f.properties),weight:f.properties.pasajes_lentos>0?7:5,opacity:0.8},
       onEachFeature:(f,l)=>{l.bindPopup(popup(f.properties,key==='events'));l.bindTooltip(text('Línea '+(f.properties.linea||'—')+' · '+(f.properties.ramal||'—')));}
     }).addTo(map);layers.push(layer);
   }

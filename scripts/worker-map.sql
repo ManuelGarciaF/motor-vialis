@@ -27,6 +27,7 @@ WITH events AS (
     FROM vialis.bottlenecks_mediciones
     WHERE entrada_en >= now() - (:hours * interval '1 hour')
     GROUP BY trazado, sector
+    HAVING count(*) FILTER (WHERE completa AND velocidad_kph < 6) > 0
     ORDER BY max(entrada_en) DESC, trazado, sector
 )
 SELECT json_build_object(

@@ -18,13 +18,17 @@ test('bounded numeric options and explicit output', () => {
   }
 });
 
-test('recurrence is inclusive at two slow passages; one is red and incompletes are not slow', () => {
-  assert.equal(sectorColor({ pasajes: 3, pasajes_lentos: 2 }), '#8e44ad');
-  assert.equal(sectorColor({ pasajes: 3, pasajes_lentos: 3 }), '#8e44ad');
-  assert.equal(sectorColor({ pasajes: 3, pasajes_lentos: 2 }, 3), '#d62728');
-  assert.equal(sectorColor({ pasajes: 3, pasajes_lentos: 1 }), '#d62728');
-  assert.equal(sectorColor({ pasajes: 3, pasajes_lentos: 0 }), '#11865a');
-  assert.equal(sectorColor({ pasajes: 0, pasajes_lentos: 0, incompletos: 10 }), '#c77800');
+test('sector colors interpolate continuously by slow passage share', () => {
+  for (const [slow, color] of [[0, '#ffffcc'], [5, '#fed797'], [10, '#fdae61'],
+    [15, '#ea6f68'], [20, '#d7306f'], [25, '#91186f'],
+    [30, '#4b006e'], [31, '#4b006e'], [50, '#4b006e'], [100, '#4b006e']]) {
+    assert.equal(sectorColor({ pasajes: 100, pasajes_lentos: slow }), color);
+  }
+  // Absolute counts and incomplete passages do not determine the color.
+  assert.equal(sectorColor({ pasajes: 1, pasajes_lentos: 1 }), '#4b006e');
+  assert.equal(sectorColor({ pasajes: 4, pasajes_lentos: 1, incompletos: 100 }), '#91186f');
+  assert.equal(sectorColor({ pasajes: 3, pasajes_lentos: 0 }), '#ffffcc');
+  assert.equal(sectorColor({ pasajes: 0, pasajes_lentos: 0, incompletos: 10 }), '#808080');
 });
 
 test('PostgreSQL URI is passed through environment, with decoded credentials', () => {
@@ -51,6 +55,9 @@ test('empty snapshot renders with valid browser JavaScript', () => {
   new Script(html.match(/<script id="map-code">([\s\S]*?)<\/script>/)[1]);
   assert.match(html, /mediciones, no cuellos de botella detectados/);
   assert.match(html, /Snapshot estático/);
+  assert.match(html, /color según % de pasajes/);
+  assert.match(html, /Escala continua: 0%/);
+  assert.match(html, /linear-gradient\(to right,#ffffcc,#fdae61,#d7306f,#4b006e\)/);
   assert.ok(!html.includes('data.sectors.features.length=data.limit'));
   assert.ok(html.includes('data.events.features.length=data.limit'));
   assert.match(html, /location.protocol==='file:'/);
@@ -109,10 +116,12 @@ test('SQL snapshot computes geometry, window, counts and median with session-onl
       (1,0,true,6,300000000000,now()),(1,0,true,7,299999999999,now()),
       (1,0,true,3,600000000000,now()),(1,0,true,5,360000000000,now()),
       (1,0,false,null,null,now()),
-      (1,1,false,null,null,now()),(1,2,true,30,60000000000,now());
+      (1,1,false,null,null,now()),(1,2,true,6,300000000000,now()),
+      (1,3,true,5,360000000000,now()),
+      (1,4,true,4,450000000000,now()),(1,4,true,5,360000000000,now());
     CREATE TEMP TABLE bottlenecks_sectores (trazado bigint,indice int,inicio_metros float8,fin_metros float8,geom geometry);
     INSERT INTO bottlenecks_sectores SELECT 1,i,i*500,(i+1)*500,
-      ST_GeomFromText('LINESTRING(-58.41 -34.6,-58.40 -34.6)',4326) FROM generate_series(0,2) i;
+      ST_GeomFromText('LINESTRING(-58.41 -34.6,-58.40 -34.6)',4326) FROM generate_series(0,4) i;
     CREATE TEMP TABLE bottlenecks_trazados (id bigint,linea text,ramal text,direction_id int);
     INSERT INTO bottlenecks_trazados VALUES (1,'132','A',0);
   `;
@@ -138,14 +147,16 @@ test('SQL snapshot computes geometry, window, counts and median with session-onl
   // Exactly 6 km/h is excluded, even when duration is exactly five minutes.
   assert.equal(data.slow_threshold_kph, 6);
   assert.equal(data.recurrent_min_passages, 2);
-  assert.equal(sectorColor(sector.properties, data.recurrent_min_passages), '#8e44ad');
-  const middle = data.sectors.features.find(f => f.properties.sector === 1);
+  assert.equal(sectorColor(sector.properties), '#4b006e');
+  assert.deepEqual(data.sectors.features.map(f => f.properties.sector), [0, 3, 4]);
+  const middle = data.sectors.features.find(f => f.properties.sector === 3);
   assert.equal(middle.properties.extremo_recorrido, false);
-  assert.equal(middle.properties.pasajes_lentos, 0);
-  assert.equal(middle.properties.velocidad_mediana_kph, null);
-  const last = data.sectors.features.find(f => f.properties.sector === 2);
+  assert.equal(middle.properties.pasajes_lentos, 1);
+  assert.equal(sectorColor(middle.properties), '#4b006e');
+  const last = data.sectors.features.find(f => f.properties.sector === 4);
   assert.equal(last.properties.extremo_recorrido, true);
-  assert.equal(last.properties.pasajes_lentos, 0);
+  assert.equal(last.properties.pasajes_lentos, 2);
+  assert.equal(sectorColor(last.properties), '#4b006e');
   assert.equal(sector.properties.incompletos, 1);
   assert.equal(sector.properties.velocidad_mediana_kph, 5.5);
   assert.equal(data.status.processors[0].pending_captures, 1);
