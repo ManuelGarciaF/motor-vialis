@@ -1542,7 +1542,14 @@ respaldo (`forwardDefaultEdges`/`reverseDefaultEdges`); esos conteos describen e
 grafo local, no sólo el camino elegido. El tiempo de decisión puede mezclar
 observaciones y estimaciones: no debe presentarse como tráfico íntegramente
 observado. Esos costos sólo ordenan alternativas y no reemplazan el modelo de
-tiempo de la simulación. Un fallo del proveedor sigue siendo un error.
+tiempo de la simulación. Un fallo del proveedor sigue siendo un error en modo
+normal. **Sólo en demo** (`DEMO_MODE=true` o `-demo`), un error TomTom permite
+continuar con un snapshot vacío, reutilizando el respaldo existente de
+**20 km/h**. Se registra sólo en logs (`demo_traffic_fallback`), sin campos nuevos
+en la API. En ese caso `fetchedAt` conserva el timestamp cero de Go, sin inventar
+antigüedad ni cobertura. Si TomTom responde correctamente, se conserva el snapshot
+y la selección habitual de velocidades, incluida su mediana. La comparación GTFS
+no cambia. Detalles operativos en [RF05](rf05_desvios.md).
 
 Una vez armada, la variante se evalúa con el mismo cálculo que cualquier otra
 ruta para demanda (sección 6), distancia (sección 7) y tiempo GTFS (sección 8).

@@ -80,6 +80,7 @@ func run(ctx context.Context, args []string, logger *slog.Logger, output io.Writ
 	if err != nil {
 		return &startupError{code: "repository_configuration_failed", hint: "Check realtime repository configuration"}
 	}
+	repository.WithHistoryPreservation(config.RealtimePreserveHistory)
 	if err = repository.EnableBunching(config.BunchingPolicy()); err != nil {
 		return &startupError{code: "bunching_configuration_failed", hint: "Check bunching policy"}
 	}
@@ -98,7 +99,7 @@ func run(ctx context.Context, args []string, logger *slog.Logger, output io.Writ
 	}
 	defer closeProducer()
 
-	logger.Info("realtime_worker_started", "interval_ms", options.interval.Milliseconds(), "raw_retention_days", config.RealtimeRawRetentionDays, "endpoint", "vehiclePositionsSimple")
+	logger.Info("realtime_worker_started", "interval_ms", options.interval.Milliseconds(), "raw_retention_days", config.RealtimeRawRetentionDays, "history_preserved", config.RealtimePreserveHistory, "endpoint", "vehiclePositionsSimple")
 	err = runWorkerLoops(ctx, worker.Run, producer)
 	if err == nil {
 		logger.Info("realtime_worker_stopped")

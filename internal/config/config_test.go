@@ -44,6 +44,17 @@ func TestFromEnvReadsEnvironment(t *testing.T) {
 	}
 }
 
+func TestFromEnvDemoMode(t *testing.T) {
+	for _, value := range []string{"", "false", "true"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("DEMO_MODE", value)
+			if got := FromEnv().DemoMode; got != (value == "true") {
+				t.Fatalf("DemoMode = %v for DEMO_MODE=%q", got, value)
+			}
+		})
+	}
+}
+
 func TestFromEnvReadsGCBACredentials(t *testing.T) {
 	t.Setenv("GCBA_TRANSPORT_CLIENT_ID", "test-client")
 	t.Setenv("GCBA_TRANSPORT_CLIENT_SECRET", "test-secret")

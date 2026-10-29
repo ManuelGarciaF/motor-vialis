@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/ManuelGarciaF/vialis-motor/internal/app"
 	"github.com/ManuelGarciaF/vialis-motor/internal/config"
@@ -16,9 +18,11 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	cfg := config.FromEnv()
-	trafficClient, err := app.NewTomTomTrafficClient(cfg.TomTomAPIKey, logger)
+	demo := flag.Bool("demo", cfg.DemoMode, "freeze worker API time at the latest analyzed capture (defaults to DEMO_MODE; stop worker first)")
+	flag.Parse()
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	trafficClient, err := app.NewDetourTrafficProvider(cfg.TomTomAPIKey, logger, *demo)
 	if err != nil {
 		logger.Error("could not configure TomTom traffic", "error", err)
 		os.Exit(1)
@@ -36,12 +40,25 @@ func main() {
 	}
 	defer database.Close()
 
+	var demoAt time.Time
+	if *demo {
+		ctx, cancel := context.WithTimeout(context.Background(), config.DatabaseConnectTimeout)
+		demoAt, err = postgres.NewBunchingRepository(database).LatestAnalyzedCaptureAt(ctx)
+		cancel()
+		if err != nil {
+			logger.Error("demo requires a retained analyzed capture", "error", err)
+			os.Exit(1)
+		}
+		logger.Warn("demo mode: worker API clock frozen; stop worker and preserve database snapshot", "demo_time", demoAt)
+	}
+
 	service := app.NewSimulationService(database)
 	detourService, err := app.NewDetourService(database, trafficClient, service)
 	if err != nil {
 		logger.Error("could not configure detour service", "error", err)
 		os.Exit(1)
 	}
+	detourService.WithDemoTrafficFallback(*demo)
 	segmentService, err := app.NewSegmentService(database)
 	if err != nil {
 		logger.Error("could not configure segment routing", "error", err)
@@ -53,6 +70,9 @@ func main() {
 	if err != nil {
 		logger.Error("could not configure bunching")
 		os.Exit(1)
+	}
+	if *demo {
+		bunchingService.WithFixedTime(demoAt)
 	}
 
 	bottlenecksService, err := app.NewBottlenecksService(database)
@@ -71,6 +91,9 @@ func main() {
 		config.SimulationTimeout,
 		bunchingService,
 	).WithBottlenecks(bottlenecksService).WithSegmentRouter(segmentService)
+	if *demo {
+		handler.WithDemoTime(demoAt)
+	}
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddress,

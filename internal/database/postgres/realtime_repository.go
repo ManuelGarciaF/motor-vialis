@@ -18,10 +18,11 @@ type realtimeBeginner interface {
 // RealtimeRepository stores only GCBA identities with a current GTFS mapping.
 // No foreign key to the replaceable GTFS catalog is retained in raw data.
 type RealtimeRepository struct {
-	database       realtimeBeginner
-	retentionDays  int
-	schema         string
-	bunchingPolicy *bunching.Policy
+	database        realtimeBeginner
+	retentionDays   int
+	schema          string
+	bunchingPolicy  *bunching.Policy
+	preserveHistory bool
 }
 
 var _ bunching.Repository = (*RealtimeRepository)(nil)
@@ -43,8 +44,16 @@ func utcDay(t time.Time) time.Time {
 
 const realtimeLock int64 = 110011
 
-// MaintainPartitions keeps today and the previous retentionDays-1 UTC dates,
-// and precreates tomorrow. Expiration drops whole raw partitions, never rows.
+// WithHistoryPreservation disables automatic deletion of raw partitions and
+// capture metadata. Configure before starting the worker. The admission window
+// for incoming GPS remains unchanged.
+func (r *RealtimeRepository) WithHistoryPreservation(enabled bool) *RealtimeRepository {
+	r.preserveHistory = enabled
+	return r
+}
+
+// MaintainPartitions creates the admission window's partitions and tomorrow.
+// Unless history preservation is enabled, it also purges expired raw/captures.
 func (r *RealtimeRepository) MaintainPartitions(ctx context.Context, now time.Time) (bunching.MaintenanceResult, error) {
 	result := bunching.MaintenanceResult{}
 	if now.IsZero() {
@@ -65,48 +74,51 @@ func (r *RealtimeRepository) MaintainPartitions(ctx context.Context, now time.Ti
 
 	today := utcDay(now)
 	cutoff := today.AddDate(0, 0, 1-r.retentionDays)
-	rows, err := tx.Query(ctx, listRealtimePartitionsSQL, r.schema)
-	if err != nil {
-		return result, err
-	}
-
-	var names []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			rows.Close()
-			return result, err
-		}
-
-		names = append(names, name)
-	}
-
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return result, err
-	}
-
-	pattern := regexp.MustCompile(`^posiciones_colectivos_raw_([0-9]{8})$`)
-	for _, name := range names {
-		parts := pattern.FindStringSubmatch(name)
-		if parts == nil {
-			continue
-		}
-
-		day, err := time.Parse("20060102", parts[1])
+	if !r.preserveHistory {
+		rows, err := tx.Query(ctx, listRealtimePartitionsSQL, r.schema)
 		if err != nil {
 			return result, err
 		}
-		if day.Before(cutoff) {
-			if _, err = tx.Exec(ctx, `
-				DROP TABLE
-			`+pgx.Identifier{r.schema, name}.Sanitize()); err != nil {
+
+		var names []string
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				rows.Close()
 				return result, err
 			}
 
-			result.Dropped = append(result.Dropped, name)
+			names = append(names, name)
 		}
+
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return result, err
+		}
+
+		pattern := regexp.MustCompile(`^posiciones_colectivos_raw_([0-9]{8})$`)
+		for _, name := range names {
+			parts := pattern.FindStringSubmatch(name)
+			if parts == nil {
+				continue
+			}
+
+			day, err := time.Parse("20060102", parts[1])
+			if err != nil {
+				return result, err
+			}
+			if day.Before(cutoff) {
+				if _, err = tx.Exec(ctx, `
+				DROP TABLE
+			`+pgx.Identifier{r.schema, name}.Sanitize()); err != nil {
+					return result, err
+				}
+
+				result.Dropped = append(result.Dropped, name)
+			}
+		}
+
 	}
 
 	for day := cutoff; !day.After(today.AddDate(0, 0, 1)); day = day.AddDate(0, 0, 1) {
@@ -119,9 +131,11 @@ func (r *RealtimeRepository) MaintainPartitions(ctx context.Context, now time.Ti
 		}
 	}
 
-	_, err = tx.Exec(ctx, r.sql(deleteExpiredRealtimeCapturesSQL), cutoff)
-	if err != nil {
-		return result, err
+	if !r.preserveHistory {
+		_, err = tx.Exec(ctx, r.sql(deleteExpiredRealtimeCapturesSQL), cutoff)
+		if err != nil {
+			return result, err
+		}
 	}
 
 	err = tx.Commit(ctx)

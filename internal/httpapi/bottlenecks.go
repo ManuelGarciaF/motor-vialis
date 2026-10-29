@@ -10,7 +10,7 @@ import (
 )
 
 func (h *Handler) listBottlenecks(w http.ResponseWriter, r *http.Request) {
-	q, err := parseBottlenecksQuery(r)
+	q, err := parseBottlenecksQuery(r, h.demoAt)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, errorCodeValidation, err.Field, err.Message)
 		return
@@ -34,7 +34,7 @@ func (h *Handler) listBottlenecks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, page)
 }
 
-func parseBottlenecksQuery(r *http.Request) (bottlenecks.DetectionQuery, *fieldError) {
+func parseBottlenecksQuery(r *http.Request, demoTime ...time.Time) (bottlenecks.DetectionQuery, *fieldError) {
 	q := bottlenecks.DetectionQuery{}
 	values, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
@@ -47,6 +47,14 @@ func parseBottlenecksQuery(r *http.Request) (bottlenecks.DetectionQuery, *fieldE
 		if len(entries) != 1 {
 			return q, &fieldError{key, "must appear only once"}
 		}
+	}
+	// Demo defaults apply only when both bounds are omitted. Keep incomplete,
+	// empty, duplicated and invalid explicit ranges subject to normal validation.
+	_, hasFrom := values["from"]
+	_, hasTo := values["to"]
+	if !hasFrom && !hasTo && len(demoTime) > 0 && !demoTime[0].IsZero() {
+		values.Set("to", demoTime[0].Format(time.RFC3339Nano))
+		values.Set("from", demoTime[0].Add(-24*time.Hour).Format(time.RFC3339Nano))
 	}
 	for _, field := range []string{"from", "to"} {
 		at, err := time.Parse(time.RFC3339Nano, values.Get(field))

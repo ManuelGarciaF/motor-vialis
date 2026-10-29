@@ -56,7 +56,19 @@ aristas, carga del grafo, cobertura y antigüedad del tráfico.
   del camino elegido. No presentar todo el tiempo de decisión como observado.
 - Caché en memoria por tile: TTL 30 min, LRU de 256 entradas/16 MiB, deduplicación
   concurrente, hasta 10 QPS y timeout TomTom de 10 s. No guarda tiles en PostgreSQL.
-  Una falla del proveedor sigue siendo un error, no una variante calculada sin aviso.
+  En modo normal una falla del proveedor sigue siendo un error.
+- **Excepción de demo (`DEMO_MODE=true` o `-demo`):** cualquier fallo de TomTom,
+  incluida falta de clave, permite continuar con un snapshot vacío y reutilizar
+  el respaldo existente de **20 km/h** (`DetourDefaultSpeedKPH`). Si TomTom responde
+  correctamente, no cambia sus observaciones ni la selección habitual de
+  velocidades (incluida la mediana del snapshot). No hay reintento adicional por
+  `traffic_coverage_insufficient`. No omite errores de DB, validación, cancelación
+  ni la falta real de camino; tampoco inventa una geometría.
+  El respaldo por error de proveedor se registra sólo en logs
+  (`demo_traffic_fallback`, velocidad), sin agregar campos a la respuesta. En ese caso,
+  `fetchedAt` conserva el timestamp cero de Go, y edad, tiles e hits son cero:
+  no representan observaciones frescas. Los conteos de respaldo siguen siendo
+  del grafo completo. El tiempo GTFS de comparación no cambia.
 - Costos, puntos y restricciones viven en tablas TEMP de la misma transacción,
   con `ON COMMIT DROP`; no se modifican costos permanentes de `vialis.calles`.
 - `pgr_trsp_withPoints` aplica restricciones OSM node-via del grafo local con
@@ -72,7 +84,8 @@ aristas, carga del grafo, cobertura y antigüedad del tráfico.
 
 ## Operación y validación
 
-La API requiere `DATABASE_URL` y **`TOMTOM_API_KEY`** al iniciar. Los demás parámetros
+La API requiere `DATABASE_URL` y, fuera de demo, **`TOMTOM_API_KEY`** al iniciar.
+En demo se permite omitir la clave y usar el respaldo genérico. Los demás parámetros
 son constantes revisables en `internal/config/parameters.go`: radios, tolerancias,
 zoom, caché y límites de 10.000 posiciones, 20 km de corte y 32 tiles por consulta.
 `cmd/api` comparte un único cliente/caché TomTom entre requests.

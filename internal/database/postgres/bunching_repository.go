@@ -24,6 +24,23 @@ func NewBunchingRepository(pool *pgxpool.Pool) *BunchingRepository {
 	return &BunchingRepository{database: readOnlyRealtimeDatabase{pool}, schema: "vialis"}
 }
 
+// LatestAnalyzedCaptureAt returns the reference clock for a demo of the last
+// persisted worker state. No rows is an error: silently using wall time would
+// make an empty or purged demo look like a live deployment.
+func (r *BunchingRepository) LatestAnalyzedCaptureAt(ctx context.Context) (time.Time, error) {
+	tx, err := r.database.Begin(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer tx.Rollback(context.Background())
+	var at time.Time
+	var partial bool
+	if err := tx.QueryRow(ctx, r.sql(findLatestBunchingCaptureSQL)).Scan(&at, &partial); err != nil {
+		return time.Time{}, err
+	}
+	return at, tx.Commit(ctx)
+}
+
 var _ bunching.CurrentRepository = (*BunchingRepository)(nil)
 
 func (r *BunchingRepository) sql(query string) string {

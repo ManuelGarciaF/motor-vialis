@@ -52,6 +52,63 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5433/vialis \
 TOMTOM_API_KEY=... go run ./cmd/api
 ```
 
+## Demo con capturas existentes
+
+Para mantener utilizables las capturas del worker sin volver a capturar:
+
+```bash
+DEMO_MODE=true \
+DATABASE_URL=postgresql://postgres:postgres@vialis-motor-db:5432/vialis \
+  go run ./cmd/api
+```
+
+Desde el host, usar `localhost:5433` en lugar del nombre del contenedor.
+No se carga `.env` automáticamente. Para usar los valores del archivo en una
+shell compatible con bash:
+
+```bash
+set -a
+source .env
+set +a
+go run ./cmd/api
+```
+
+`DEMO_MODE=true` fija el reloj de las APIs del worker en la **última captura analizada**
+al arrancar. El instante aparece en el log y en el header `X-Vialis-Demo-Time`.
+Sin capturas analizadas conservadas, el arranque falla explícitamente.
+
+- `/bunching`: las últimas 24 horas terminan en ese instante.
+- `/bunching/recurrence` y el resumen por línea: la semana termina allí.
+- `/lines/{id}/bunching`: evalúa frescura/actividad contra ese reloj.
+- `/bottlenecks`: si se omiten **ambas** fechas, usa las 24 horas anteriores.
+  Fuera de demo, ambas siguen siendo obligatorias.
+- Las fechas explícitas no se desplazan: enviar las fechas históricas, no las
+  del día de la presentación. Los timestamps de las respuestas siguen siendo reales.
+
+**Detener el worker y respaldar la base antes de la demo**, o usar una copia
+separada sin worker. El modo demo no modifica datos; reanudar capturas sí puede
+modificar eventos abiertos y desplazar la última captura.
+
+El worker conserva ahora raw y capturas sin borrado automático
+(`config.RealtimePreserveHistory = true`). No requiere migración: recompilar y
+reiniciar el worker aplica esta política. No recupera datos ya purgados y el
+crecimiento de la base queda sin límite automático; monitorear disco y respaldar.
+La ventana de admisión del GPS y los controles de antigüedad H0012 no cambian.
+No reconstruye estados de instantes anteriores. Una última captura parcial o sin
+pares elegibles sigue mostrándose como tal; no inventa actividad. Simulaciones,
+catálogo y servicios externos no cambian de reloj.
+En desvíos, demo permite continuar ante errores de TomTom (también sin
+`TOMTOM_API_KEY`) con un snapshot vacío y el respaldo existente de **20 km/h**.
+Las respuestas correctas de TomTom mantienen la lógica habitual, incluida su
+mediana; no se agrega un reintento por cobertura insuficiente. El respaldo por
+error se registra sólo en logs (`demo_traffic_fallback`), sin campos nuevos en
+la respuesta; no es tráfico medido. DB, cancelaciones, geometrías inválidas y ausencia real de camino siguen
+siendo errores. Ver [RF05](docs/rf05_desvios.md). Para volver al modo normal,
+reiniciar la API con `DEMO_MODE=false` (valor por defecto si no está definida).
+El flag `-demo` sigue disponible y tiene prioridad: `-demo=false` desactiva demo
+incluso si `DEMO_MODE=true`. Esta variable sólo afecta la lectura de las APIs,
+no la captura ni la política de conservación del worker.
+
 ## Datos de entrada
 
 `--data-dir` debe contener:

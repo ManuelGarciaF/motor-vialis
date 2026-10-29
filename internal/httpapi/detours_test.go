@@ -16,6 +16,34 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 )
 
+func TestDemoTrafficFallbackDoesNotChangeResponseFields(t *testing.T) {
+	planner := &fakeDetourPlanner{result: detour.Result{
+		Variant: validRouteValue(t),
+		Trace:   detour.Trace{Traffic: detour.TrafficTrace{Zoom: 14}},
+	}}
+	router := newTestRouterWithDetours(&fakeSimulator{}, &fakeComparator{}, planner, &fakeLines{})
+	response := doDetourRequest(t, router, detourJSON())
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d", response.Code)
+	}
+	var got struct {
+		Trace struct {
+			Traffic map[string]json.RawMessage `json:"traffic"`
+		} `json:"trace"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Trace.Traffic) != 5 {
+		t.Fatalf("changed traffic contract: %+v", got)
+	}
+	for _, field := range []string{"fetchedAt", "trafficAgeSeconds", "zoom", "tileCount", "cacheHits"} {
+		if _, ok := got.Trace.Traffic[field]; !ok {
+			t.Fatalf("missing existing field: %s", field)
+		}
+	}
+}
+
 func TestCreateDetourReturnsVariantComparisonUncoveredStopsAndTrace(t *testing.T) {
 	planner := &fakeDetourPlanner{result: detour.Result{
 		Variant: validRouteValue(t),

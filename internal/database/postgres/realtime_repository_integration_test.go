@@ -211,6 +211,33 @@ func TestRealtimeRepositoryIntegration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Preservation must retain both GPS and capture metadata, including
+	// captures with no raw references, while still preparing new partitions.
+	var rawBefore, capturesBefore int
+	if err = tx.QueryRow(ctx, repo.sql(`SELECT count(*) FROM vialis.posiciones_colectivos_raw`)).Scan(&rawBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.QueryRow(ctx, repo.sql(`SELECT count(*) FROM vialis.capturas_colectivos`)).Scan(&capturesBefore); err != nil {
+		t.Fatal(err)
+	}
+	repo.WithHistoryPreservation(true)
+	for i := 0; i < 2; i++ {
+		maintained, err = repo.MaintainPartitions(ctx, now.AddDate(0, 0, 7))
+		if err != nil || len(maintained.Dropped) != 0 || (i == 0 && len(maintained.Created) == 0) {
+			t.Fatalf("preserve history: %+v, %v", maintained, err)
+		}
+		var rawAfter, capturesAfter int
+		if err = tx.QueryRow(ctx, repo.sql(`SELECT count(*) FROM vialis.posiciones_colectivos_raw`)).Scan(&rawAfter); err != nil {
+			t.Fatal(err)
+		}
+		if err = tx.QueryRow(ctx, repo.sql(`SELECT count(*) FROM vialis.capturas_colectivos`)).Scan(&capturesAfter); err != nil {
+			t.Fatal(err)
+		}
+		if rawAfter != rawBefore || capturesAfter != capturesBefore {
+			t.Fatalf("history was purged: raw %d -> %d, captures %d -> %d", rawBefore, rawAfter, capturesBefore, capturesAfter)
+		}
+	}
+	repo.WithHistoryPreservation(false)
 	maintained, err = repo.MaintainPartitions(ctx, now.AddDate(0, 0, 7))
 	if err != nil {
 		t.Fatal(err)

@@ -52,6 +52,14 @@ func NewService(repository CurrentRepository, policy Policy, historyPolicy Histo
 	}
 	return &Service{repository: repository, policy: policy, historyPolicy: historyPolicy, recurrencePolicy: recurrencePolicy, now: time.Now}, nil
 }
+
+// WithFixedTime freezes the API clock for demos of the last persisted worker
+// state. Configure before serving requests; this does not replay older states.
+func (s *Service) WithFixedTime(at time.Time) *Service {
+	s.now = func() time.Time { return at }
+	return s
+}
+
 func (s *Service) Get(ctx context.Context, id int64) (Current, error) {
 	now := s.now()
 	current, err := s.repository.FindCurrent(ctx, id, now, s.policy)

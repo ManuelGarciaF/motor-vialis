@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"time"
@@ -73,10 +74,11 @@ type TrafficTrace struct {
 // Service orchestrates cut analysis, traffic routing, route reconstruction,
 // validation, and stable simulation comparison.
 type Service struct {
-	repository      Repository
-	trafficProvider TrafficProvider
-	comparator      Comparator
-	policy          Policy
+	repository          Repository
+	trafficProvider     TrafficProvider
+	comparator          Comparator
+	policy              Policy
+	demoTrafficFallback bool
 }
 
 // NewService creates the RF05 orchestrator.
@@ -98,6 +100,13 @@ func NewService(
 		comparator:      comparator,
 		policy:          policy,
 	}, nil
+}
+
+// WithDemoTrafficFallback allows provider errors to use the existing routing
+// fallback in demos. Configure before serving; other errors still fail.
+func (service *Service) WithDemoTrafficFallback(enabled bool) *Service {
+	service.demoTrafficFallback = enabled
+	return service
 }
 
 // detourRetryGraphMarginMeters agranda el grafo (no las anclas) en un reintento
@@ -173,7 +182,15 @@ func (service *Service) planWithMargin(ctx context.Context, input Input, graphMa
 
 	snapshot, err := service.trafficProvider.Snapshot(ctx, tiles)
 	if err != nil {
-		return Result{}, mapTrafficError(err)
+		// A provider failure may degrade to the existing default-speed routing,
+		// but never swallow cancellation or the overall request deadline.
+		if !service.demoTrafficFallback || ctx.Err() != nil {
+			return Result{}, mapTrafficError(err)
+		}
+		slog.WarnContext(ctx, "demo_traffic_fallback", "speed_kph", service.policy.DefaultSpeedKPH)
+		// An empty snapshot lets the repository use its existing fallback.
+		// Do not invent provider observation time or cache metadata.
+		snapshot = traffic.Snapshot{Zoom: service.policy.TrafficZoom}
 	}
 
 	plans, points, pairs, err := buildIntervalPlans(input.Route, classified, analysis.Intervals)

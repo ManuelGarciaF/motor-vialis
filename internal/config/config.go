@@ -16,6 +16,7 @@ const (
 type Config struct {
 	DatabaseURL               string
 	HTTPAddress               string
+	DemoMode                  bool
 	TomTomAPIKey              string
 	GCBATransportClientID     string
 	GCBATransportClientSecret string
@@ -26,6 +27,7 @@ func FromEnv() Config {
 	return Config{
 		DatabaseURL:               valueOrDefault("DATABASE_URL", DefaultDatabaseURL),
 		HTTPAddress:               valueOrDefault("HTTP_ADDRESS", DefaultHTTPAddress),
+		DemoMode:                  os.Getenv("DEMO_MODE") == "true",
 		TomTomAPIKey:              os.Getenv("TOMTOM_API_KEY"),
 		GCBATransportClientID:     os.Getenv("GCBA_TRANSPORT_CLIENT_ID"),
 		GCBATransportClientSecret: os.Getenv("GCBA_TRANSPORT_CLIENT_SECRET"),

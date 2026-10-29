@@ -134,10 +134,18 @@ inicial, caídas graduales o variaciones naturales del servicio. Es una heuríst
 - `pasos_colectivos`: tabla preparatoria existente, **sin inferencia ni uso**;
   pasos/headways/CV fueron descartados. No se elimina mediante esta decisión.
 
-Raw conserva hoy y seis fechas UTC anteriores, y precrea mañana. La retención
-elimina particiones completas, no grandes `DELETE`; siete fechas no son
-exactamente 168 horas. Capturas viejas se eliminan cuando no quedan posiciones
-que las referencien. Mantenimiento e inserción comparten un lock transaccional.
+El worker conserva **indefinidamente** las particiones raw y los metadatos de
+capturas: `config.RealtimePreserveHistory = true` desactiva su purga automática.
+El mantenimiento sigue creando las particiones de la ventana de admisión y
+mañana. No recupera datos ya eliminados. Hay que monitorear disco/WAL y administrar
+respaldos; el crecimiento no tiene un límite automático.
+
+La admisión de GPS entrante sigue limitada a hoy y seis fechas UTC anteriores
+(`RealtimeRawRetentionDays = 7`); siete fechas no son exactamente 168 horas.
+No cambia la frescura del detector ni se hace backfill. Si se cambia explícitamente
+`RealtimePreserveHistory` a false y se recompila/reinicia, vuelve la purga:
+se eliminan particiones completas fuera de esa ventana y capturas viejas sin
+posiciones referenciadas. Mantenimiento e inserción comparten un lock transaccional.
 
 Las identidades históricas no tienen FK a IDs regenerables del catálogo. Conservan
 ruta/sentido GCBA y GTFS, shape_id y `md5(encode(ST_AsEWKB(geom),'hex'))`.
@@ -222,6 +230,13 @@ Una fila abierta puede quedar obsoleta durante una caída: `open` no equivale a
 `active=true`. Las consultas usan read-only/repeatable-read para no mezclar commits.
 
 ## Endpoints
+
+Para presentar capturas existentes sin que envejezcan, `DEMO_MODE=true` al
+iniciar `cmd/api` (o el flag `-demo`) fija
+«ahora» en la última captura analizada al arrancar, tanto para frescura como
+para ventanas por defecto y recurrencia. No modifica fechas ni reconstruye
+estados pasados; requiere conservar el estado final del worker sin nuevas
+escrituras/purgas. Comandos y límites en [operación de demo](../README.md#demo-con-capturas-existentes).
 
 ```sh
 curl 'http://localhost:8080/lines/123/bunching'

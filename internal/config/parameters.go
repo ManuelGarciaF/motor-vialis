@@ -145,8 +145,11 @@ const (
 	GCBAMaximumBackoff     = time.Minute
 )
 
-// Retention is measured in UTC calendar partitions: today plus six past days.
+// The incoming GPS admission window is measured in UTC dates (today plus six
+// past days). History preservation disables physical purging, not this window
+// or the persisted H0012 source-age safety checks.
 const (
+	RealtimePreserveHistory  = true
 	RealtimeRawRetentionDays = 7
 	RealtimePollInterval     = time.Minute
 	RealtimeDatabaseTimeout  = time.Minute

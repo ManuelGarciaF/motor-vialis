@@ -89,6 +89,7 @@ type Handler struct {
 	bunching    Bunching
 	bottlenecks Bottlenecks
 	timeout     time.Duration
+	demoAt      time.Time
 }
 
 func NewHandler(
@@ -130,6 +131,13 @@ func (handler *Handler) WithBottlenecks(service Bottlenecks) *Handler {
 	return handler
 }
 
+// WithDemoTime enables historical defaults for worker APIs before serving.
+// Explicit timestamps remain historical timestamps and are never rewritten.
+func (handler *Handler) WithDemoTime(at time.Time) *Handler {
+	handler.demoAt = at.UTC()
+	return handler
+}
+
 func (handler *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /lines", handler.listLines)
@@ -153,7 +161,14 @@ func (handler *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /comparisons/detour", handler.createDetourComparison)
 	mux.HandleFunc("POST /detours", handler.createDetour)
 	mux.HandleFunc("POST /routes/segment", handler.createSegmentRoute)
-	return handler.recoverPanic(handler.logRequest(mux))
+	var routes http.Handler = mux
+	if !handler.demoAt.IsZero() {
+		routes = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Vialis-Demo-Time", handler.demoAt.Format(time.RFC3339Nano))
+			mux.ServeHTTP(w, r)
+		})
+	}
+	return handler.recoverPanic(handler.logRequest(routes))
 }
 
 // withTimeout bounds backend work and preserves client cancellation.

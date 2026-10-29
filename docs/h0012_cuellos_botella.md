@@ -102,8 +102,13 @@ Los snapshots no dependen de IDs GTFS regenerables ni de FKs a raw sujeto a purg
 La identidad de medición conserva entrada UTC exacta; el JSON mantiene nanosegundos,
 no se usa sólo el `timestamptz` auxiliar de precisión microsegundo.
 
-No se cambia la retención H0011 de **siete fechas UTC** ni se archiva GPS adicional.
-Pasajes y metadatos no tienen purga inicial. Tras purgar raw puede recalibrarse la
+H0011 conserva ahora raw y capturas sin purga automática mediante
+`RealtimePreserveHistory`; no se crea otro archivo de GPS. La ventana de admisión
+y el límite de antigüedad de fuente persistido en H0012 siguen siendo **siete
+fechas UTC**: conservar archivos no habilita recuperación/reprocesamiento arbitrario
+de checkpoints viejos ni cambia el modelo existente.
+Pasajes y metadatos tampoco tienen purga inicial. Tras una purga administrada de
+raw puede recalibrarse la
 clasificación, pero no rehacer segmentación/matching de esas mediciones.
 Una unidad continuamente activa puede mantener OPEN hasta agotar retención:
 si falta/expira raw necesario o falta la geometría exacta, **se detiene H0012 con
@@ -117,7 +122,10 @@ no se sobrescribe al reiniciar.
 GET /bottlenecks?from=2026-10-21T18:00:00-03:00&to=2026-10-21T20:00:00-03:00
 ```
 
-- `from`/`to` obligatorios, RFC3339 con zona, `from < to`. Ventana **[from,to)**
+- `from`/`to` obligatorios, RFC3339 con zona, `from < to`. Con `DEMO_MODE=true` en `cmd/api` (o `-demo`),
+  omitir ambos usa las 24 horas anteriores al reloj fijo de la última captura;
+  una sola fecha sigue siendo inválida. Ver [operación de demo](../README.md#demo-con-capturas-existentes).
+  Ventana **[from,to)**
   por entrada estimada, no por cierre ni commit.
 - `line` opcional: etiqueta exacta, por ejemplo `132`, no ID de catálogo/GTFS.
 - `bbox` opcional: `minLon,minLat,maxLon,maxLat` WGS84; intersección con sector.

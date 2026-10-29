@@ -2,6 +2,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/detour"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/revenue"
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/traveltime"
+	"github.com/ManuelGarciaF/vialis-motor/internal/traffic"
 	"github.com/ManuelGarciaF/vialis-motor/internal/traffic/tomtom"
 )
 
@@ -62,6 +64,21 @@ func NewTomTomTrafficClient(apiKey string, logger *slog.Logger) (*tomtom.Client,
 		},
 		Logger: logger,
 	})
+}
+
+// NewDetourTrafficProvider permits a missing key only in demo mode. The demo
+// service turns this explicit provider error into a generic-speed estimate.
+func NewDetourTrafficProvider(apiKey string, logger *slog.Logger, demo bool) (detour.TrafficProvider, error) {
+	if demo && strings.TrimSpace(apiKey) == "" {
+		return missingTrafficCredentials{}, nil
+	}
+	return NewTomTomTrafficClient(apiKey, logger)
+}
+
+type missingTrafficCredentials struct{}
+
+func (missingTrafficCredentials) Snapshot(context.Context, []traffic.Tile) (traffic.Snapshot, error) {
+	return traffic.Snapshot{}, &traffic.Error{Code: traffic.ErrorAPIKeyMissing, Message: "TomTom is not configured"}
 }
 
 // NewDetourService wires RF05 to PostgreSQL, the shared traffic client, and

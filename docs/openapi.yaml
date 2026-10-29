@@ -4,7 +4,10 @@ info:
   description: >
     Simula una línea de transporte propuesta: demanda potencial, distancia,
     tiempo de viaje y recaudación potencial. Ver `docs/arquitectura_motor.md`
-    para la semántica de cada cálculo.
+    para la semántica de cada cálculo. Al iniciar `cmd/api` con `DEMO_MODE=true` (o `-demo`), las APIs
+    del worker evalúan ahora contra la última captura analizada al arrancar;
+    X-Vialis-Demo-Time expone ese instante fijo en las respuestas. Los timestamps
+    siguen siendo históricos y los rangos explícitos no se desplazan.
   version: "1.1.0"
 servers:
   - url: http://localhost:8080
@@ -24,6 +27,9 @@ paths:
         posteriores incluso a períodos pasados. Una lista vacía no demuestra ausencia
         de lentitud ni cobertura completa. Sin paginación ni truncado de sectores.
         No exporta identificadores de vehículos ni GPS individuales.
+        Excepción operacional de demo: con `DEMO_MODE=true` (o `cmd/api -demo`) se pueden omitir ambas
+        fechas para consultar las 24 horas anteriores al reloj fijo. Omitir sólo
+        una sigue siendo inválido. En modo normal ambas son obligatorias.
       tags: [bottlenecks]
       parameters:
         - name: from
@@ -2066,6 +2072,14 @@ components:
 
     DetourTrafficTrace:
       type: object
+      description: >
+        En demo, un error del proveedor permite continuar con un snapshot vacío
+        y el respaldo existente de 20 km/h, registrado sólo en logs, sin campos
+        adicionales en la respuesta. Las respuestas correctas conservan la lógica
+        habitual y no hay reintento extra por cobertura insuficiente.
+        Ante error de proveedor, fetchedAt es el timestamp cero de Go
+        (0001-01-01T00:00:00Z) y trafficAgeSeconds, tileCount y cacheHits son cero;
+        no expresan frescura ni cobertura real.
       required: [fetchedAt, trafficAgeSeconds, zoom, tileCount, cacheHits]
       properties:
         fetchedAt:
@@ -2079,7 +2093,7 @@ components:
           type: integer
         tileCount:
           type: integer
-          minimum: 1
+          minimum: 0
         cacheHits:
           type: integer
           minimum: 0
