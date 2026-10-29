@@ -470,13 +470,8 @@ func validateRoutingRequest(request detour.RoutingRequest) error {
 	if len(request.Analysis.ForbiddenArea) == 0 {
 		return fmt.Errorf("route detour: forbidden area is empty")
 	}
-	if len(request.Traffic) == 0 {
-		return &detour.Error{
-			Code:    detour.ErrorTrafficUnavailable,
-			Kind:    detour.ErrorKindDependency,
-			Message: "traffic snapshot contains no segments",
-		}
-	}
+	// An empty snapshot is valid: the service sends one when it routes without
+	// provider observations, and every edge is then priced at the default speed.
 
 	pointIDs := make(map[int64]struct{}, len(request.Points))
 	for _, point := range request.Points {
