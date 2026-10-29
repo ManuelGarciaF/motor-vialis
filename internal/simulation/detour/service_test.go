@@ -290,7 +290,8 @@ func TestServicePlanMapsTrafficProviderError(t *testing.T) {
 	input := serviceTestInput()
 	input.Criterion = CriterionShortestTime
 	service, err := NewService(
-		&scriptedDetourRepository{analysis: serviceTestAnalysis()},
+		// The default-speed fallback also fails, so the original code survives.
+		&scriptedDetourRepository{analysis: serviceTestAnalysis(), routeErr: errors.New("database failed")},
 		&scriptedTrafficProvider{err: &traffic.Error{Code: traffic.ErrorStale, Message: "old"}},
 		&recordingComparator{},
 		serviceTestPolicy(),
@@ -307,11 +308,13 @@ func TestServicePlanMapsTrafficProviderError(t *testing.T) {
 }
 
 type scriptedDetourRepository struct {
-	analysis    Analysis
-	analyzeErr  error
-	routeResult func(RoutingRequest) RoutingResult
-	routeErr    error
-	routeCalls  int
+	analysis     Analysis
+	analyzeErr   error
+	routeResult  func(RoutingRequest) RoutingResult
+	routeErr     error
+	routeCalls   int
+	analyzeCalls int
+	requests     []RoutingRequest
 }
 
 func (repository *scriptedDetourRepository) Analyze(
@@ -320,6 +323,7 @@ func (repository *scriptedDetourRepository) Analyze(
 	Cut,
 	Policy,
 ) (Analysis, error) {
+	repository.analyzeCalls++
 	return repository.analysis, repository.analyzeErr
 }
 
@@ -329,6 +333,7 @@ func (repository *scriptedDetourRepository) Route(
 	_ Policy,
 ) (RoutingResult, error) {
 	repository.routeCalls++
+	repository.requests = append(repository.requests, request)
 	if repository.routeErr != nil {
 		return RoutingResult{}, repository.routeErr
 	}
@@ -339,12 +344,14 @@ type scriptedTrafficProvider struct {
 	snapshot traffic.Snapshot
 	err      error
 	tiles    []traffic.Tile
+	calls    int
 }
 
 func (provider *scriptedTrafficProvider) Snapshot(
 	_ context.Context,
 	tiles []traffic.Tile,
 ) (traffic.Snapshot, error) {
+	provider.calls++
 	provider.tiles = append([]traffic.Tile(nil), tiles...)
 	return provider.snapshot, provider.err
 }

@@ -69,6 +69,9 @@ type TrafficTrace struct {
 	Zoom       int
 	TileCount  int
 	CacheHits  int
+	// Fallback is true when routing used the empty substitute snapshot instead
+	// of provider observations: costs come from the default-speed pricing.
+	Fallback bool
 }
 
 // Service orchestrates cut analysis, traffic routing, route reconstruction,
@@ -122,11 +125,27 @@ const detourRetryGraphMarginMeters = 250.0
 // un poco mas grande (sin mover las anclas ni tocar que paradas son
 // obligatorias). Asi los casos normales no cambian y solo los que fallaban por
 // el borde consiguen su desvio.
+//
+// Como ultimo recurso, si el error original es de trafico o de "no hay desvio"
+// (ver shouldRetryWithoutTraffic) y la request sigue viva, planifica UNA vez mas
+// sin observaciones de TomTom (velocidad por defecto) y con el grafo agrandado.
+// Si ese intento tambien falla se devuelve el error original.
 func (service *Service) Plan(ctx context.Context, input Input) (Result, error) {
-	result, err := service.planWithMargin(ctx, input, 0)
-	if err != nil && shouldRetryWithLargerGraph(err) {
-		if retried, retryErr := service.planWithMargin(ctx, input, detourRetryGraphMarginMeters); retryErr == nil {
+	result, err := service.planWithMargin(ctx, input, 0, false)
+	if err == nil {
+		return result, nil
+	}
+	if shouldRetryWithLargerGraph(err) {
+		if retried, retryErr := service.planWithMargin(ctx, input, detourRetryGraphMarginMeters, false); retryErr == nil {
 			return retried, nil
+		}
+	}
+	if code, ok := shouldRetryWithoutTraffic(err); ok && ctx.Err() == nil {
+		if fallback, fallbackErr := service.planWithMargin(ctx, input, detourRetryGraphMarginMeters, true); fallbackErr == nil {
+			slog.WarnContext(ctx, "detour_traffic_fallback", "code", code, "speed_kph", service.policy.DefaultSpeedKPH)
+			return fallback, nil
+		} else {
+			slog.WarnContext(ctx, "detour_traffic_fallback_failed", "code", code, "error", fallbackErr)
 		}
 	}
 	return result, err
@@ -144,7 +163,37 @@ func shouldRetryWithLargerGraph(err error) bool {
 		domainError.Code == ErrorRequiredStopNotMatched
 }
 
-func (service *Service) planWithMargin(ctx context.Context, input Input, graphMarginMeters float64) (Result, error) {
+// shouldRetryWithoutTraffic reconoce los fallos que un intento sin trafico
+// observado puede destrabar: el proveedor fallo, la cobertura de trafico no
+// alcanzo, o no aparecio desvio/enganche. Entradas invalidas, errores de base,
+// cancelacion y limites de teselas nunca califican (no son *Error con estos
+// codigos).
+func shouldRetryWithoutTraffic(err error) (ErrorCode, bool) {
+	var domainError *Error
+	if !errors.As(err, &domainError) {
+		return "", false
+	}
+	switch domainError.Code {
+	case ErrorTrafficCoverageInsufficient,
+		ErrorTrafficUnavailable,
+		ErrorTrafficStale,
+		ErrorNoDetourWithinSearchArea,
+		ErrorAnchorNotMatched,
+		ErrorRequiredStopNotMatched:
+		return domainError.Code, true
+	}
+	return "", false
+}
+
+// planWithMargin runs one planning attempt. ignoreTraffic skips the provider
+// and routes with the empty snapshot, so the repository prices every edge with
+// its default-speed fallback.
+func (service *Service) planWithMargin(
+	ctx context.Context,
+	input Input,
+	graphMarginMeters float64,
+	ignoreTraffic bool,
+) (Result, error) {
 	if err := route.Validate(input.Route); err != nil {
 		return Result{}, err
 	}
@@ -180,17 +229,23 @@ func (service *Service) planWithMargin(ctx context.Context, input Input, graphMa
 		}
 	}
 
-	snapshot, err := service.trafficProvider.Snapshot(ctx, tiles)
-	if err != nil {
-		// A provider failure may degrade to the existing default-speed routing,
-		// but never swallow cancellation or the overall request deadline.
-		if !service.demoTrafficFallback || ctx.Err() != nil {
-			return Result{}, mapTrafficError(err)
+	// An empty snapshot lets the repository use its existing fallback.
+	// Do not invent provider observation time or cache metadata.
+	emptySnapshot := traffic.Snapshot{Zoom: service.policy.TrafficZoom}
+	snapshot := emptySnapshot
+	trafficFallback := ignoreTraffic
+	if !ignoreTraffic {
+		snapshot, err = service.trafficProvider.Snapshot(ctx, tiles)
+		if err != nil {
+			// A provider failure may degrade to the existing default-speed routing,
+			// but never swallow cancellation or the overall request deadline.
+			if !service.demoTrafficFallback || ctx.Err() != nil {
+				return Result{}, mapTrafficError(err)
+			}
+			slog.WarnContext(ctx, "demo_traffic_fallback", "speed_kph", service.policy.DefaultSpeedKPH)
+			snapshot = emptySnapshot
+			trafficFallback = true
 		}
-		slog.WarnContext(ctx, "demo_traffic_fallback", "speed_kph", service.policy.DefaultSpeedKPH)
-		// An empty snapshot lets the repository use its existing fallback.
-		// Do not invent provider observation time or cache metadata.
-		snapshot = traffic.Snapshot{Zoom: service.policy.TrafficZoom}
 	}
 
 	plans, points, pairs, err := buildIntervalPlans(input.Route, classified, analysis.Intervals)
@@ -284,6 +339,7 @@ func (service *Service) planWithMargin(ctx context.Context, input Input, graphMa
 				Zoom:       snapshot.Zoom,
 				TileCount:  snapshot.TileCount,
 				CacheHits:  snapshot.CacheHits,
+				Fallback:   trafficFallback,
 			},
 			Graph:         routing.Trace,
 			ForcedStops:   countAvailability(classified, StopForcedUnavailable),

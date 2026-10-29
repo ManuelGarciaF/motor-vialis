@@ -16,10 +16,10 @@ import (
 	"github.com/ManuelGarciaF/vialis-motor/internal/simulation/route"
 )
 
-func TestDemoTrafficFallbackDoesNotChangeResponseFields(t *testing.T) {
+func TestDetourTrafficFallbackIsReportedInTrace(t *testing.T) {
 	planner := &fakeDetourPlanner{result: detour.Result{
 		Variant: validRouteValue(t),
-		Trace:   detour.Trace{Traffic: detour.TrafficTrace{Zoom: 14}},
+		Trace:   detour.Trace{Traffic: detour.TrafficTrace{Zoom: 14, Fallback: true}},
 	}}
 	router := newTestRouterWithDetours(&fakeSimulator{}, &fakeComparator{}, planner, &fakeLines{})
 	response := doDetourRequest(t, router, detourJSON())
@@ -34,13 +34,16 @@ func TestDemoTrafficFallbackDoesNotChangeResponseFields(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Trace.Traffic) != 5 {
+	if len(got.Trace.Traffic) != 6 {
 		t.Fatalf("changed traffic contract: %+v", got)
 	}
-	for _, field := range []string{"fetchedAt", "trafficAgeSeconds", "zoom", "tileCount", "cacheHits"} {
+	for _, field := range []string{"fetchedAt", "trafficAgeSeconds", "zoom", "tileCount", "cacheHits", "fallback"} {
 		if _, ok := got.Trace.Traffic[field]; !ok {
 			t.Fatalf("missing existing field: %s", field)
 		}
+	}
+	if string(got.Trace.Traffic["fallback"]) != "true" {
+		t.Fatalf("fallback = %s", got.Trace.Traffic["fallback"])
 	}
 }
 

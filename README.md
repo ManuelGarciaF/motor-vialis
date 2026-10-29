@@ -100,10 +100,12 @@ catálogo y servicios externos no cambian de reloj.
 En desvíos, demo permite continuar ante errores de TomTom (también sin
 `TOMTOM_API_KEY`) con un snapshot vacío y el respaldo existente de **20 km/h**.
 Las respuestas correctas de TomTom mantienen la lógica habitual, incluida su
-mediana; no se agrega un reintento por cobertura insuficiente. El respaldo por
-error se registra sólo en logs (`demo_traffic_fallback`), sin campos nuevos en
-la respuesta; no es tráfico medido. DB, cancelaciones, geometrías inválidas y ausencia real de camino siguen
-siendo errores. Ver [RF05](docs/rf05_desvios.md). Para volver al modo normal,
+mediana. El respaldo por error se registra en logs (`demo_traffic_fallback`) y
+con `trace.traffic.fallback: true`; no es tráfico medido. Fuera de demo, el motor
+también hace siempre un único último intento sin tráfico (20 km/h, grafo
+ampliado) ante errores de tráfico, cobertura insuficiente o falta de desvío/enganche
+(log `detour_traffic_fallback`). DB, cancelaciones, geometrías inválidas y ausencia
+real de camino siguen siendo errores. Ver [RF05](docs/rf05_desvios.md). Para volver al modo normal,
 reiniciar la API con `DEMO_MODE=false` (valor por defecto si no está definida).
 El flag `-demo` sigue disponible y tiene prioridad: `-demo=false` desactiva demo
 incluso si `DEMO_MODE=true`. Esta variable sólo afecta la lectura de las APIs,

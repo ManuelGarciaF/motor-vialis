@@ -2073,14 +2073,16 @@ components:
     DetourTrafficTrace:
       type: object
       description: >
-        En demo, un error del proveedor permite continuar con un snapshot vacío
-        y el respaldo existente de 20 km/h, registrado sólo en logs, sin campos
-        adicionales en la respuesta. Las respuestas correctas conservan la lógica
-        habitual y no hay reintento extra por cobertura insuficiente.
-        Ante error de proveedor, fetchedAt es el timestamp cero de Go
-        (0001-01-01T00:00:00Z) y trafficAgeSeconds, tileCount y cacheHits son cero;
-        no expresan frescura ni cobertura real.
-      required: [fetchedAt, trafficAgeSeconds, zoom, tileCount, cacheHits]
+        Si el intento con tráfico falla por traffic_unavailable, traffic_stale,
+        traffic_coverage_insufficient, no_detour_within_search_area,
+        anchor_not_matched o required_stop_not_matched, el motor hace un único
+        último intento sin observaciones de TomTom, con la velocidad de respaldo
+        de 20 km/h y el grafo ampliado; en demo, un error del proveedor pasa
+        directamente a ese snapshot vacío. En esos casos fallback es true,
+        fetchedAt es el timestamp cero de Go (0001-01-01T00:00:00Z) y
+        trafficAgeSeconds, tileCount y cacheHits son cero; no expresan frescura
+        ni cobertura real.
+      required: [fetchedAt, trafficAgeSeconds, zoom, tileCount, cacheHits, fallback]
       properties:
         fetchedAt:
           type: string
@@ -2097,6 +2099,11 @@ components:
         cacheHits:
           type: integer
           minimum: 0
+        fallback:
+          type: boolean
+          description: >
+            true cuando la variante se ruteó sin observaciones de TomTom, con la
+            velocidad de respaldo; el tiempo de decisión no es tráfico medido.
 
     DetourGraphTrace:
       type: object

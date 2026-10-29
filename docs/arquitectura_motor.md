@@ -1542,11 +1542,18 @@ respaldo (`forwardDefaultEdges`/`reverseDefaultEdges`); esos conteos describen e
 grafo local, no sólo el camino elegido. El tiempo de decisión puede mezclar
 observaciones y estimaciones: no debe presentarse como tráfico íntegramente
 observado. Esos costos sólo ordenan alternativas y no reemplazan el modelo de
-tiempo de la simulación. Un fallo del proveedor sigue siendo un error en modo
-normal. **Sólo en demo** (`DEMO_MODE=true` o `-demo`), un error TomTom permite
-continuar con un snapshot vacío, reutilizando el respaldo existente de
-**20 km/h**. Se registra sólo en logs (`demo_traffic_fallback`), sin campos nuevos
-en la API. En ese caso `fetchedAt` conserva el timestamp cero de Go, sin inventar
+tiempo de la simulación. Como último recurso, siempre activo, si el plan con
+tráfico (y el reintento de la sección 13.3) falla con `traffic_unavailable`,
+`traffic_stale`, `traffic_coverage_insufficient`, `no_detour_within_search_area`,
+`anchor_not_matched` o `required_stop_not_matched`, se planifica una única vez
+más sin observaciones de TomTom: snapshot vacío, respaldo de **20 km/h** y grafo
+ampliado. Si resuelve, se informa `trace.traffic.fallback: true` y se registra
+`detour_traffic_fallback`; el tiempo de decisión no es tráfico medido. Si falla,
+se devuelve el error original. Entradas inválidas, errores de DB, cancelación y
+ausencia real de camino siguen siendo errores. En demo (`DEMO_MODE=true` o
+`-demo`), un error TomTom pasa directamente al snapshot vacío, sin el intento
+fallido previo (`demo_traffic_fallback`, también con `fallback: true`).
+En esos casos `fetchedAt` conserva el timestamp cero de Go, sin inventar
 antigüedad ni cobertura. Si TomTom responde correctamente, se conserva el snapshot
 y la selección habitual de velocidades, incluida su mediana. La comparación GTFS
 no cambia. Detalles operativos en [RF05](rf05_desvios.md).
@@ -1633,6 +1640,7 @@ lugar de aproximar:
 - **Quedan menos de dos paradas cubiertas.** La ruta deja de existir como
   recorrido y no hay nada que evaluar.
 - **La topología conecta pero el grafo con costos no resuelve el camino.** Se
+  hace el último intento sin tráfico de la sección 13.5; si tampoco resuelve, se
   conserva el diagnóstico `traffic_coverage_insufficient`: un camino con costos
   OSM usado para diagnosticar no se devuelve como variante. La mera ausencia de
   observación directa no basta para provocar este error, porque las aristas

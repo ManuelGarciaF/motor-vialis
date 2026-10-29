@@ -54,6 +54,7 @@ type trafficTraceResponse struct {
 	Zoom              int       `json:"zoom"`
 	TileCount         int       `json:"tileCount"`
 	CacheHits         int       `json:"cacheHits"`
+	Fallback          bool      `json:"fallback"`
 }
 
 type graphTraceResponse struct {
@@ -157,6 +158,7 @@ func newDetourResponse(result detour.Result) detourResponse {
 				Zoom:              trace.Traffic.Zoom,
 				TileCount:         trace.Traffic.TileCount,
 				CacheHits:         trace.Traffic.CacheHits,
+				Fallback:          trace.Traffic.Fallback,
 			},
 			Graph: graphTraceResponse{
 				CandidateEdges:        trace.Graph.CandidateEdges,

@@ -56,16 +56,25 @@ aristas, carga del grafo, cobertura y antigüedad del tráfico.
   del camino elegido. No presentar todo el tiempo de decisión como observado.
 - Caché en memoria por tile: TTL 30 min, LRU de 256 entradas/16 MiB, deduplicación
   concurrente, hasta 10 QPS y timeout TomTom de 10 s. No guarda tiles en PostgreSQL.
-  En modo normal una falla del proveedor sigue siendo un error.
+- **Último intento sin tráfico (siempre activo):** si el plan con tráfico (y su
+  reintento con margen) falla con `traffic_unavailable`, `traffic_stale`,
+  `traffic_coverage_insufficient`, `no_detour_within_search_area`,
+  `anchor_not_matched` o `required_stop_not_matched`, el servicio planifica una
+  sola vez más con un snapshot vacío (respaldo de **20 km/h**,
+  `DetourDefaultSpeedKPH`) y el margen de grafo ampliado. Si resuelve, la
+  respuesta informa `trace.traffic.fallback: true` y se registra
+  `detour_traffic_fallback` (código original, velocidad); el tiempo de decisión
+  no es tráfico medido. Si falla, se devuelve el error original. No se aplica a
+  entradas inválidas, errores de DB, cancelación ni límite de tiles.
 - **Excepción de demo (`DEMO_MODE=true` o `-demo`):** cualquier fallo de TomTom,
   incluida falta de clave, permite continuar con un snapshot vacío y reutilizar
   el respaldo existente de **20 km/h** (`DetourDefaultSpeedKPH`). Si TomTom responde
   correctamente, no cambia sus observaciones ni la selección habitual de
-  velocidades (incluida la mediana del snapshot). No hay reintento adicional por
-  `traffic_coverage_insufficient`. No omite errores de DB, validación, cancelación
-  ni la falta real de camino; tampoco inventa una geometría.
-  El respaldo por error de proveedor se registra sólo en logs
-  (`demo_traffic_fallback`, velocidad), sin agregar campos a la respuesta. En ese caso,
+  velocidades (incluida la mediana del snapshot). Evita así el primer intento
+  fallido; el resto es igual al último intento sin tráfico. No omite errores de
+  DB, validación, cancelación ni la falta real de camino; tampoco inventa una geometría.
+  El respaldo por error de proveedor se registra en logs
+  (`demo_traffic_fallback`, velocidad) y con `trace.traffic.fallback: true`. En ese caso,
   `fetchedAt` conserva el timestamp cero de Go, y edad, tiles e hits son cero:
   no representan observaciones frescas. Los conteos de respaldo siguen siendo
   del grafo completo. El tiempo GTFS de comparación no cambia.

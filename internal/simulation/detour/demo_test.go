@@ -31,6 +31,9 @@ func TestDemoTrafficProviderErrorUsesExistingFallback(t *testing.T) {
 			if !got.Trace.Traffic.FetchedAt.IsZero() || got.Trace.Traffic.TileCount != 0 || got.Trace.Traffic.CacheHits != 0 {
 				t.Fatalf("invented provider metadata: %+v", got.Trace.Traffic)
 			}
+			if !got.Trace.Traffic.Fallback {
+				t.Fatal("demo provider fallback must be reported in the trace")
+			}
 			if repo.routeCalls != 1 {
 				t.Fatalf("routing calls = %d", repo.routeCalls)
 			}
@@ -55,26 +58,6 @@ func TestDemoPreservesSuccessfulTrafficSnapshot(t *testing.T) {
 		if _, err := s.WithDemoTrafficFallback(true).Plan(context.Background(), input); err != nil {
 			t.Fatal(err)
 		}
-	}
-}
-
-func TestDemoDoesNotRetryInsufficientCoverage(t *testing.T) {
-	input := serviceTestInput()
-	input.Criterion = CriterionShortestTime
-	repo := &scriptedDetourRepository{analysis: serviceTestAnalysis(), routeResult: func(r RoutingRequest) RoutingResult {
-		return RoutingResult{TopologyAvailablePairs: r.Pairs}
-	}}
-	s, err := NewService(repo, &scriptedTrafficProvider{snapshot: traffic.Snapshot{Segments: []traffic.Segment{{HasSpeed: true, SpeedKPH: 30}}}}, &recordingComparator{}, serviceTestPolicy())
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.WithDemoTrafficFallback(true).Plan(context.Background(), input)
-	var e *Error
-	if !errors.As(err, &e) || e.Code != ErrorTrafficCoverageInsufficient {
-		t.Fatalf("coverage error = %v", err)
-	}
-	if repo.routeCalls != 1 {
-		t.Fatalf("unexpected coverage retry: %d", repo.routeCalls)
 	}
 }
 
