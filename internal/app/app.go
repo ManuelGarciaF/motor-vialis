@@ -105,6 +105,11 @@ func NewSegmentService(database *pgxpool.Pool) (*detour.SegmentService, error) {
 	)
 }
 
+// NewCutPathService wires cut path routing to the undirected road graph.
+func NewCutPathService(database *pgxpool.Pool) (*detour.CutPathService, error) {
+	return detour.NewCutPathService(postgres.NewDetourRepository(database), config.CutPathPolicy())
+}
+
 // NewBottlenecksService reads finalized passages without touching producer state.
 func NewBottlenecksService(database *pgxpool.Pool) (*bottlenecks.DetectionService, error) {
 	return bottlenecks.NewDetectionService(postgres.NewBottlenecksDetectionRepository(database), config.BottlenecksModel().Name, config.BottlenecksDetectionPolicy())

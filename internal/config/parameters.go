@@ -101,6 +101,28 @@ func SegmentPolicy() detour.SegmentPolicy {
 	}
 }
 
+// Cut path limits keep POST /routes/cut cheap enough to run on every point the
+// user adds to a cut. A cut has more points than a segment (it is drawn click
+// by click) but spans less; the graph and snapping follow segment routing.
+const (
+	CutPathMaximumWaypoints   = 50
+	CutPathMaximumSpanMeters  = SegmentMaximumSpanMeters
+	CutPathMarginMeters       = SegmentMarginMeters
+	CutPathRetryMarginMeters  = SegmentRetryMarginMeters
+	CutPathSnapDistanceMeters = SegmentSnapDistanceMeters
+)
+
+// CutPathPolicy returns the limits of cut path routing.
+func CutPathPolicy() detour.CutPathPolicy {
+	return detour.CutPathPolicy{
+		MaximumWaypoints:   CutPathMaximumWaypoints,
+		MaximumSpanMeters:  CutPathMaximumSpanMeters,
+		MarginMeters:       CutPathMarginMeters,
+		RetryMarginMeters:  CutPathRetryMarginMeters,
+		SnapDistanceMeters: CutPathSnapDistanceMeters,
+	}
+}
+
 // DetourPolicy returns the geographic thresholds and defensive limits used by
 // RF05.
 func DetourPolicy() detour.Policy {

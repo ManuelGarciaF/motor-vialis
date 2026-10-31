@@ -64,6 +64,11 @@ func main() {
 		logger.Error("could not configure segment routing", "error", err)
 		os.Exit(1)
 	}
+	cutPathService, err := app.NewCutPathService(database)
+	if err != nil {
+		logger.Error("could not configure cut path routing", "error", err)
+		os.Exit(1)
+	}
 	linesService := app.NewLinesService(database)
 	transfersService := app.NewCombinacionesService(database)
 	bunchingService, err := app.NewBunchingService(database)
@@ -90,7 +95,8 @@ func main() {
 		transfersService,
 		config.SimulationTimeout,
 		bunchingService,
-	).WithBottlenecks(bottlenecksService).WithSegmentRouter(segmentService)
+	).WithBottlenecks(bottlenecksService).WithSegmentRouter(segmentService).
+		WithCutPathRouter(cutPathService)
 	if *demo {
 		handler.WithDemoTime(demoAt)
 	}

@@ -252,6 +252,9 @@ El contrato completo está en `docs/openapi.yaml`.
   Funcionamiento y operación: [RF05 — Desvíos](docs/rf05_desvios.md).
 - `POST /routes/segment`: rutea un tramo entre waypoints con el grafo de RF05,
   evitando un corte opcional (`avoid`); devuelve `geometry` y `distanceMeters`.
+- `POST /routes/cut`: resuelve por qué calles pasa un corte dibujado por
+  waypoints, recorriendo cada calle en los dos sentidos; misma respuesta que
+  `POST /routes/segment`.
 
 Las líneas propias de un usuario las persiste otro servicio: acá sólo se leen
 las que cargó la ETL de GTFS.

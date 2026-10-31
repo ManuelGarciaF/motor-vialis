@@ -48,6 +48,12 @@ type SegmentRouter interface {
 	Route(ctx context.Context, input detour.SegmentInput) (detour.SegmentRoute, error)
 }
 
+// CutPathRouter resolves the streets a drawn cut runs along, in both
+// directions of every street.
+type CutPathRouter interface {
+	Route(ctx context.Context, input detour.CutPathInput) (detour.SegmentRoute, error)
+}
+
 // Lines reads stored GTFS lines that can serve as proposal baselines.
 type Lines interface {
 	List(ctx context.Context, query lines.Query) (lines.Page, error)
@@ -84,6 +90,7 @@ type Handler struct {
 	comparator  Comparator
 	detours     DetourPlanner
 	segments    SegmentRouter
+	cutPaths    CutPathRouter
 	lines       Lines
 	transfers   Transfers
 	bunching    Bunching
@@ -125,6 +132,13 @@ func (handler *Handler) WithSegmentRouter(service SegmentRouter) *Handler {
 	return handler
 }
 
+// WithCutPathRouter configures the optional cut path router before Routes is
+// served.
+func (handler *Handler) WithCutPathRouter(service CutPathRouter) *Handler {
+	handler.cutPaths = service
+	return handler
+}
+
 // WithBottlenecks configures the optional reader before Routes is served.
 func (handler *Handler) WithBottlenecks(service Bottlenecks) *Handler {
 	handler.bottlenecks = service
@@ -161,6 +175,7 @@ func (handler *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /comparisons/detour", handler.createDetourComparison)
 	mux.HandleFunc("POST /detours", handler.createDetour)
 	mux.HandleFunc("POST /routes/segment", handler.createSegmentRoute)
+	mux.HandleFunc("POST /routes/cut", handler.createCutPath)
 	var routes http.Handler = mux
 	if !handler.demoAt.IsZero() {
 		routes = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

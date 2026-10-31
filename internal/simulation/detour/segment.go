@@ -140,37 +140,8 @@ func (service *SegmentService) segmentPoints(input SegmentInput) []RoutingPoint 
 
 // ValidateSegmentInput checks every limit that does not need the database.
 func ValidateSegmentInput(input SegmentInput, policy SegmentPolicy) error {
-	if len(input.Waypoints) < 2 {
-		return &ValidationError{Field: "waypoints", Message: "must contain at least two positions"}
-	}
-	if len(input.Waypoints) > policy.MaximumWaypoints {
-		return &ValidationError{
-			Field:   "waypoints",
-			Message: fmt.Sprintf("must contain at most %d positions", policy.MaximumWaypoints),
-		}
-	}
-
-	var span float64
-	for index, position := range input.Waypoints {
-		field := fmt.Sprintf("waypoints[%d]", index)
-		if !finite(position.Latitude) || position.Latitude < -90 || position.Latitude > 90 {
-			return &ValidationError{Field: field + ".latitude", Message: "must be between -90 and 90"}
-		}
-		if !finite(position.Longitude) || position.Longitude < -180 || position.Longitude > 180 {
-			return &ValidationError{Field: field + ".longitude", Message: "must be between -180 and 180"}
-		}
-		if index > 0 {
-			span += route.DistanceMeters(input.Waypoints[index-1], position)
-		}
-	}
-	if span == 0 {
-		return &ValidationError{Field: "waypoints", Message: "must not all be the same position"}
-	}
-	if span > policy.MaximumSpanMeters {
-		return &ValidationError{
-			Field:   "waypoints",
-			Message: fmt.Sprintf("must not span more than %.0f meters in straight lines", policy.MaximumSpanMeters),
-		}
+	if err := validateWaypoints(input.Waypoints, policy.MaximumWaypoints, policy.MaximumSpanMeters); err != nil {
+		return err
 	}
 
 	for _, bearing := range []struct {
@@ -182,6 +153,44 @@ func ValidateSegmentInput(input SegmentInput, policy SegmentPolicy) error {
 	} {
 		if bearing.value != nil && (!finite(*bearing.value) || *bearing.value < 0 || *bearing.value >= 360) {
 			return &ValidationError{Field: bearing.field, Message: "must be at least 0 and less than 360 degrees"}
+		}
+	}
+	return nil
+}
+
+// validateWaypoints checks the ordered positions a street path goes through:
+// how many there are, that each is a valid coordinate, and how far they reach.
+func validateWaypoints(waypoints []route.Position, maximumWaypoints int, maximumSpanMeters float64) error {
+	if len(waypoints) < 2 {
+		return &ValidationError{Field: "waypoints", Message: "must contain at least two positions"}
+	}
+	if len(waypoints) > maximumWaypoints {
+		return &ValidationError{
+			Field:   "waypoints",
+			Message: fmt.Sprintf("must contain at most %d positions", maximumWaypoints),
+		}
+	}
+
+	var span float64
+	for index, position := range waypoints {
+		field := fmt.Sprintf("waypoints[%d]", index)
+		if !finite(position.Latitude) || position.Latitude < -90 || position.Latitude > 90 {
+			return &ValidationError{Field: field + ".latitude", Message: "must be between -90 and 90"}
+		}
+		if !finite(position.Longitude) || position.Longitude < -180 || position.Longitude > 180 {
+			return &ValidationError{Field: field + ".longitude", Message: "must be between -180 and 180"}
+		}
+		if index > 0 {
+			span += route.DistanceMeters(waypoints[index-1], position)
+		}
+	}
+	if span == 0 {
+		return &ValidationError{Field: "waypoints", Message: "must not all be the same position"}
+	}
+	if span > maximumSpanMeters {
+		return &ValidationError{
+			Field:   "waypoints",
+			Message: fmt.Sprintf("must not span more than %.0f meters in straight lines", maximumSpanMeters),
 		}
 	}
 	return nil

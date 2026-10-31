@@ -923,6 +923,73 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /routes/cut:
+    post:
+      operationId: createCutPath
+      summary: Resuelve por qué calles pasa un corte dibujado
+      description: >
+        Devuelve el camino por calles que pasa por los waypoints en orden, para
+        trazar un corte punto por punto. Un corte cierra calles, no es un viaje:
+        cada calle se puede recorrer en los dos sentidos y no se aplican
+        restricciones de giro, así que un corte dibujado a contramano de una
+        mano de avenida sigue esa mano en vez de rodear manzanas. No escribe
+        nada.
+
+
+        El grafo local es el rectángulo que envuelve a los waypoints más
+        `config.CutPathMarginMeters` (300 m); si no hay camino se reintenta una
+        sola vez con `config.CutPathRetryMarginMeters` (1 km). El costo es la
+        longitud. Cada waypoint se engancha al punto más cercano de la calle
+        más cercana dentro de 50 m, y la geometría empieza y termina en esos
+        enganches, no en el vértice más próximo.
+      tags: [detours]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CutPathRequest"
+            example:
+              waypoints:
+                - {latitude: -34.5616, longitude: -58.4431}
+                - {latitude: -34.5623, longitude: -58.4414}
+                - {latitude: -34.5631, longitude: -58.4377}
+      responses:
+        "200":
+          description: Camino del primer al último waypoint.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SegmentRoute"
+        "400":
+          description: JSON o waypoints inválidos (`validation_error` con `field`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: >
+            `waypoint_not_matched`: un waypoint no tiene una calle a 50 m;
+            `field` lo indica como `waypoints[i]` (base 0). `no_cut_path`: no
+            hay camino entre dos waypoints consecutivos ni siquiera con el grafo
+            ampliado, o todos se enganchan al mismo punto.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "504":
+          description: El cálculo superó `config.SimulationTimeout`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Error interno de infraestructura.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 components:
   schemas:
     BottlenecksPage:
@@ -1995,6 +2062,22 @@ components:
           minimum: 0
           exclusiveMaximum: 360
           description: Rumbo de marcha en el último waypoint, en grados desde el norte.
+
+    CutPathRequest:
+      type: object
+      required: [waypoints]
+      additionalProperties: false
+      properties:
+        waypoints:
+          type: array
+          minItems: 2
+          maxItems: 50
+          description: >
+            Puntos del corte en el orden en que se dibujaron. La suma de
+            distancias rectas entre ellos no puede superar
+            `config.CutPathMaximumSpanMeters` (10 km).
+          items:
+            $ref: "#/components/schemas/Position"
 
     SegmentRoute:
       type: object

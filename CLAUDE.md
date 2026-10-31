@@ -75,7 +75,8 @@ internal/app                        composition root for services
 internal/httpapi                    HTTP handlers (/lines, /lines/similar,
                                      /transfers, /simulations, /comparisons,
                                      /comparisons/detour, /detours,
-                                     /routes/segment, /bottlenecks);
+                                     /routes/segment, /routes/cut,
+                                     /bottlenecks);
                                      see docs/openapi.yaml
 internal/lines                      stored GTFS routes and corridor similarity
 internal/combinaciones              precomputed transfer ranking
