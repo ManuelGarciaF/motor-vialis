@@ -21,7 +21,24 @@ WITH conteo_paradas AS (
         COALESCE(r.destino, '') AS destino,
         COALESCE(r.descripcion, '') AS descripcion,
         r.distancia_metros,
-        COALESCE(cp.cantidad_paradas, 0) AS cantidad_paradas
+        COALESCE(cp.cantidad_paradas, 0) AS cantidad_paradas,
+        -- Relevancia de la coincidencia: quien busca "59" espera la 59 antes
+        -- que la 159. 0 = la linea o el nombre publico son el texto buscado,
+        -- 1 = empiezan con el, 2 = lo contienen, 3 = solo coincide el destino.
+        -- $1 ya viene con los comodines escapados, asi que ILIKE $1 sin % es
+        -- una igualdad sin distinguir mayusculas.
+        CASE
+            WHEN $1::TEXT = '' THEN 0
+            WHEN r.linea ILIKE $1::TEXT OR r.nombre_publico ILIKE $1::TEXT THEN 0
+            WHEN r.linea ILIKE $1::TEXT || '%' OR r.nombre_publico ILIKE $1::TEXT || '%' THEN 1
+            WHEN r.linea ILIKE '%' || $1::TEXT || '%'
+                OR r.ramal ILIKE '%' || $1::TEXT || '%'
+                OR r.nombre_publico ILIKE '%' || $1::TEXT || '%' THEN 2
+            ELSE 3
+        END AS relevancia,
+        -- Orden natural: la 2 antes que la 10 y la 59 antes que la 159. Las
+        -- lineas sin numero (NORTE, SUR) van al final.
+        SUBSTRING(r.linea FROM '^[0-9]+')::INTEGER AS numero_linea
     FROM vialis.recorridos r
     LEFT JOIN conteo_paradas cp
         ON cp.id_recorrido = r.id_recorrido
@@ -60,6 +77,6 @@ SELECT
 FROM filtrados
 -- Orden explicito y total: dos paginas consecutivas de la misma consulta tienen
 -- que ser dos ventanas de la misma lista, no dos muestras distintas.
-ORDER BY linea, ramal, direction_id, id_recorrido
+ORDER BY relevancia, numero_linea NULLS LAST, linea, ramal, direction_id, id_recorrido
 LIMIT $6::INTEGER
 OFFSET $7::INTEGER;

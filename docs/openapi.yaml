@@ -101,7 +101,11 @@ paths:
           description: >
             Coincidencia parcial, sin distinguir mayúsculas, contra la línea, el
             ramal, el nombre público o el destino. Se busca el texto literal:
-            `%` y `_` no son comodines.
+            `%` y `_` no son comodines. Los resultados van por relevancia
+            (línea o nombre público igual al texto, después los que empiezan
+            con él, después los que lo contienen, al final los que sólo
+            coinciden por destino) y, dentro de cada grupo, por número de
+            línea en orden natural: buscando `59`, la 59 va antes que la 159.
           schema:
             type: string
           example: "132"

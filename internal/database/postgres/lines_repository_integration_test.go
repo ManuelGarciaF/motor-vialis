@@ -142,6 +142,29 @@ func TestLinesRepositoryIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("ListSummaries ranks an exact match before a partial one", func(t *testing.T) {
+		// The partial match is inserted first, so ordering by id alone would
+		// put it ahead: only the relevance rank can get the exact one on top.
+		rankPrefix := fmt.Sprintf("lines-rank-%d", time.Now().UnixNano())
+		partialID := insertStoredLine(t, ctx, transaction, "9"+rankPrefix)
+		exactID := insertStoredLine(t, ctx, transaction, rankPrefix)
+
+		summaries, total, err := repository.ListSummaries(ctx, lines.Query{
+			Search: rankPrefix,
+			Limit:  10,
+		})
+		if err != nil {
+			t.Fatalf("ListSummaries() error = %v", err)
+		}
+		if total != 2 || len(summaries) != 2 {
+			t.Fatalf("total/rows = %d/%d, want 2/2", total, len(summaries))
+		}
+		if summaries[0].ID != exactID || summaries[1].ID != partialID {
+			t.Fatalf("order = [%d %d], want exact %d then partial %d",
+				summaries[0].ID, summaries[1].ID, exactID, partialID)
+		}
+	})
+
 	// Search metacharacters must be treated as literal data.
 	t.Run("ListSummaries escapes search wildcards", func(t *testing.T) {
 		summaries, _, err := repository.ListSummaries(ctx, lines.Query{
