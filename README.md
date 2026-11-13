@@ -341,6 +341,59 @@ Opciones de ventana/puerto, límites y tests: [herramientas administrativas](scr
 El HTML queda en `.local/worker-map.html`; contiene ubicaciones operacionales y
 no debe publicarse ni incorporarse a Git.
 
+## Precalcular métricas del catálogo
+
+`cmd/precompute-lines` lee los recorridos existentes en la base y simula cada
+uno con los mismos servicios y parámetros que la API. No necesita TomTom, la
+API levantada ni el worker. No carga `.env` automáticamente.
+
+Primero probar sin escrituras:
+
+```bash
+set -a; source .env; set +a
+# Cambiar el identificador si se ejecuta una versión local modificada.
+go run ./cmd/precompute-lines \
+  -jurisdiction=caba -model-version="$(git rev-parse HEAD)-local" \
+  -dry-run -limit=3
+```
+
+Para calcular y guardar **todos** los recorridos:
+
+```bash
+go run ./cmd/precompute-lines \
+  -jurisdiction=caba -model-version="$(git rev-parse HEAD)-local"
+```
+
+La jurisdicción es obligatoria (`caba`, `province` o `national`) y se aplica a
+**todo el lote**. Usar `caba` para todo es un escenario tarifario común, no una
+clasificación regulatoria de las líneas reales. `DEMO_MODE` no altera el cálculo.
+
+- Actualiza únicamente `vialis.recorridos.caudal_pasajeros` e
+  `ingreso_economico`: demanda potencial y recaudación potencial en centavos,
+  redondeadas al entero más próximo. Son estimaciones, no mediciones.
+- Conserva el tiempo programado GTFS y todas las demás columnas. No crea tablas,
+  columnas ni migraciones.
+- Procesa secuencialmente, confirma por recorrido y continúa ante errores.
+  No inventa tramos para recorridos no simulables: los registra como `skipped`
+  y conserva sus métricas anteriores (normalmente `NULL`).
+- Guarda un reporte JSONL privado en `.local/precompute-lines/` con versión,
+  jurisdicción, valores anteriores, resultados y errores. `-report` permite
+  elegir un archivo nuevo; nunca sobrescribe un reporte existente.
+- `-timeout=2m` limita cada recorrido; `-limit=0` selecciona todos;
+  `-after-id=123` selecciona IDs mayores que 123.
+- `-only-missing` permite reintentar pendientes sin recalcular filas completas.
+  **No comprueba jurisdicción ni versión**: para recalcular todo bajo otro
+  supuesto, no usar esa opción. Una repetición normal recalcula todo el catálogo.
+- Ctrl+C detiene el proceso; lo ya confirmado permanece guardado. Revisar el
+  reporte antes de reanudar con `-after-id`, porque también omite errores previos.
+- El código de salida es distinto de cero si hubo errores de cálculo/guardado;
+  los `skipped` se cuentan por separado y no se consideran errores del proceso.
+
+No ejecutar junto con una recarga GTFS, actualización de datos del modelo u otro
+batch sobre el mismo catálogo. Si las métricas de una fila cambian durante el
+lote, el guardado detecta el cambio y no las sobrescribe. Una recarga GTFS vacía
+las métricas: volver a ejecutar el batch después de la recarga.
+
 ## Probar una simulación
 
 El ejecutable de prueba recibe un archivo JSON con las paradas ordenadas. Cada

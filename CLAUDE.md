@@ -69,6 +69,8 @@ rather than duplicating policy thresholds in navigation guides.
 
 ```
 cmd/api, cmd/simulation-test        entry points; flags and transport, no logic
+cmd/precompute-lines                sequential catalog estimates; explicit jurisdiction
+internal/precompute                 batch orchestration, rounding and progress reporting
 cmd/realtime-worker                 H0011 ingestion; always-on independent bottlenecks cycle
 cmd/bottlenecks-analysis             experimental read-only H0012 analysis
 internal/app                        composition root for services
@@ -156,7 +158,14 @@ SQL against a real PostGIS+H3 instance.
    the straight distance between its stops (79J/0, 257A/1, 395B/1, 395C/0,
    395C/1, 463A/0, 463A/1, 721B/0). See "Saltos del shape" and "Lazos del shape
    sin paradas" in `sql/recorridos/README.md`. User-designed lines are persisted by a different service;
-   nothing here writes. `POST /lines/similar` performs a pure geometric
+   the HTTP catalog endpoints never write. The administrative
+   `cmd/precompute-lines` can populate only `caudal_pasajeros` and
+   `ingreso_economico` using `app.NewSimulationService`, an explicit jurisdiction
+   for the whole run, and the normal stored-line export/validation. It leaves
+   scheduled GTFS time unchanged, adds no schema objects, and records provenance
+   and previous metrics in a local JSONL report. It must not overlap GTFS/model
+   data reloads; see the README for dry-run and retry flags.
+   `POST /lines/similar` performs a pure geometric
    mutual-coverage search and runs no estimator.
 4. **Revenue** (`internal/simulation/revenue`): for each demand stop pair,
    sums segment distances to look up a jurisdiction-specific tariff band
